@@ -30,6 +30,8 @@ class RubricItemResult(BaseModel):
     key_point: str
     score: int
     hit: bool
+    keywords: list[str] = []       # 核心关键词
+    importance: str = ""           # 重要性说明
     comment: str
 
 
@@ -48,6 +50,20 @@ class ScoreResponse(BaseModel):
     total_score: int
     rubric_result: list[RubricItemResult]
     feedback: str
+    standard_answer: str  # 推荐回答（标准答案）
+    follow_up: str  # 针对遗漏点的追问
+
+
+class ExtensionItem(BaseModel):
+    """单个拓展问题"""
+    question: str
+    answer: str
+
+
+class ExtensionResponse(BaseModel):
+    """拓展问题响应"""
+    conversation_id: int
+    extensions: list[ExtensionItem]
 
 
 class ExploreResponse(BaseModel):

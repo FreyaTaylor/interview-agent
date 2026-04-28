@@ -6,13 +6,20 @@ import streamlit as st
 import httpx
 import asyncio
 
-API_BASE = "http://localhost:8000/api/study"
+API_BASE = "http://127.0.0.1:8000/api/study"
 
 
 def api_get(path: str, params: dict = None) -> dict:
-    """同步 GET 请求"""
-    resp = httpx.get(f"{API_BASE}{path}", params=params, timeout=30)
-    return resp.json()
+    """同步 GET 请求（带重试）"""
+    for attempt in range(3):
+        try:
+            resp = httpx.get(f"{API_BASE}{path}", params=params, timeout=30)
+            return resp.json()
+        except (httpx.RemoteProtocolError, httpx.ConnectError):
+            if attempt == 2:
+                raise
+            import time
+            time.sleep(1)
 
 
 def api_post(path: str, json_data: dict) -> dict:
@@ -37,6 +44,10 @@ if "current_kp" not in st.session_state:
     st.session_state.current_kp = None
 if "explore_count" not in st.session_state:
     st.session_state.explore_count = 0
+if "extensions_loaded" not in st.session_state:
+    st.session_state.extensions_loaded = False
+if "extensions_data" not in st.session_state:
+    st.session_state.extensions_data = None
 
 # ---- 侧边栏：选择知识点 ----
 with st.sidebar:
@@ -77,6 +88,8 @@ with st.sidebar:
         st.session_state.messages = []
         st.session_state.current_kp = None
         st.session_state.explore_count = 0
+        st.session_state.extensions_loaded = False
+        st.session_state.extensions_data = None
         st.rerun()
 
 # ---- 主区域：对话 ----
@@ -108,21 +121,63 @@ else:
 
             if resp["code"] == 0:
                 data = resp["data"]
-                # 构建评分展示
+
+                # --- 构建评分表格 ---
                 score_text = f"### 得分: {data['total_score']}/100\n\n"
+                score_text += "| 状态 | 关键点 | 分值 | 关键词 | 重要性 | 评语 |\n"
+                score_text += "|:---:|--------|:---:|--------|--------|------|\n"
                 for item in data["rubric_result"]:
                     icon = "✅" if item["hit"] else "❌"
-                    score_text += f"{icon} **{item['key_point']}** ({item['score']}分) — {item['comment']}\n\n"
+                    keywords = "、".join(item.get("keywords", [])) if item.get("keywords") else "-"
+                    importance = item.get("importance", "-")
+                    comment = item.get("comment", "")
+                    score_text += f"| {icon} | **{item['key_point']}** | {item['score']} | `{keywords}` | {importance} | {comment} |\n"
+
                 score_text += f"\n---\n💡 **反馈**: {data['feedback']}"
+
+                # --- 推荐回答 ---
+                if data.get("standard_answer"):
+                    score_text += f"\n\n📖 **推荐回答**:\n\n{data['standard_answer']}"
+
+                # --- 追问遗漏点 ---
+                if data.get("follow_up") and data["follow_up"] != "回答非常完整！":
+                    score_text += f"\n\n---\n🤔 **追问**: {data['follow_up']}"
+                elif data.get("follow_up"):
+                    score_text += f"\n\n---\n🎉 {data['follow_up']}"
+
                 score_text += f"\n\n_可以继续追问（{5 - st.session_state.explore_count}/{5}轮），或点击左侧选择下一个知识点_"
 
                 st.session_state.messages.append({"role": "agent", "content": score_text})
+                st.session_state.extensions_loaded = False
+                st.session_state.extensions_data = None
                 st.session_state.phase = "scored"
                 st.rerun()
             else:
                 st.error(resp.get("message", "评分失败"))
 
     elif st.session_state.phase in ("scored", "exploring"):
+        # --- 拓展问题按钮 ---
+        if not st.session_state.extensions_loaded:
+            if st.button("📚 查看拓展问题", use_container_width=False):
+                with st.spinner("🧠 生成拓展问题..."):
+                    ext_resp = api_post("/extensions", {
+                        "conversation_id": st.session_state.conversation_id,
+                        "answer": "",
+                    })
+                if ext_resp["code"] == 0:
+                    st.session_state.extensions_data = ext_resp["data"]["extensions"]
+                    st.session_state.extensions_loaded = True
+                    st.rerun()
+                else:
+                    st.error("拓展问题生成失败")
+        else:
+            # 展示已加载的拓展问题
+            st.divider()
+            st.markdown("### 📚 拓展问题")
+            for i, ext in enumerate(st.session_state.extensions_data, 1):
+                with st.expander(f"**问题 {i}**: {ext['question']}", expanded=False):
+                    st.markdown(ext["answer"])
+
         explore_q = st.chat_input(f"追问（{st.session_state.explore_count}/5轮）或选择左侧下一个知识点...")
         if explore_q:
             st.session_state.messages.append({"role": "user", "content": explore_q})

@@ -7,7 +7,7 @@ import logging
 from langchain_openai import ChatOpenAI
 
 from backend.config import settings
-from backend.prompts.study_prompts import RUBRIC_SCORING_PROMPT, EXPLORE_PROMPT
+from backend.prompts.study_prompts import RUBRIC_SCORING_PROMPT, EXPLORE_PROMPT, EXTENSION_QUESTIONS_PROMPT
 
 logger = logging.getLogger(__name__)
 
@@ -110,3 +110,42 @@ async def handle_explore_question(
     llm.temperature = 0.3
     response = await llm.ainvoke(prompt)
     return response.content.strip()
+
+
+async def generate_extension_questions(
+    knowledge_point: str,
+    question: str,
+) -> dict:
+    """
+    生成 3 个拓展问题及答案
+
+    Args:
+        knowledge_point: 知识点名称
+        question: 原始题目
+
+    Returns:
+        {"extensions": [{"question": "...", "answer": "..."}, ...]}
+    """
+    prompt = EXTENSION_QUESTIONS_PROMPT.format(
+        knowledge_point=knowledge_point,
+        question=question,
+    )
+
+    llm = _get_llm()
+    llm.temperature = 0.3
+    response = await llm.ainvoke(prompt)
+
+    try:
+        content = response.content.strip()
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        return json.loads(content)
+    except (json.JSONDecodeError, IndexError) as e:
+        logger.error(f"拓展问题 JSON 解析失败: {e}\nLLM 原始输出: {response.content}")
+        return {
+            "extensions": [
+                {"question": "生成失败，请重试", "answer": ""},
+            ]
+        }

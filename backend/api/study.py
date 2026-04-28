@@ -18,8 +18,10 @@ from backend.schemas.study import (
     StartStudyRequest, SubmitAnswerRequest, ExploreRequest,
     QuestionResponse, ScoreResponse, ExploreResponse,
     KnowledgePointBrief, RubricItemResult,
+    ExtensionResponse, ExtensionItem,
 )
 from backend.agents.study_agent import study_graph
+from backend.services.rubric import generate_extension_questions
 from backend.config import settings
 
 logger = logging.getLogger(__name__)
@@ -257,6 +259,37 @@ async def submit_answer(
         total_score=result["score"],
         rubric_result=rubric_items_result,
         feedback=result["feedback"],
+        standard_answer=question.standard_answer or "",
+        follow_up=result["rubric_result"].get("follow_up", ""),
+    ))
+
+
+@router.post("/extensions", summary="获取拓展问题及答案")
+async def get_extensions(
+    req: SubmitAnswerRequest,  # 复用 conversation_id + answer（answer 字段此处忽略）
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """
+    根据当前对话的知识点和题目，LLM 生成 3 个拓展面试题及答案
+    """
+    conv = await db.get(Conversation, req.conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+
+    question = await db.get(Question, conv.question_id)
+    node = await db.get(KnowledgeNode, conv.knowledge_point_id)
+
+    result = await generate_extension_questions(
+        knowledge_point=node.name if node else "",
+        question=question.content if question else "",
+    )
+
+    extensions = [
+        ExtensionItem(**ext) for ext in result.get("extensions", [])
+    ]
+    return ApiResponse.ok(data=ExtensionResponse(
+        conversation_id=conv.id,
+        extensions=extensions,
     ))
 
 
