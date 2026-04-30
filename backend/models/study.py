@@ -7,7 +7,6 @@
 - mastery_history: 掌握度变化历史
 """
 from datetime import datetime
-from typing import Any
 from sqlalchemy import (
     BigInteger, SmallInteger, Float, String, Text,
     ForeignKey, DateTime, func,
@@ -41,7 +40,7 @@ class StudySession(TimestampMixin, Base):
 
 
 class Conversation(TimestampMixin, Base):
-    """对话 — 一个知识点的一次完整学习对话（出题→回答→打分→探索）"""
+    """对话 — 一个知识点的一次完整学习对话（动态出题→回答→打分→追问循环）"""
     __tablename__ = "conversation"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -54,19 +53,16 @@ class Conversation(TimestampMixin, Base):
     knowledge_point_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("knowledge_node.id"), nullable=False
     )
-    question_id: Mapped[int | None] = mapped_column(
-        BigInteger, ForeignKey("question.id"), nullable=True
-    )
-    # 用户的正式回答
-    user_answer: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # Rubric 总得分 0-100
-    score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
-    # 每个关键点的命中情况（JSONB）
-    rubric_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
-    # Agent 的反馈/纠错文本
-    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)
-    # 自由探索轮数
-    explore_count: Mapped[int] = mapped_column(SmallInteger, server_default="0")
+    # 当前题目内容（LLM 动态生成）
+    current_question: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 当前 Rubric（LLM 动态生成，JSONB）
+    current_rubric: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    # 当前题目的轮次（第几题）
+    question_round: Mapped[int] = mapped_column(SmallInteger, server_default="1")
+    # 学习小结列表（每题评分后追加，JSONB）
+    learning_summaries: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    # 当前状态：'questioning' | 'answered' | 'finished'
+    status: Mapped[str] = mapped_column(String(20), server_default="'questioning'")
 
     # 关系
     study_session: Mapped["StudySession"] = relationship(
@@ -88,7 +84,7 @@ class ConversationMessage(TimestampMixin, Base):
     # 角色：'user' | 'agent'
     role: Mapped[str] = mapped_column(String(10), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # 消息类型：'question' | 'answer' | 'scoring' | 'explore' | 'system'
+    # 消息类型：'question' | 'answer' | 'scoring' | 'follow_up' | 'summary' | 'system'
     message_type: Mapped[str] = mapped_column(String(20), nullable=False)
 
     # 关系

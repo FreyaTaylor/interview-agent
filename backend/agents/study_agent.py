@@ -1,22 +1,19 @@
 """
-学习对话 Agent — Phase 0
-使用 LangGraph 实现 ReAct 循环：出题 → 回答 → Rubric 打分 → 自由探索
+学习对话 Agent — 动态出题版
+使用 LangGraph 实现：动态出题 → 回答 → Rubric 打分(含追问决策) → 下一题
 
-Phase 0 简化策略：
-- 不使用 LangGraph 的 interrupt 机制（API 驱动的分步调用更适合 web 场景）
-- 每个 API 请求调用一个 agent 节点函数
-- 状态通过数据库持久化（conversation + conversation_message 表）
-- LangGraph 图用于定义流程结构和路由逻辑
-
-后续 Phase 1 可以引入 checkpointer 和更复杂的条件边
+核心变化（相比 Phase 0）：
+- 题目和 Rubric 由 LLM 动态生成，不再依赖数据库预存
+- 评分后 LLM 自动决定是否追问，取消用户主导的自由探索
+- 追问的回答也要分点打分
+- 每题评分后生成学习小结（落库）
 """
 import logging
-from typing import TypedDict, Literal
+from typing import TypedDict
 
 from langgraph.graph import StateGraph, END
 
-from backend.services.rubric import score_answer_with_rubric, handle_explore_question
-from backend.config import settings
+from backend.services.rubric import generate_question, score_answer_with_rubric
 
 logger = logging.getLogger(__name__)
 
@@ -26,13 +23,14 @@ logger = logging.getLogger(__name__)
 class StudyState(TypedDict):
     """学习对话 Agent 的状态"""
     # 输入
-    action: str                     # "start" | "answer" | "explore"
-    knowledge_point_id: int
+    action: str                     # "start" | "answer" | "next"
     knowledge_point_name: str
-    user_input: str                 # 用户的回答或追问
+    user_input: str                 # 用户的回答
 
-    # 题目信息
-    question_id: int
+    # 历史（已考过的题目 + 得分 + 遗漏点）
+    question_history: list[dict]    # [{"question": "...", "score": 80, "missed": [...]}, ...]
+
+    # 当前题目
     question_content: str
     rubric_items: list[dict]        # [{"key_point": "...", "score": 20}, ...]
 
@@ -40,36 +38,47 @@ class StudyState(TypedDict):
     score: int
     rubric_result: dict             # LLM 返回的完整评分 JSON
     feedback: str
-
-    # 探索状态
-    explore_count: int
-    explore_history: str            # 探索对话历史（拼接文本）
+    follow_up: str | None           # LLM 决定的追问（None 表示不追问）
+    follow_up_rubric: list[dict]    # 追问的 Rubric
+    summary: list[str]              # 本题学习小结
 
     # 输出
     agent_response: str
-    phase: str                      # 当前阶段："questioning" | "scored" | "exploring"
+    phase: str                      # "questioning" | "scored"
 
 
 # ---- 节点函数 ----
 
 async def generate_question_node(state: StudyState) -> dict:
     """
-    出题节点
-    Phase 0：从已有题目中选题（数据库查询在 API 层完成，此处只格式化）
+    出题节点 — 调用 LLM 动态生成题目 + Rubric
     """
+    logger.info(f"动态出题: 知识点={state['knowledge_point_name']}, 历史题数={len(state.get('question_history', []))}")
+
+    result = await generate_question(
+        knowledge_point=state["knowledge_point_name"],
+        history=state.get("question_history", []),
+    )
+
     return {
-        "agent_response": state["question_content"],
+        "question_content": result["question"],
+        "rubric_items": result.get("rubric", []),
+        "agent_response": result["question"],
         "phase": "questioning",
-        "explore_count": 0,
-        "explore_history": "",
+        "score": 0,
+        "rubric_result": {},
+        "feedback": "",
+        "follow_up": None,
+        "follow_up_rubric": [],
+        "summary": [],
     }
 
 
 async def score_answer_node(state: StudyState) -> dict:
     """
-    打分节点 — 调用 LLM 基于 Rubric 评分
+    打分节点 — 调用 LLM 基于 Rubric 评分，同时决定是否追问并生成小结
     """
-    logger.info(f"正在评分: 知识点={state['knowledge_point_name']}, 问题ID={state['question_id']}")
+    logger.info(f"正在评分: 知识点={state['knowledge_point_name']}")
 
     result = await score_answer_with_rubric(
         question=state["question_content"],
@@ -81,42 +90,11 @@ async def score_answer_node(state: StudyState) -> dict:
         "score": result.get("total", 0),
         "rubric_result": result,
         "feedback": result.get("feedback", ""),
+        "follow_up": result.get("follow_up"),
+        "follow_up_rubric": result.get("follow_up_rubric", []),
+        "summary": result.get("summary", []),
         "agent_response": result.get("feedback", ""),
         "phase": "scored",
-    }
-
-
-async def handle_explore_node(state: StudyState) -> dict:
-    """
-    自由探索节点 — 回答用户的追问
-    """
-    current_count = state.get("explore_count", 0)
-
-    # 检查是否超过探索上限
-    if current_count >= settings.MAX_EXPLORE_ROUNDS:
-        return {
-            "agent_response": f"探索已达上限（{settings.MAX_EXPLORE_ROUNDS}轮），建议进入下一个知识点继续学习。",
-            "phase": "exploring",
-            "explore_count": current_count,
-        }
-
-    answer = await handle_explore_question(
-        question=state["question_content"],
-        user_answer=state.get("user_input", ""),
-        score=state.get("score", 0),
-        chat_history=state.get("explore_history", ""),
-        explore_question=state["user_input"],
-    )
-
-    # 更新探索历史
-    new_history = state.get("explore_history", "")
-    new_history += f"\n用户追问：{state['user_input']}\nAgent回答：{answer}\n"
-
-    return {
-        "agent_response": answer,
-        "phase": "exploring",
-        "explore_count": current_count + 1,
-        "explore_history": new_history,
     }
 
 
@@ -125,12 +103,10 @@ async def handle_explore_node(state: StudyState) -> dict:
 def route_action(state: StudyState) -> str:
     """根据 action 路由到对应节点"""
     action = state.get("action", "start")
-    if action == "start":
+    if action in ("start", "next"):
         return "generate_question"
     elif action == "answer":
         return "score_answer"
-    elif action == "explore":
-        return "handle_explore"
     return "generate_question"
 
 
@@ -143,15 +119,13 @@ def build_study_graph() -> StateGraph:
     # 添加节点
     builder.add_node("generate_question", generate_question_node)
     builder.add_node("score_answer", score_answer_node)
-    builder.add_node("handle_explore", handle_explore_node)
 
-    # 入口路由：根据 action 分发到不同节点
+    # 入口路由：根据 action 分发
     builder.add_conditional_edges("__start__", route_action)
 
     # 每个节点执行后结束（等待下一次 API 调用）
     builder.add_edge("generate_question", END)
     builder.add_edge("score_answer", END)
-    builder.add_edge("handle_explore", END)
 
     return builder.compile()
 

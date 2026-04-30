@@ -12,15 +12,14 @@ class StartStudyRequest(BaseModel):
 
 
 class SubmitAnswerRequest(BaseModel):
-    """提交回答"""
+    """提交回答（首次回答或追问回答通用）"""
     conversation_id: int
     answer: str
 
 
-class ExploreRequest(BaseModel):
-    """自由探索追问"""
+class NextQuestionRequest(BaseModel):
+    """请求下一题"""
     conversation_id: int
-    question: str
 
 
 # ---- 响应模型 ----
@@ -30,9 +29,7 @@ class RubricItemResult(BaseModel):
     key_point: str
     score: int
     hit: bool
-    keywords: list[str] = []       # 核心关键词
-    importance: str = ""           # 重要性说明
-    comment: str
+    matched_text: str = ""      # 候选人回答中命中的原文片段
 
 
 class QuestionResponse(BaseModel):
@@ -40,8 +37,8 @@ class QuestionResponse(BaseModel):
     conversation_id: int
     session_id: int
     knowledge_point_name: str
-    question_id: int
     question_content: str
+    question_round: int
 
 
 class ScoreResponse(BaseModel):
@@ -50,28 +47,9 @@ class ScoreResponse(BaseModel):
     total_score: int
     rubric_result: list[RubricItemResult]
     feedback: str
-    standard_answer: str  # 推荐回答（标准答案）
-    follow_up: str  # 针对遗漏点的追问
-
-
-class ExtensionItem(BaseModel):
-    """单个拓展问题"""
-    question: str
-    answer: str
-
-
-class ExtensionResponse(BaseModel):
-    """拓展问题响应"""
-    conversation_id: int
-    extensions: list[ExtensionItem]
-
-
-class ExploreResponse(BaseModel):
-    """探索回答响应"""
-    conversation_id: int
-    answer: str
-    explore_count: int
-    max_explore: int
+    recommended_answer: list[str] = []  # 推荐回答要点列表
+    follow_up: str | None           # LLM 决定的追问，None 表示不需要追问
+    question_round: int
 
 
 class KnowledgePointBrief(BaseModel):

@@ -4,7 +4,7 @@ SQLAlchemy 模型汇总导入
 """
 from backend.models.base import Base
 from backend.models.user import User
-from backend.models.knowledge import KnowledgeNode, Question, RubricItem
+from backend.models.knowledge import KnowledgeNode
 from backend.models.study import (
     StudySession, Conversation, ConversationMessage,
     MasteryRecord, MasteryHistory,
@@ -14,7 +14,7 @@ from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuest
 __all__ = [
     "Base",
     "User",
-    "KnowledgeNode", "Question", "RubricItem",
+    "KnowledgeNode",
     "StudySession", "Conversation", "ConversationMessage",
     "MasteryRecord", "MasteryHistory",
     "InterviewRecord", "AlgorithmQuestion", "HrQuestion",

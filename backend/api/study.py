@@ -1,31 +1,45 @@
 """
 学习对话 API
-核心接口：开始学习 → 提交回答 → 自由探索 → 查看知识点列表
+核心接口：开始学习 → 提交回答（含追问打分）→ 下一题 → 查看知识点列表
 """
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from backend.database import get_db
-from backend.models.knowledge import KnowledgeNode, Question, RubricItem
+from backend.models.knowledge import KnowledgeNode
 from backend.models.study import (
     StudySession, Conversation, ConversationMessage, MasteryRecord,
 )
 from backend.schemas.common import ApiResponse
 from backend.schemas.study import (
-    StartStudyRequest, SubmitAnswerRequest, ExploreRequest,
-    QuestionResponse, ScoreResponse, ExploreResponse,
+    StartStudyRequest, SubmitAnswerRequest, NextQuestionRequest,
+    QuestionResponse, ScoreResponse,
     KnowledgePointBrief, RubricItemResult,
-    ExtensionResponse, ExtensionItem,
 )
 from backend.agents.study_agent import study_graph
-from backend.services.rubric import generate_extension_questions
-from backend.config import settings
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/study", tags=["学习"])
+
+
+def _build_question_history(conv: Conversation) -> list[dict]:
+    """从 conversation 的 learning_summaries 构建出题历史上下文"""
+    summaries = conv.learning_summaries or []
+    history = []
+    for s in summaries:
+        missed = [
+            item["key_point"]
+            for item in s.get("rubric_result", {}).get("items", [])
+            if not item.get("hit", False)
+        ]
+        history.append({
+            "question": s.get("question", ""),
+            "score": s.get("score", 0),
+            "missed": missed,
+        })
+    return history
 
 
 @router.get("/knowledge-points", summary="获取所有叶子知识点列表")
@@ -33,7 +47,6 @@ async def list_knowledge_points(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     """获取所有叶子节点知识点（可学习的），含掌握度信息"""
-    # 查询所有叶子节点
     stmt = (
         select(KnowledgeNode)
         .where(KnowledgeNode.node_type == "leaf")
@@ -47,7 +60,7 @@ async def list_knowledge_points(
     mastery_result = await db.execute(mastery_stmt)
     mastery_map = {m.knowledge_point_id: m for m in mastery_result.scalars().all()}
 
-    # 查询父节点名称（二级分类）
+    # 查询父节点名称
     parent_ids = [n.parent_id for n in nodes if n.parent_id]
     parent_map = {}
     if parent_ids:
@@ -78,26 +91,13 @@ async def start_study(
     """
     选择一个知识点开始学习：
     1. 创建 study_session + conversation
-    2. 从该知识点的题库中选一题
+    2. 调用 LLM 动态生成第一题
     3. 返回题目
     """
     # 验证知识点存在且是叶子节点
     node = await db.get(KnowledgeNode, req.knowledge_point_id)
     if not node or node.node_type != "leaf":
         raise HTTPException(status_code=404, detail="知识点不存在或不是叶子节点")
-
-    # 查询该知识点的问题（Phase 0 用种子数据，不做懒生成）
-    q_stmt = (
-        select(Question)
-        .where(Question.knowledge_point_id == req.knowledge_point_id)
-        .options(selectinload(Question.rubric_items))
-        .order_by(Question.sort_order)
-        .limit(1)
-    )
-    q_result = await db.execute(q_stmt)
-    question = q_result.scalar_one_or_none()
-    if not question:
-        raise HTTPException(status_code=404, detail="该知识点暂无题目（Phase 0 需要先运行 seed_data）")
 
     # 创建学习会话
     session = StudySession(source_type="manual_select", title=f"学习: {node.name}")
@@ -108,41 +108,44 @@ async def start_study(
     conv = Conversation(
         study_session_id=session.id,
         knowledge_point_id=req.knowledge_point_id,
-        question_id=question.id,
+        question_round=1,
+        learning_summaries=[],
+        status="questioning",
     )
     db.add(conv)
     await db.flush()
+
+    # 调用 Agent 动态出题
+    agent_state = {
+        "action": "start",
+        "knowledge_point_name": node.name,
+        "user_input": "",
+        "question_history": [],
+        "question_content": "",
+        "rubric_items": [],
+        "score": 0,
+        "rubric_result": {},
+        "feedback": "",
+        "follow_up": None,
+        "follow_up_rubric": [],
+        "summary": [],
+        "agent_response": "",
+        "phase": "",
+    }
+    result = await study_graph.ainvoke(agent_state)
+
+    # 保存动态生成的题目和 Rubric 到 conversation
+    conv.current_question = result["question_content"]
+    conv.current_rubric = result["rubric_items"]
 
     # 记录出题消息
     msg = ConversationMessage(
         conversation_id=conv.id,
         role="agent",
-        content=question.content,
+        content=result["question_content"],
         message_type="question",
     )
     db.add(msg)
-
-    # 调用 Agent（出题节点）
-    agent_state = {
-        "action": "start",
-        "knowledge_point_id": req.knowledge_point_id,
-        "knowledge_point_name": node.name,
-        "user_input": "",
-        "question_id": question.id,
-        "question_content": question.content,
-        "rubric_items": [
-            {"key_point": r.key_point, "score": r.score}
-            for r in question.rubric_items
-        ],
-        "score": 0,
-        "rubric_result": {},
-        "feedback": "",
-        "explore_count": 0,
-        "explore_history": "",
-        "agent_response": "",
-        "phase": "",
-    }
-    result = await study_graph.ainvoke(agent_state)
 
     await db.commit()
 
@@ -150,8 +153,8 @@ async def start_study(
         conversation_id=conv.id,
         session_id=session.id,
         knowledge_point_name=node.name,
-        question_id=question.id,
-        question_content=question.content,
+        question_content=result["question_content"],
+        question_round=1,
     ))
 
 
@@ -161,26 +164,17 @@ async def submit_answer(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     """
-    提交回答，Agent 基于 Rubric 评分：
-    1. 加载对话上下文（题目 + Rubric）
-    2. 调用 LLM 打分
-    3. 存储评分结果
+    提交回答（首次回答或追问的回答都走这个接口），Agent 基于 Rubric 评分：
+    1. 加载对话上下文（当前题目 + 当前 Rubric）
+    2. 调用 LLM 打分 + 决定是否追问 + 生成小结
+    3. 存储评分结果和小结
     4. 更新掌握度
     """
-    # 加载对话及关联的题目和 Rubric
     conv = await db.get(Conversation, req.conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
-
-    question_stmt = (
-        select(Question)
-        .where(Question.id == conv.question_id)
-        .options(selectinload(Question.rubric_items))
-    )
-    q_result = await db.execute(question_stmt)
-    question = q_result.scalar_one_or_none()
-    if not question:
-        raise HTTPException(status_code=404, detail="题目不存在")
+    if not conv.current_question or not conv.current_rubric:
+        raise HTTPException(status_code=400, detail="当前没有待回答的题目")
 
     node = await db.get(KnowledgeNode, conv.knowledge_point_id)
 
@@ -193,33 +187,56 @@ async def submit_answer(
     )
     db.add(user_msg)
 
-    # 调用 Agent（打分节点）
+    # 调用 Agent 打分
     agent_state = {
         "action": "answer",
-        "knowledge_point_id": conv.knowledge_point_id,
         "knowledge_point_name": node.name if node else "",
         "user_input": req.answer,
-        "question_id": question.id,
-        "question_content": question.content,
-        "rubric_items": [
-            {"key_point": r.key_point, "score": r.score}
-            for r in question.rubric_items
-        ],
+        "question_history": _build_question_history(conv),
+        "question_content": conv.current_question,
+        "rubric_items": conv.current_rubric,
         "score": 0,
         "rubric_result": {},
         "feedback": "",
-        "explore_count": 0,
-        "explore_history": "",
+        "follow_up": None,
+        "follow_up_rubric": [],
+        "summary": [],
         "agent_response": "",
         "phase": "",
     }
     result = await study_graph.ainvoke(agent_state)
 
-    # 更新对话记录
-    conv.user_answer = req.answer
-    conv.score = result["score"]
-    conv.rubric_result = result["rubric_result"]
-    conv.feedback = result["feedback"]
+    # 追加学习小结到 conversation
+    summaries = conv.learning_summaries or []
+    summaries.append({
+        "question": conv.current_question,
+        "score": result["score"],
+        "rubric_result": result["rubric_result"],
+        "summary": result["summary"],
+        "round": conv.question_round,
+    })
+    conv.learning_summaries = summaries
+
+    # 如果 LLM 决定追问，更新当前题目为追问题目
+    follow_up = result.get("follow_up")
+    if follow_up:
+        conv.current_question = follow_up
+        conv.current_rubric = result.get("follow_up_rubric", [])
+        conv.status = "questioning"
+
+        # 记录追问消息
+        follow_msg = ConversationMessage(
+            conversation_id=conv.id,
+            role="agent",
+            content=follow_up,
+            message_type="follow_up",
+        )
+        db.add(follow_msg)
+    else:
+        # 不追问，等待用户请求下一题
+        conv.current_question = None
+        conv.current_rubric = None
+        conv.status = "answered"
 
     # 记录评分消息
     score_msg = ConversationMessage(
@@ -230,7 +247,7 @@ async def submit_answer(
     )
     db.add(score_msg)
 
-    # 更新掌握度记录
+    # 更新掌握度记录（指数移动平均：new = 0.4 * score + 0.6 * old）
     mastery_stmt = select(MasteryRecord).where(
         MasteryRecord.user_id == 1,
         MasteryRecord.knowledge_point_id == conv.knowledge_point_id,
@@ -238,7 +255,7 @@ async def submit_answer(
     mastery_result = await db.execute(mastery_stmt)
     mastery = mastery_result.scalar_one_or_none()
     if mastery:
-        mastery.mastery_level = result["score"]
+        mastery.mastery_level = int(0.4 * result["score"] + 0.6 * mastery.mastery_level)
         mastery.study_count += 1
     else:
         mastery = MasteryRecord(
@@ -254,129 +271,89 @@ async def submit_answer(
     rubric_items_result = [
         RubricItemResult(**item) for item in result["rubric_result"].get("items", [])
     ]
+    rec_answer = result["rubric_result"].get("recommended_answer", [])
+    if isinstance(rec_answer, str):
+        rec_answer = [rec_answer] if rec_answer else []
     return ApiResponse.ok(data=ScoreResponse(
         conversation_id=conv.id,
         total_score=result["score"],
         rubric_result=rubric_items_result,
         feedback=result["feedback"],
-        standard_answer=question.standard_answer or "",
-        follow_up=result["rubric_result"].get("follow_up", ""),
+        recommended_answer=rec_answer,
+        follow_up=follow_up,
+        question_round=conv.question_round,
     ))
 
 
-@router.post("/extensions", summary="获取拓展问题及答案")
-async def get_extensions(
-    req: SubmitAnswerRequest,  # 复用 conversation_id + answer（answer 字段此处忽略）
+@router.post("/next", summary="请求下一题")
+async def next_question(
+    req: NextQuestionRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
     """
-    根据当前对话的知识点和题目，LLM 生成 3 个拓展面试题及答案
+    请求下一题：
+    1. 基于历史出题记录，LLM 生成新角度的题目
+    2. 更新 conversation 的当前题目
     """
     conv = await db.get(Conversation, req.conversation_id)
     if not conv:
         raise HTTPException(status_code=404, detail="对话不存在")
 
-    question = await db.get(Question, conv.question_id)
     node = await db.get(KnowledgeNode, conv.knowledge_point_id)
 
-    result = await generate_extension_questions(
-        knowledge_point=node.name if node else "",
-        question=question.content if question else "",
-    )
-
-    extensions = [
-        ExtensionItem(**ext) for ext in result.get("extensions", [])
-    ]
-    return ApiResponse.ok(data=ExtensionResponse(
-        conversation_id=conv.id,
-        extensions=extensions,
-    ))
-
-
-@router.post("/explore", summary="自由探索追问")
-async def explore(
-    req: ExploreRequest,
-    db: AsyncSession = Depends(get_db),
-) -> ApiResponse:
-    """
-    自由探索：用户追问，Agent 回答（最多 5 轮）
-    """
-    conv = await db.get(Conversation, req.conversation_id)
-    if not conv:
-        raise HTTPException(status_code=404, detail="对话不存在")
-
-    if conv.explore_count >= settings.MAX_EXPLORE_ROUNDS:
-        return ApiResponse.ok(data=ExploreResponse(
-            conversation_id=conv.id,
-            answer=f"探索已达上限（{settings.MAX_EXPLORE_ROUNDS}轮），建议进入下一个知识点。",
-            explore_count=conv.explore_count,
-            max_explore=settings.MAX_EXPLORE_ROUNDS,
-        ))
-
-    question = await db.get(Question, conv.question_id)
-    node = await db.get(KnowledgeNode, conv.knowledge_point_id)
-
-    # 获取已有探索历史
-    history_stmt = (
-        select(ConversationMessage)
-        .where(
-            ConversationMessage.conversation_id == conv.id,
-            ConversationMessage.message_type == "explore",
-        )
-        .order_by(ConversationMessage.created_at)
-    )
-    history_result = await db.execute(history_stmt)
-    history_messages = history_result.scalars().all()
-    explore_history = "\n".join(
-        f"{'用户追问' if m.role == 'user' else 'Agent回答'}：{m.content}"
-        for m in history_messages
-    )
-
-    # 记录用户追问
-    user_msg = ConversationMessage(
-        conversation_id=conv.id,
-        role="user",
-        content=req.question,
-        message_type="explore",
-    )
-    db.add(user_msg)
-
-    # 调用 Agent（探索节点）
+    # 调用 Agent 出下一题
     agent_state = {
-        "action": "explore",
-        "knowledge_point_id": conv.knowledge_point_id,
+        "action": "next",
         "knowledge_point_name": node.name if node else "",
-        "user_input": req.question,
-        "question_id": conv.question_id or 0,
-        "question_content": question.content if question else "",
+        "user_input": "",
+        "question_history": _build_question_history(conv),
+        "question_content": "",
         "rubric_items": [],
-        "score": conv.score or 0,
-        "rubric_result": conv.rubric_result or {},
-        "feedback": conv.feedback or "",
-        "explore_count": conv.explore_count,
-        "explore_history": explore_history,
+        "score": 0,
+        "rubric_result": {},
+        "feedback": "",
+        "follow_up": None,
+        "follow_up_rubric": [],
+        "summary": [],
         "agent_response": "",
         "phase": "",
     }
     result = await study_graph.ainvoke(agent_state)
 
-    # 记录 Agent 回答
-    agent_msg = ConversationMessage(
+    # 更新 conversation
+    conv.question_round += 1
+    conv.current_question = result["question_content"]
+    conv.current_rubric = result["rubric_items"]
+    conv.status = "questioning"
+
+    # 记录出题消息
+    msg = ConversationMessage(
         conversation_id=conv.id,
         role="agent",
-        content=result["agent_response"],
-        message_type="explore",
+        content=result["question_content"],
+        message_type="question",
     )
-    db.add(agent_msg)
-
-    # 更新探索轮数
-    conv.explore_count = result["explore_count"]
+    db.add(msg)
 
     await db.commit()
 
-    return ApiResponse.ok(data=ExploreResponse(
+    return ApiResponse.ok(data=QuestionResponse(
         conversation_id=conv.id,
-        answer=result["agent_response"],
-        explore_count=result["explore_count"],
-        max_explore=settings.MAX_EXPLORE_ROUNDS,
+        session_id=conv.study_session_id,
+        knowledge_point_name=node.name if node else "",
+        question_content=result["question_content"],
+        question_round=conv.question_round,
     ))
+
+
+@router.get("/summaries/{conversation_id}", summary="获取学习小结")
+async def get_summaries(
+    conversation_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """获取本次对话的所有学习小结"""
+    conv = await db.get(Conversation, conversation_id)
+    if not conv:
+        raise HTTPException(status_code=404, detail="对话不存在")
+
+    return ApiResponse.ok(data=conv.learning_summaries or [])

@@ -1,16 +1,48 @@
 """
-Phase 0 Streamlit 前端 — 学习对话界面
-功能：选择知识点 → 回答问题 → 查看 Rubric 评分 → 自由探索追问
+面试备考 Agent 前端 — 学习对话界面
+流程：选择知识点 → LLM 动态出题 → 回答 → Rubric 评分 → LLM 决定追问或下一题
 """
 import streamlit as st
 import httpx
-import asyncio
 
 API_BASE = "http://127.0.0.1:8000/api/study"
 
+# ---- 样式 ----
+CUSTOM_CSS = """
+<style>
+.question-box {
+    background-color: #e8f4fd;
+    border-left: 4px solid #2196F3;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 6px 0;
+}
+.answer-box {
+    background-color: #fff8e1;
+    border-left: 4px solid #FF9800;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 6px 0;
+}
+.score-box {
+    background-color: #e8f5e9;
+    border-left: 4px solid #4CAF50;
+    padding: 12px 16px;
+    border-radius: 6px;
+    margin: 6px 0;
+}
+.round-group {
+    border: 1px solid #e0e0e0;
+    border-radius: 10px;
+    padding: 16px;
+    margin: 12px 0;
+    background-color: #fafafa;
+}
+</style>
+"""
+
 
 def api_get(path: str, params: dict = None) -> dict:
-    """同步 GET 请求（带重试）"""
     for attempt in range(3):
         try:
             resp = httpx.get(f"{API_BASE}{path}", params=params, timeout=30)
@@ -23,36 +55,38 @@ def api_get(path: str, params: dict = None) -> dict:
 
 
 def api_post(path: str, json_data: dict) -> dict:
-    """同步 POST 请求"""
-    resp = httpx.post(f"{API_BASE}{path}", json=json_data, timeout=60)
+    resp = httpx.post(f"{API_BASE}{path}", json=json_data, timeout=120)
     return resp.json()
 
 
-# ---- 页面配置 ----
+def render_round_group(messages: list[dict]) -> str:
+    html = '<div class="round-group">'
+    for msg in messages:
+        t = msg.get("type", "question")
+        css_class = {"question": "question-box", "answer": "answer-box", "score": "score-box"}.get(t, "question-box")
+        html += f'<div class="{css_class}">{msg["html"]}</div>'
+    html += '</div>'
+    return html
+
+
 st.set_page_config(page_title="面试备考 Agent", page_icon="📚", layout="wide")
-st.title("📚 面试备考 Agent — Phase 0")
-st.caption("以考代学：选择知识点 → 回答问题 → 查看评分 → 自由探索追问")
+st.markdown(CUSTOM_CSS, unsafe_allow_html=True)
+st.title("📚 面试备考 Agent")
+st.caption("以考代学：选择知识点 → 回答问题 → 查看评分 → 追问/下一题")
 
 # ---- 初始化 session state ----
-if "conversation_id" not in st.session_state:
-    st.session_state.conversation_id = None
-if "phase" not in st.session_state:
-    st.session_state.phase = "select"  # select | answering | scored | exploring
-if "messages" not in st.session_state:
-    st.session_state.messages = []
-if "current_kp" not in st.session_state:
-    st.session_state.current_kp = None
-if "explore_count" not in st.session_state:
-    st.session_state.explore_count = 0
-if "extensions_loaded" not in st.session_state:
-    st.session_state.extensions_loaded = False
-if "extensions_data" not in st.session_state:
-    st.session_state.extensions_data = None
+for key, default in [
+    ("conversation_id", None), ("session_id", None),
+    ("phase", "select"), ("round_groups", []),
+    ("current_round", []), ("current_kp", None),
+    ("question_round", 0),
+]:
+    if key not in st.session_state:
+        st.session_state[key] = default
 
 # ---- 侧边栏：选择知识点 ----
 with st.sidebar:
     st.header("📋 知识点列表")
-
     try:
         resp = api_get("/knowledge-points")
         if resp["code"] == 0 and resp["data"]:
@@ -60,18 +94,20 @@ with st.sidebar:
             for kp in kp_list:
                 label = f"{'⭐' * kp['interview_weight']} {kp['name']}"
                 if kp["mastery_level"] > 0:
-                    label += f" (掌握{kp['mastery_level']}%)"
+                    label += f" ({kp['mastery_level']}%)"
                 if st.button(label, key=f"kp_{kp['id']}", use_container_width=True):
-                    # 开始学习此知识点
-                    start_resp = api_post("/start", {"knowledge_point_id": kp["id"]})
+                    with st.spinner("🧠 正在出题..."):
+                        start_resp = api_post("/start", {"knowledge_point_id": kp["id"]})
                     if start_resp["code"] == 0:
                         data = start_resp["data"]
                         st.session_state.conversation_id = data["conversation_id"]
+                        st.session_state.session_id = data["session_id"]
                         st.session_state.phase = "answering"
                         st.session_state.current_kp = data["knowledge_point_name"]
-                        st.session_state.explore_count = 0
-                        st.session_state.messages = [
-                            {"role": "agent", "content": f"📝 **{data['knowledge_point_name']}**\n\n{data['question_content']}"}
+                        st.session_state.question_round = data["question_round"]
+                        st.session_state.round_groups = []
+                        st.session_state.current_round = [
+                            {"type": "question", "html": f"📝 <b>第{data['question_round']}题</b><br>{data['question_content']}"}
                         ]
                         st.rerun()
                     else:
@@ -79,127 +115,87 @@ with st.sidebar:
         else:
             st.warning("暂无知识点，请先运行 seed_data")
     except httpx.ConnectError:
-        st.error("无法连接后端 API，请确保后端已启动: uvicorn backend.main:app --reload")
+        st.error("无法连接后端 API，请确保后端已启动")
 
     st.divider()
     if st.button("🔄 重置对话", use_container_width=True):
-        st.session_state.conversation_id = None
+        for key in ["conversation_id", "session_id", "current_kp"]:
+            st.session_state[key] = None
         st.session_state.phase = "select"
-        st.session_state.messages = []
-        st.session_state.current_kp = None
-        st.session_state.explore_count = 0
-        st.session_state.extensions_loaded = False
-        st.session_state.extensions_data = None
+        st.session_state.round_groups = []
+        st.session_state.current_round = []
+        st.session_state.question_round = 0
         st.rerun()
 
 # ---- 主区域：对话 ----
 if st.session_state.phase == "select":
     st.info("👈 请从左侧选择一个知识点开始学习")
 else:
-    # 显示当前知识点
     st.subheader(f"📖 {st.session_state.current_kp}")
 
-    # 显示所有消息
-    for msg in st.session_state.messages:
-        role = msg["role"]
-        with st.chat_message("assistant" if role == "agent" else "user"):
-            st.markdown(msg["content"])
+    for group in st.session_state.round_groups:
+        st.markdown(render_round_group(group), unsafe_allow_html=True)
 
-    # 输入区
+    if st.session_state.current_round:
+        st.markdown(render_round_group(st.session_state.current_round), unsafe_allow_html=True)
+
     if st.session_state.phase == "answering":
         answer = st.chat_input("输入你的回答...")
         if answer:
-            # 显示用户回答
-            st.session_state.messages.append({"role": "user", "content": answer})
-
-            # 提交评分
+            st.session_state.current_round.append({"type": "answer", "html": f"💬 {answer}"})
             with st.spinner("🤔 正在评分..."):
                 resp = api_post("/answer", {
                     "conversation_id": st.session_state.conversation_id,
                     "answer": answer,
                 })
-
             if resp["code"] == 0:
                 data = resp["data"]
-
-                # --- 构建评分表格 ---
-                score_text = f"### 得分: {data['total_score']}/100\n\n"
-                score_text += "| 状态 | 关键点 | 分值 | 关键词 | 重要性 | 评语 |\n"
-                score_text += "|:---:|--------|:---:|--------|--------|------|\n"
+                score_html = f"<b>得分: {data['total_score']}/100</b> — {data['feedback']}<br>"
+                score_html += '<table style="width:100%; border-collapse:collapse; margin:8px 0; font-size:14px;">'
                 for item in data["rubric_result"]:
                     icon = "✅" if item["hit"] else "❌"
-                    keywords = "、".join(item.get("keywords", [])) if item.get("keywords") else "-"
-                    importance = item.get("importance", "-")
-                    comment = item.get("comment", "")
-                    score_text += f"| {icon} | **{item['key_point']}** | {item['score']} | `{keywords}` | {importance} | {comment} |\n"
-
-                score_text += f"\n---\n💡 **反馈**: {data['feedback']}"
-
-                # --- 推荐回答 ---
-                if data.get("standard_answer"):
-                    score_text += f"\n\n📖 **推荐回答**:\n\n{data['standard_answer']}"
-
-                # --- 追问遗漏点 ---
-                if data.get("follow_up") and data["follow_up"] != "回答非常完整！":
-                    score_text += f"\n\n---\n🤔 **追问**: {data['follow_up']}"
-                elif data.get("follow_up"):
-                    score_text += f"\n\n---\n🎉 {data['follow_up']}"
-
-                score_text += f"\n\n_可以继续追问（{5 - st.session_state.explore_count}/{5}轮），或点击左侧选择下一个知识点_"
-
-                st.session_state.messages.append({"role": "agent", "content": score_text})
-                st.session_state.extensions_loaded = False
-                st.session_state.extensions_data = None
-                st.session_state.phase = "scored"
+                    matched = item.get("matched_text", "") or ""
+                    row_bg = "#e8f5e9" if item["hit"] else "#ffebee"
+                    matched_display = f'<span style="color:#666;font-style:italic;">「{matched}」</span>' if matched else '<span style="color:#999;">未提及</span>'
+                    score_html += f'<tr style="background:{row_bg};border-bottom:1px solid #e0e0e0;"><td style="padding:4px 8px;">{icon} <b>{item["key_point"]}</b>（{item["score"]}分）<br>{matched_display}</td></tr>'
+                score_html += '</table>'
+                rec = data.get("recommended_answer")
+                if rec:
+                    score_html += '<br>📖 <b>推荐回答</b>:<br>'
+                    if isinstance(rec, list):
+                        for j, point in enumerate(rec, 1):
+                            score_html += f'{j}. {point}<br>'
+                    else:
+                        score_html += f'{rec}'
+                if data.get("follow_up"):
+                    st.session_state.current_round.append({"type": "score", "html": score_html})
+                    st.session_state.round_groups.append(st.session_state.current_round)
+                    st.session_state.current_round = [
+                        {"type": "question", "html": f"🤔 <b>追问</b><br>{data['follow_up']}"}
+                    ]
+                    st.session_state.phase = "answering"
+                else:
+                    st.session_state.current_round.append({"type": "score", "html": score_html})
+                    st.session_state.round_groups.append(st.session_state.current_round)
+                    st.session_state.current_round = []
+                    st.session_state.phase = "scored"
                 st.rerun()
             else:
                 st.error(resp.get("message", "评分失败"))
 
-    elif st.session_state.phase in ("scored", "exploring"):
-        # --- 拓展问题按钮 ---
-        if not st.session_state.extensions_loaded:
-            if st.button("📚 查看拓展问题", use_container_width=False):
-                with st.spinner("🧠 生成拓展问题..."):
-                    ext_resp = api_post("/extensions", {
-                        "conversation_id": st.session_state.conversation_id,
-                        "answer": "",
-                    })
-                if ext_resp["code"] == 0:
-                    st.session_state.extensions_data = ext_resp["data"]["extensions"]
-                    st.session_state.extensions_loaded = True
+    elif st.session_state.phase == "scored":
+        col1, col2 = st.columns([1, 4])
+        with col1:
+            if st.button("➡️ 下一题", use_container_width=True):
+                with st.spinner("🧠 正在出题..."):
+                    resp = api_post("/next", {"conversation_id": st.session_state.conversation_id})
+                if resp["code"] == 0:
+                    data = resp["data"]
+                    st.session_state.question_round = data["question_round"]
+                    st.session_state.phase = "answering"
+                    st.session_state.current_round = [
+                        {"type": "question", "html": f"📝 <b>第{data['question_round']}题</b><br>{data['question_content']}"}
+                    ]
                     st.rerun()
                 else:
-                    st.error("拓展问题生成失败")
-        else:
-            # 展示已加载的拓展问题
-            st.divider()
-            st.markdown("### 📚 拓展问题")
-            for i, ext in enumerate(st.session_state.extensions_data, 1):
-                with st.expander(f"**问题 {i}**: {ext['question']}", expanded=False):
-                    st.markdown(ext["answer"])
-
-        explore_q = st.chat_input(f"追问（{st.session_state.explore_count}/5轮）或选择左侧下一个知识点...")
-        if explore_q:
-            st.session_state.messages.append({"role": "user", "content": explore_q})
-
-            with st.spinner("🤔 思考中..."):
-                resp = api_post("/explore", {
-                    "conversation_id": st.session_state.conversation_id,
-                    "question": explore_q,
-                })
-
-            if resp["code"] == 0:
-                data = resp["data"]
-                st.session_state.explore_count = data["explore_count"]
-                remaining = data["max_explore"] - data["explore_count"]
-                answer_text = data["answer"]
-                if remaining > 0:
-                    answer_text += f"\n\n_还可追问 {remaining} 轮_"
-                else:
-                    answer_text += "\n\n⚠️ _探索已达上限，建议进入下一个知识点_"
-
-                st.session_state.messages.append({"role": "agent", "content": answer_text})
-                st.session_state.phase = "exploring"
-                st.rerun()
-            else:
-                st.error(resp.get("message", "探索失败"))
+                    st.error(resp.get("message", "出题失败"))

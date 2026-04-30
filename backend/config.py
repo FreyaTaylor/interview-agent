@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     DASHSCOPE_API_KEY: str = ""
 
     # 业务参数
-    MAX_EXPLORE_ROUNDS: int = 5  # 自由探索最大轮数
+    MAX_FOLLOW_UP_ROUNDS: int = 3  # 单题最大追问轮数
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
