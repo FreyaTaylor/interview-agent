@@ -209,3 +209,73 @@ body {
   .study-sidebar { flex-direction: column; }
   .sidebar { width: 100%; position: static; }
 }
+
+/* ============================================================
+   面试复盘页
+   ============================================================ */
+.interview-upload h2, .interview-result h2 {
+  font-size: 20px; font-weight: 600; margin-bottom: 12px;
+}
+.form-row { display: flex; gap: 12px; margin-bottom: 12px; }
+.form-input {
+  padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px;
+  font-size: 14px; outline: none; font-family: inherit;
+  transition: border-color 0.2s;
+}
+.form-input:focus { border-color: #1677ff; }
+.form-textarea {
+  width: 100%; padding: 14px 16px; border: 1px solid #ddd; border-radius: 10px;
+  font-size: 14px; outline: none; font-family: inherit; resize: vertical;
+  line-height: 1.7; transition: border-color 0.2s;
+}
+.form-textarea:focus { border-color: #1677ff; box-shadow: 0 0 0 2px rgba(22,119,255,0.1); }
+.parse-btn {
+  padding: 10px 28px; background: #1677ff; color: #fff; border: none;
+  border-radius: 8px; font-size: 14px; font-weight: 500; cursor: pointer;
+  transition: background 0.2s;
+}
+.parse-btn:hover { background: #4096ff; }
+.parse-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+
+.result-summary {
+  color: #666; font-size: 14px; margin-bottom: 16px;
+  padding: 10px 16px; background: #f9f9fb; border-radius: 8px;
+}
+.result-stats { display: flex; gap: 12px; margin-bottom: 20px; }
+.stat-badge {
+  padding: 6px 16px; border-radius: 20px; font-size: 13px; font-weight: 500;
+}
+.stat-badge.know { background: #e8f4fd; color: #1677ff; }
+.stat-badge.algo { background: #fff7e6; color: #fa8c16; }
+.stat-badge.hr { background: #f6ffed; color: #52c41a; }
+
+.result-group {
+  background: #fff; border: 1px solid #eee; border-radius: 10px;
+  padding: 16px; margin-bottom: 12px;
+}
+.result-group.knowledge { border-left: 3px solid #1677ff; }
+.result-group.algorithm { border-left: 3px solid #fa8c16; }
+.result-group.hr { border-left: 3px solid #52c41a; }
+
+.group-header {
+  display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
+}
+.group-type { font-size: 18px; }
+.group-title { font-size: 15px; font-weight: 600; flex: 1; }
+.group-count { font-size: 12px; color: #aaa; }
+.lc-link {
+  font-size: 12px; color: #fa8c16; text-decoration: none;
+  padding: 2px 8px; border: 1px solid #fa8c16; border-radius: 4px;
+}
+.lc-link:hover { background: #fa8c16; color: #fff; }
+
+.group-questions {
+  list-style: none; padding: 0;
+}
+.group-questions li {
+  padding: 4px 0 4px 20px; font-size: 13px; color: #555;
+  position: relative;
+}
+.group-questions li::before {
+  content: '•'; position: absolute; left: 6px; color: #ccc;
+}

@@ -10,6 +10,7 @@ from backend.database import engine
 from backend.models import Base
 from backend.api.study import router as study_router
 from backend.api.knowledge import router as knowledge_router
+from backend.api.interview import router as interview_router
 
 # 日志配置
 logging.basicConfig(
@@ -51,6 +52,7 @@ app.add_middleware(
 # 注册路由
 app.include_router(study_router)
 app.include_router(knowledge_router)
+app.include_router(interview_router)
 
 
 @app.get("/health")
