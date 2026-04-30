@@ -14,7 +14,7 @@ from backend.models.study import (
 )
 from backend.schemas.common import ApiResponse
 from backend.schemas.study import (
-    StartStudyRequest, SubmitAnswerRequest, NextQuestionRequest,
+    StartStudyRequest, StartWithAnswerRequest, SubmitAnswerRequest, NextQuestionRequest,
     QuestionResponse, ScoreResponse,
     KnowledgePointBrief, RubricItemResult,
 )
@@ -385,3 +385,147 @@ async def get_summaries(
         raise HTTPException(status_code=404, detail="对话不存在")
 
     return ApiResponse.ok(data=conv.learning_summaries or [])
+
+
+@router.post("/start-with-answer", summary="从面试复盘进入学习（带回答）")
+async def start_with_answer(
+    req: StartWithAnswerRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """
+    从面试复盘进入学习：
+    1. 动态出题（基于面试中被问到的问题）
+    2. 自动提交用户在面试中的回答进行评分
+    3. 一步完成出题+评分，返回评分结果
+    """
+    node = await db.get(KnowledgeNode, req.knowledge_point_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="知识点不存在")
+
+    # 创建会话和对话
+    session = StudySession(source_type="text_upload", title=f"面试复盘: {node.name}")
+    db.add(session)
+    await db.flush()
+
+    conv = Conversation(
+        study_session_id=session.id,
+        knowledge_point_id=req.knowledge_point_id,
+        question_round=1, learning_summaries=[], status="questioning",
+    )
+    db.add(conv)
+    await db.flush()
+
+    # 查历史
+    question_history = []
+    history_stmt = (
+        select(Conversation)
+        .where(Conversation.knowledge_point_id == req.knowledge_point_id,
+               Conversation.learning_summaries.isnot(None))
+        .order_by(Conversation.created_at.desc()).limit(5)
+    )
+    for pc in reversed((await db.execute(history_stmt)).scalars().all()):
+        for s in (pc.learning_summaries or []):
+            missed = [i["key_point"] for i in s.get("rubric_result", {}).get("items", []) if not i.get("hit")]
+            question_history.append({"question": s.get("question", ""), "score": s.get("score", 0), "missed": missed})
+
+    # 出题（基于面试中的问题上下文）
+    agent_state = {
+        "action": "start", "knowledge_point_name": node.name,
+        "user_input": "", "question_history": question_history,
+        "question_content": "", "rubric_items": [],
+        "score": 0, "rubric_result": {}, "feedback": "",
+        "follow_up": None, "follow_up_rubric": [], "summary": [],
+        "agent_response": "", "phase": "",
+    }
+    gen_result = await study_graph.ainvoke(agent_state)
+
+    conv.current_question = gen_result["question_content"]
+    conv.current_rubric = gen_result["rubric_items"]
+
+    # 记录出题
+    db.add(ConversationMessage(conversation_id=conv.id, role="agent",
+                                content=gen_result["question_content"], message_type="question"))
+
+    # 如果有用户回答，直接评分
+    if req.user_answer.strip():
+        db.add(ConversationMessage(conversation_id=conv.id, role="user",
+                                    content=req.user_answer, message_type="answer"))
+
+        score_state = {
+            "action": "answer", "knowledge_point_name": node.name,
+            "user_input": req.user_answer,
+            "question_history": question_history,
+            "question_content": conv.current_question,
+            "rubric_items": conv.current_rubric,
+            "score": 0, "rubric_result": {}, "feedback": "",
+            "follow_up": None, "follow_up_rubric": [], "summary": [],
+            "agent_response": "", "phase": "",
+        }
+        score_result = await study_graph.ainvoke(score_state)
+
+        # 保存评分
+        summaries = conv.learning_summaries or []
+        summaries.append({
+            "question": conv.current_question, "score": score_result["score"],
+            "rubric_result": score_result["rubric_result"], "summary": score_result.get("summary", []),
+            "round": conv.question_round,
+        })
+        conv.learning_summaries = summaries
+
+        follow_up = score_result.get("follow_up")
+        if follow_up:
+            conv.current_question = follow_up
+            conv.current_rubric = score_result.get("follow_up_rubric", [])
+            db.add(ConversationMessage(conversation_id=conv.id, role="agent",
+                                        content=follow_up, message_type="follow_up"))
+        else:
+            conv.current_question = None
+            conv.current_rubric = None
+            conv.status = "answered"
+
+        db.add(ConversationMessage(conversation_id=conv.id, role="agent",
+                                    content=score_result["feedback"], message_type="scoring"))
+
+        # 更新掌握度 (EMA)
+        mastery_stmt = select(MasteryRecord).where(
+            MasteryRecord.user_id == 1, MasteryRecord.knowledge_point_id == conv.knowledge_point_id)
+        mastery = (await db.execute(mastery_stmt)).scalar_one_or_none()
+        if mastery:
+            mastery.mastery_level = int(0.4 * score_result["score"] + 0.6 * mastery.mastery_level)
+            mastery.study_count += 1
+        else:
+            mastery = MasteryRecord(knowledge_point_id=conv.knowledge_point_id,
+                                     mastery_level=score_result["score"], study_count=1)
+            db.add(mastery)
+
+        await db.commit()
+
+        rubric_items_result = [RubricItemResult(**item) for item in score_result["rubric_result"].get("items", [])]
+        rec = score_result["rubric_result"].get("recommended_answer", [])
+        if isinstance(rec, str): rec = [rec] if rec else []
+
+        return ApiResponse.ok(data={
+            "mode": "scored",
+            "conversation_id": conv.id,
+            "session_id": session.id,
+            "knowledge_point_name": node.name,
+            "question_content": gen_result["question_content"],
+            "question_round": conv.question_round,
+            "total_score": score_result["score"],
+            "rubric_result": [r.model_dump() for r in rubric_items_result],
+            "feedback": score_result["feedback"],
+            "recommended_answer": rec,
+            "follow_up": follow_up,
+            "user_answer": req.user_answer,
+        })
+    else:
+        # 没有回答，只出题
+        await db.commit()
+        return ApiResponse.ok(data={
+            "mode": "question_only",
+            "conversation_id": conv.id,
+            "session_id": session.id,
+            "knowledge_point_name": node.name,
+            "question_content": gen_result["question_content"],
+            "question_round": conv.question_round,
+        })

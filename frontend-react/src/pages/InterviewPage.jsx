@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 
-const API = 'http://127.0.0.1:8000/api/interview'
+const API = 'http://127.0.0.1:8000/api'
 
 export default function InterviewPage() {
   const [text, setText] = useState('')
@@ -9,13 +9,15 @@ export default function InterviewPage() {
   const [position, setPosition] = useState('')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
+  const [studyLoading, setStudyLoading] = useState(null)  // 正在学习的知识点 index
+  const navigate = useNavigate()
 
   async function handleParse() {
     if (!text.trim() || loading) return
     setLoading(true)
     setResult(null)
     try {
-      const resp = await fetch(`${API}/parse`, {
+      const resp = await fetch(`${API}/interview/parse`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, company, position }),
@@ -29,6 +31,30 @@ export default function InterviewPage() {
       alert('请求失败，请确保后端已启动')
     }
     setLoading(false)
+  }
+
+  async function startStudyWithAnswer(group, idx) {
+    setStudyLoading(idx)
+    try {
+      const resp = await fetch(`${API}/study/start-with-answer`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          knowledge_point_id: group.matched_node_id,
+          user_answer: group.user_answer || '',
+          interview_questions: group.questions || [],
+        }),
+      }).then(r => r.json())
+
+      if (resp.code === 0) {
+        // 把评分结果存到 sessionStorage，学习页读取
+        sessionStorage.setItem('interview_study_result', JSON.stringify(resp.data))
+        navigate(`/study/${group.matched_node_id}`)
+      }
+    } catch (e) {
+      alert('请求失败')
+    }
+    setStudyLoading(null)
   }
 
   return (
@@ -82,17 +108,24 @@ export default function InterviewPage() {
             <div className="result-group knowledge" key={i}>
               <div className="group-header">
                 <span className="group-type">📖</span>
-                <span className="group-title">{g.knowledge_point}</span>
+                <span className="group-title">
+                  {g.knowledge_point}
+                  {g.auto_created && <span style={{fontSize:11,color:'#fa8c16',marginLeft:6}}>新增</span>}
+                </span>
                 <span className="group-count">{g.questions.length} 个问题</span>
-                {g.matched_node_id ? (
-                  <Link to={`/study/${g.matched_node_id}`} className="study-btn">开始学习</Link>
-                ) : (
-                  <span style={{ color: '#aaa', fontSize: 12 }}>未匹配知识树</span>
-                )}
+                <button className="study-btn" disabled={studyLoading === i}
+                        onClick={() => startStudyWithAnswer(g, i)}>
+                  {studyLoading === i ? '出题中...' : '开始学习'}
+                </button>
               </div>
               <ul className="group-questions">
                 {g.questions.map((q, j) => <li key={j}>{q}</li>)}
               </ul>
+              {g.user_answer && (
+                <div style={{fontSize:13,color:'#666',marginTop:6,padding:'6px 12px',background:'#f9f9fb',borderRadius:6}}>
+                  💬 我的回答：{g.user_answer}
+                </div>
+              )}
             </div>
           ))}
 

@@ -11,6 +11,13 @@ class StartStudyRequest(BaseModel):
     knowledge_point_id: int
 
 
+class StartWithAnswerRequest(BaseModel):
+    """从面试复盘进入学习 — 带用户回答"""
+    knowledge_point_id: int
+    user_answer: str = ""        # 面试中的回答摘要
+    interview_questions: list[str] = []  # 面试中被问到的问题
+
+
 class SubmitAnswerRequest(BaseModel):
     """提交回答（首次回答或追问回答通用）"""
     conversation_id: int
