@@ -115,12 +115,40 @@ async def start_study(
     db.add(conv)
     await db.flush()
 
-    # 调用 Agent 动态出题
+    # 查询该知识点的历史学习记录（之前的 conversation），构建出题上下文
+    history_stmt = (
+        select(Conversation)
+        .where(
+            Conversation.knowledge_point_id == req.knowledge_point_id,
+            Conversation.learning_summaries.isnot(None),
+        )
+        .order_by(Conversation.created_at.desc())
+        .limit(5)  # 最近 5 次对话
+    )
+    history_result = await db.execute(history_stmt)
+    past_convs = history_result.scalars().all()
+
+    # 从历史对话中提取已考题目+得分+遗漏点
+    question_history = []
+    for pc in reversed(past_convs):  # 按时间正序
+        for s in (pc.learning_summaries or []):
+            missed = [
+                item["key_point"]
+                for item in s.get("rubric_result", {}).get("items", [])
+                if not item.get("hit", False)
+            ]
+            question_history.append({
+                "question": s.get("question", ""),
+                "score": s.get("score", 0),
+                "missed": missed,
+            })
+
+    # 调用 Agent 动态出题（带历史上下文）
     agent_state = {
         "action": "start",
         "knowledge_point_name": node.name,
         "user_input": "",
-        "question_history": [],
+        "question_history": question_history,
         "question_content": "",
         "rubric_items": [],
         "score": 0,
