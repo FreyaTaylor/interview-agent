@@ -64,20 +64,15 @@ async def match_knowledge_nodes(
     leaves = result.scalars().all()
     leaf_map = {n.name.lower().replace(" ", ""): n for n in leaves}
 
-    # 确保有"面试复盘"一级分类（用于挂新知识点）
-    review_cat = None
-    cat_stmt = select(KnowledgeNode).where(
-        KnowledgeNode.name == "面试复盘", KnowledgeNode.level == 1
-    )
+    # 确保有兜底分类（未分类知识点用）
+    # 同时加载所有一级/二级分类用于匹配
+    cat_stmt = select(KnowledgeNode).where(KnowledgeNode.node_type == "category")
     cat_result = await db.execute(cat_stmt)
-    review_cat = cat_result.scalar_one_or_none()
-    if not review_cat:
-        review_cat = KnowledgeNode(
-            name="面试复盘", level=1, node_type="category",
-            sort_order=99, is_user_created=False,
-        )
-        db.add(review_cat)
-        await db.flush()
+    all_cats = cat_result.scalars().all()
+    # level-1 分类 name → node
+    cat1_map = {c.name.lower().replace(" ", ""): c for c in all_cats if c.level == 1}
+    # level-2 分类 name → node
+    cat2_map = {c.name.lower().replace(" ", ""): c for c in all_cats if c.level == 2}
 
     enriched = []
     for g in groups:
@@ -96,11 +91,40 @@ async def match_knowledge_nodes(
                 g["matched_node_id"] = matched.id
                 g["matched_node_name"] = matched.name
             else:
-                # 自动创建新叶子节点
+                # 自动创建：找或创建合适的父分类
+                category_name = g.get("category", "其他").lower().replace(" ", "")
+                parent = None
+
+                # 先匹配二级分类
+                for cn, cnode in cat2_map.items():
+                    if cn in category_name or category_name in cn:
+                        parent = cnode
+                        break
+
+                # 再匹配一级分类
+                if not parent:
+                    for cn, cnode in cat1_map.items():
+                        if cn in category_name or category_name in cn:
+                            parent = cnode
+                            break
+
+                # 都没匹配到，创建一级分类
+                if not parent:
+                    cat_display = g.get("category", "其他")
+                    parent = KnowledgeNode(
+                        name=cat_display, level=1, node_type="category",
+                        sort_order=50, is_user_created=False,
+                    )
+                    db.add(parent)
+                    await db.flush()
+                    cat1_map[category_name] = parent
+
+                # 创建叶子节点
+                new_level = parent.level + 1
                 new_node = KnowledgeNode(
-                    parent_id=review_cat.id,
+                    parent_id=parent.id,
                     name=g.get("knowledge_point", "未知知识点"),
-                    level=2, node_type="leaf",
+                    level=new_level, node_type="leaf",
                     interview_weight=3, is_user_created=False,
                 )
                 db.add(new_node)
@@ -108,7 +132,6 @@ async def match_knowledge_nodes(
                 g["matched_node_id"] = new_node.id
                 g["matched_node_name"] = new_node.name
                 g["auto_created"] = True
-                # 更新 leaf_map 防止同名重复创建
                 leaf_map[kp_name] = new_node
 
         enriched.append(g)

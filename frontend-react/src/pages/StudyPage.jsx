@@ -23,14 +23,70 @@ export default function StudyPage() {
     })
   }, [])
 
-  // 从知识树跳转：自动出题
+  // 从知识树跳转 或 面试复盘跳转
   useEffect(() => {
     if (kpId && kpList.length > 0) {
-      startStudy(parseInt(kpId))
+      // 检查是否有面试复盘的评分结果
+      const stored = sessionStorage.getItem('interview_study_result')
+      if (stored) {
+        sessionStorage.removeItem('interview_study_result')
+        const data = JSON.parse(stored)
+        loadInterviewResult(data)
+      } else {
+        startStudy(parseInt(kpId))
+      }
     }
   }, [kpId, kpList])
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [rounds, currentRound])
+
+  function loadInterviewResult(data) {
+    setConvId(data.conversation_id)
+    setKpName(data.knowledge_point_name)
+    navigate('/study', { replace: true })
+
+    if (data.mode === 'scored') {
+      // 构建面试回答 + 评分的展示
+      const qHtml = `📝 <b>面试题目</b><br>${data.question_content}`
+      const aHtml = `💬 <b>面试中的回答</b><br>${data.user_answer}`
+
+      let scoreHtml = `<b>得分: ${data.total_score}/100</b> — ${data.feedback}<br>`
+      scoreHtml += '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;">'
+      for (const item of (data.rubric_result || [])) {
+        const icon = item.hit ? '✅' : '❌'
+        const matched = item.matched_text || ''
+        const bg = item.hit ? '#e8f5e9' : '#ffebee'
+        const md = matched ? `<span style="color:#666;font-style:italic;">「${matched}」</span>` : '<span style="color:#999;">未提及</span>'
+        scoreHtml += `<tr style="background:${bg};border-bottom:1px solid #e0e0e0;"><td style="padding:4px 8px;">${icon} <b>${item.key_point}</b>（${item.score}分）<br>${md}</td></tr>`
+      }
+      scoreHtml += '</table>'
+      const rec = data.recommended_answer
+      if (rec && Array.isArray(rec) && rec.length > 0) {
+        scoreHtml += '<br>📖 <b>推荐回答</b>:<br>'
+        rec.forEach((p, i) => { scoreHtml += `${i + 1}. ${p}<br>` })
+      }
+
+      const round = [
+        { type: 'q', html: qHtml },
+        { type: 'a', html: aHtml },
+        { type: 's', html: scoreHtml },
+      ]
+
+      if (data.follow_up) {
+        setRounds([round])
+        setCurrentRound([{ type: 'q', html: `🤔 <b>追问</b><br>${data.follow_up}` }])
+        setPhase('answering')
+      } else {
+        setRounds([round])
+        setCurrentRound([])
+        setPhase('scored')
+      }
+    } else {
+      // question_only 模式
+      setCurrentRound([{ type: 'q', html: `📝 <b>第${data.question_round}题</b><br>${data.question_content}` }])
+      setPhase('answering')
+    }
+  }
 
   async function startStudy(id) {
     setLoading(true)
