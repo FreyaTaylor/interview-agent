@@ -177,13 +177,15 @@ export default function StudyPage() {
   return (
     <div className="study-sidebar">
       <div className="sidebar">
-        <h3>📋 知识点</h3>
-        {kpList.map(kp => (
+        {kpList.map(kp => {
+          const stars = '★'.repeat(kp.interview_weight) + '☆'.repeat(5 - kp.interview_weight)
+          return (
           <button key={kp.id} className="kp-btn" onClick={() => startStudy(kp.id)}>
-            {'⭐'.repeat(kp.interview_weight)} {kp.name}
+            <span style={{ flex: 1 }}>{kp.name}</span>
+            <span className="stars" style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>{stars}</span>
             {kp.mastery_level > 0 && <div className="kp-mastery">{kp.mastery_level}%</div>}
           </button>
-        ))}
+        )})}
       </div>
       <div className="study-main">
         {phase === 'select' && !loading && (

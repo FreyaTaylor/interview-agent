@@ -31,8 +31,6 @@ export default function ProjectQuestionsPage() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 16 }}>🔨 项目拷打</h2>
-
       {(() => {
         const byProject = {}
         projects.forEach((g, i) => {
@@ -41,34 +39,44 @@ export default function ProjectQuestionsPage() {
           byProject[name].push({ ...g, _idx: i })
         })
         return Object.entries(byProject).map(([projName, topics]) => (
-          <div key={projName} style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 0', cursor: 'pointer', borderBottom: '2px solid #f0e6ff' }}
-                 onClick={() => toggle(`proj_${projName}`)}>
-              <span style={{ fontSize: 16, color: '#722ed1' }}>{expanded[`proj_${projName}`] === false ? '▶' : '▼'}</span>
-              <span style={{ fontSize: 17, fontWeight: 700, color: '#333' }}>📁 {projName}</span>
-              <span style={{ fontSize: 13, color: '#999' }}>{topics.length} 个话题 · {topics.reduce((s, t) => s + (t.questions?.length || 0), 0)} 个问题</span>
+          <div key={projName} className="tree-node">
+            {/* 项目名（一级） */}
+            <div className="node-row cat" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`proj_${projName}`)}>
+              <span className={`toggle ${expanded[`proj_${projName}`] === false ? '' : 'open'}`} />
+              <span className="node-name">{projName}</span>
+              <span style={{ fontSize: 12, color: '#999', marginLeft: 8 }}>{topics.length} 个话题</span>
             </div>
             {expanded[`proj_${projName}`] !== false && topics.map((g) => {
               const i = g._idx; const sr = g.score_result
               const isOpen = expanded[i]
               return (
-                <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: 14, marginTop: 10, marginLeft: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', padding: '4px 0' }} onClick={() => toggle(i)}>
-                    <span style={{ color: '#722ed1', fontSize: 14, width: 20, textAlign: 'center' }}>{isOpen ? '▼' : '▶'}</span>
-                    <span style={{ fontSize: 15, fontWeight: 600, flex: 1 }}>{g.topic || '拷打'}</span>
-                    <span style={{ color: '#888', fontSize: 13 }}>{g.questions?.length || 0} 个问题</span>
+                <div key={i} className="tree-node">
+                  {/* 话题（二级） */}
+                  <div className="node-row" style={{ paddingLeft: 38, cursor: 'pointer' }} onClick={() => toggle(i)}>
+                    {(g.questions?.length > 0 || sr) ? (
+                      <span className={`toggle ${isOpen ? 'open' : ''}`} />
+                    ) : (
+                      <span className="bullet" />
+                    )}
+                    <span className="node-name">{g.topic || '拷打'}</span>
+                    <span style={{ fontSize: 12, color: '#aaa', marginLeft: 8 }}>{g.questions?.length || 0} 问</span>
                   </div>
                   {isOpen && (
-                    <div style={{ marginTop: 10, paddingLeft: 28 }}>
-                      {/* 问题列表 */}
-                      <div style={{ marginBottom: 8 }}>
-                        {g.questions?.map((q, j) => <div key={j} style={{ padding: '4px 0 4px 12px', fontSize: 13, color: '#555' }}>• {q}</div>)}
-                      </div>
-                      {/* 推荐回答 */}
+                    <div>
+                      {/* 问题（三级） */}
+                      {g.questions?.map((q, j) => (
+                        <div key={j} className="tree-node">
+                          <div className="node-row" style={{ paddingLeft: 60 }}>
+                            <span className="bullet" />
+                            <span style={{ fontSize: 13, color: '#555' }}>{q}</span>
+                          </div>
+                        </div>
+                      ))}
+                      {/* 建议回答 */}
                       {sr?.suggested_answer?.length > 0 && (
-                        <div style={{ background: '#f9f0ff', border: '1px solid #f0e6ff', borderRadius: 6, padding: '10px 14px', marginTop: 8 }}>
-                          <div style={{ fontSize: 13, fontWeight: 500, color: '#722ed1', marginBottom: 6 }}>📖 建议回答</div>
-                          {sr.suggested_answer.map((p, j) => <div key={j} style={{ fontSize: 13, color: '#555', padding: '2px 0' }}>{j + 1}. {p}</div>)}
+                        <div style={{ marginLeft: 60, marginTop: 4, marginBottom: 8, padding: '8px 12px', background: '#f9f0ff', borderRadius: 6, fontSize: 13 }}>
+                          <b style={{ color: '#722ed1' }}>📖 建议回答</b>
+                          {sr.suggested_answer.map((p, j) => <div key={j} style={{ color: '#555', padding: '2px 0' }}>{j + 1}. {p}</div>)}
                         </div>
                       )}
                     </div>

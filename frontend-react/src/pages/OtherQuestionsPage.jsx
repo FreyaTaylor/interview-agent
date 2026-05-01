@@ -54,8 +54,6 @@ export default function OtherQuestionsPage() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 12 }}>📎 其他面试问题</h2>
-
       {/* 子 Tab 栏 */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
         {allKeys.map(key => {
@@ -73,32 +71,31 @@ export default function OtherQuestionsPage() {
         })}
       </div>
 
-      {/* 内容区 */}
+      {/* 内容区 — 幕布风格 */}
       {items.map((g, i) => {
         const isOpen = expanded[`${activeTab}_${i}`]
-        const hasDetail = g.description || g.example || g.suggested_approach || g.feedback
+        const hasDetail = g.description || g.example || g.suggested_approach || g.feedback || g.answer
         const lcUrl = g.leetcode_url || null
-        const lcText = g.leetcode_id ? `LeetCode #${g.leetcode_id}` : 'LeetCode'
+        const lcText = g.leetcode_id ? `#${g.leetcode_id}` : ''
         return (
-        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: `3px solid ${cfg.color}`, padding: '10px 14px', marginBottom: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: hasDetail || activeTab !== 'algorithm' ? 'pointer' : 'default' }} onClick={() => (hasDetail || activeTab !== 'algorithm') && toggle(`${activeTab}_${i}`)}>
-            {(hasDetail || activeTab !== 'algorithm') && <span style={{ color: cfg.color, fontSize: 14 }}>{isOpen ? '▼' : '▶'}</span>}
-            <span style={{ fontWeight: 600, flex: 1 }}>{g.title || g.question || '—'}</span>
-            {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 8px' }}>×{g.count}</span>}
+        <div key={i} className="tree-node">
+          <div className="node-row" style={{ paddingLeft: 16, cursor: hasDetail ? 'pointer' : 'default' }} onClick={() => hasDetail && toggle(`${activeTab}_${i}`)}>
+            {hasDetail ? <span className={`toggle ${isOpen ? 'open' : ''}`} /> : <span className="bullet" />}
+            <span className="node-name">{g.title || g.question || '—'}</span>
+            {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 6px', marginLeft: 6 }}>×{g.count}</span>}
+            {lcText && <span style={{ fontSize: 11, color: '#888', marginLeft: 6 }}>{lcText}</span>}
             {lcUrl && (
               <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                 style={{ fontSize: 12, color: cfg.color, padding: '2px 8px', border: `1px solid ${cfg.color}`, borderRadius: 4, textDecoration: 'none' }}>
-                {lcText}
-              </a>
+                 style={{ fontSize: 11, color: cfg.color, marginLeft: 4, textDecoration: 'none' }}>↗</a>
             )}
           </div>
-          {g.answer && isOpen && <div style={{ fontSize: 13, color: '#666', marginTop: 4, paddingLeft: 24 }}>💬 {g.answer}</div>}
-          {isOpen && hasDetail && (
-            <div style={{ marginTop: 8, paddingLeft: 24, fontSize: 13 }}>
-              {g.feedback && <div style={{ color: '#555', marginBottom: 6, padding: '4px 10px', background: '#fffbe6', borderLeft: `3px solid ${cfg.color}`, borderRadius: 4 }}>💬 {g.feedback}</div>}
-              {g.description && <div style={{ marginBottom: 6 }}><b>📝 题目</b><div style={{ padding: '4px 10px', background: '#fafafa', borderRadius: 4, lineHeight: 1.7 }}>{g.description}</div></div>}
-              {g.example && <div style={{ marginBottom: 6 }}><b>💡 示例</b><pre style={{ padding: '6px 10px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre-wrap', margin: '4px 0', lineHeight: 1.6 }}>{g.example}</pre></div>}
-              {g.suggested_approach && <div><b>📖 建议解法</b><div style={{ padding: '4px 10px', background: '#f6ffed', borderRadius: 4, lineHeight: 1.7 }}>{g.suggested_approach}</div></div>}
+          {isOpen && (
+            <div style={{ paddingLeft: 38 }}>
+              {g.answer && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.answer}</span></div></div>}
+              {g.feedback && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📊 {g.feedback}</span></div></div>}
+              {g.description && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📝 {g.description}</span></div></div>}
+              {g.example && <div style={{ marginLeft: 16, padding: '4px 10px', background: '#f5f5f5', borderRadius: 4, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.example}</div>}
+              {g.suggested_approach && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📖 {g.suggested_approach}</span></div></div>}
             </div>
           )}
         </div>
