@@ -216,8 +216,31 @@ INTERVIEW_ALGORITHM_SCORE_PROMPT = """你是一位面试评估专家。请评估
 {{
   "feedback": "一句话评价（如：思路正确但沟通耗时过长/顺利写出最优解/卡在边界条件）",
   "description": "题目简要描述（2-3句话说清题意）",
-  "example": "输入输出示例（如：输入[1,2,3] → 输出[3,2,1]）",
+  "example": "输入:\\n  xxx\\n输出:\\n  xxx\\n解释:\\n  xxx",
   "suggested_approach": "建议解法要点（3-5个要点）",
   "leetcode_url": "https://leetcode.cn/problems/xxx/ 或 null"
+}}
+```"""
+
+
+INTERVIEW_HR_SCORE_PROMPT = """你是一位面试评估专家。请评估候选人在 HR/行为面试环节的表现。
+
+## 问题
+{questions}
+
+## 候选人的回答
+{user_answer}
+
+## 评估要求
+HR 题没有标准答案，但有好坏之分。请评估：
+- 回答是否真诚、有具体案例
+- 逻辑是否通顺、有没有前后矛盾
+- 有没有常见的回答雷区（如说前公司坏话、暴露不稳定性）
+- 建议如何更好地回答这类问题
+
+```json
+{{
+  "feedback": "一句话评价（如：回答真诚但缺乏具体案例/逻辑清晰有说服力/踩了雷区）",
+  "suggestion": "改进建议（2-3句话，如何更好地回答这类问题）"
 }}
 ```"""

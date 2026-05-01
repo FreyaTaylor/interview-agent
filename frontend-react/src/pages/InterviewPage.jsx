@@ -360,18 +360,25 @@ export default function InterviewPage() {
                   </div>
                   {isOpen && (
                     <div style={{ marginTop: 10, paddingLeft: 24 }}>
-                      {/* 评价 */}
                       {sr?.feedback && <div style={{ fontSize: 13, color: '#555', marginBottom: 8, padding: '6px 12px', background: '#fffbe6', borderLeft: '3px solid #fa8c16', borderRadius: 4 }}>💬 {sr.feedback}</div>}
-                      {/* 题目描述 */}
                       {(sr?.description || g.description) && (
-                        <div style={{ fontSize: 13, color: '#555', marginBottom: 6 }}>
-                          <b>📝 题目：</b>{sr?.description || g.description}
+                        <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>📝 题目</div>
+                          <div style={{ padding: '6px 12px', background: '#fafafa', borderRadius: 4, lineHeight: 1.8 }}>{sr?.description || g.description}</div>
                         </div>
                       )}
-                      {/* 示例 */}
-                      {sr?.example && <div style={{ fontSize: 13, color: '#666', marginBottom: 6, padding: '6px 12px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace' }}>💡 {sr.example}</div>}
-                      {/* 建议解法 */}
-                      {sr?.suggested_approach && <div style={{ fontSize: 13, color: '#555' }}>📖 <b>建议解法：</b>{sr.suggested_approach}</div>}
+                      {sr?.example && (
+                        <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>💡 示例</div>
+                          <pre style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>{sr.example}</pre>
+                        </div>
+                      )}
+                      {sr?.suggested_approach && (
+                        <div style={{ fontSize: 13, color: '#555' }}>
+                          <div style={{ fontWeight: 600, marginBottom: 4 }}>📖 建议解法</div>
+                          <div style={{ padding: '6px 12px', background: '#f6ffed', borderRadius: 4, lineHeight: 1.8 }}>{sr.suggested_approach}</div>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -381,15 +388,18 @@ export default function InterviewPage() {
           {hrGroups.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 15, marginBottom: 8, color: '#52c41a' }}>💬 HR / 行为题</h3>
-              {hrGroups.map((g, i) => (
+              {hrGroups.map((g, i) => {
+                const sr = g.score_result
+                return (
                 <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #52c41a', padding: 14, marginBottom: 10 }}>
                   {g.questions?.map((q, j) => <div key={j} style={{ padding: '3px 0', fontSize: 14, color: '#333' }}>• {q}</div>)}
                   {g.user_answer && (
                     <div style={{ fontSize: 13, color: '#666', marginTop: 6, padding: '6px 12px', background: '#f6ffed', borderRadius: 4 }}>💬 {g.user_answer}</div>
                   )}
-                  {g.original_dialogue && <div style={{ fontSize: 12, color: '#aaa', marginTop: 4, whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
+                  {sr?.feedback && <div style={{ fontSize: 13, color: '#555', marginTop: 6, padding: '6px 12px', background: '#fffbe6', borderLeft: '3px solid #52c41a', borderRadius: 4 }}>📊 {sr.feedback}</div>}
+                  {sr?.suggestion && <div style={{ fontSize: 13, color: '#555', marginTop: 4, padding: '6px 12px', background: '#f0f5ff', borderRadius: 4 }}>💡 {sr.suggestion}</div>}
                 </div>
-              ))}
+              )})}
             </div>
           )}
           {otherGroups.length > 0 && (

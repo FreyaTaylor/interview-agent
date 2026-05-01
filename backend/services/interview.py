@@ -17,6 +17,7 @@ from backend.prompts.interview_prompts import (
     INTERVIEW_PROJECT_SCORE_PROMPT,
     INTERVIEW_OVERALL_ANALYSIS_PROMPT,
     INTERVIEW_ALGORITHM_SCORE_PROMPT,
+    INTERVIEW_HR_SCORE_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -318,6 +319,14 @@ async def score_interview_group(group: dict) -> dict | None:
                 user_answer=group.get("user_answer", "") or "未提供解题过程",
                 original_dialogue=group.get("original_dialogue", "") or "无",
             )
+        elif g_type == "hr":
+            user_answer = group.get("user_answer", "").strip()
+            if not user_answer:
+                return None
+            prompt = INTERVIEW_HR_SCORE_PROMPT.format(
+                questions=questions_text,
+                user_answer=user_answer,
+            )
         else:
             return None
 
@@ -343,6 +352,12 @@ async def score_interview_group(group: dict) -> dict | None:
                 "example": result.get("example", ""),
                 "suggested_approach": result.get("suggested_approach", ""),
                 "leetcode_url": result.get("leetcode_url"),
+            }
+        elif g_type == "hr":
+            return {
+                "type": "hr",
+                "feedback": result.get("feedback", ""),
+                "suggestion": result.get("suggestion", ""),
             }
         else:
             return {

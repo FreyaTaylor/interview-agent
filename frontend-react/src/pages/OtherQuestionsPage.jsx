@@ -70,33 +70,10 @@ export default function OtherQuestionsPage() {
           <h3 style={{ fontSize: 15, marginBottom: 8, color: '#52c41a' }}>💬 HR / 行为题</h3>
           {groups.hr.map((g, i) => (
             <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #52c41a', padding: 14, marginBottom: 10 }}>
-              {g.questions?.map((q, j) => <div key={j} style={{ padding: '3px 0', fontSize: 14, color: '#333' }}>• {q}</div>)}
-              {g.user_answer && (
-                <div style={{ fontSize: 13, color: '#666', marginTop: 6, padding: '6px 12px', background: '#f6ffed', borderRadius: 4 }}>💬 {g.user_answer}</div>
+              <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>• {g.question}</div>
+              {g.answer && (
+                <div style={{ fontSize: 13, color: '#666', marginTop: 6, padding: '6px 12px', background: '#f6ffed', borderRadius: 4 }}>💬 {g.answer}</div>
               )}
-              {g.original_dialogue && (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ padding: '4px 0', cursor: 'pointer', fontSize: 12, color: '#aaa' }}
-                       onClick={() => toggle(`h${i}`)}>
-                    {expanded[`h${i}`] ? '▾' : '▸'} 原始对话
-                  </div>
-                  {expanded[`h${i}`] && (
-                    <div style={{ fontSize: 12, color: '#aaa', whiteSpace: 'pre-wrap', padding: '6px 12px', background: '#f6ffed', borderRadius: 4 }}>{g.original_dialogue}</div>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* 其他 */}
-      {groups.other.length > 0 && (
-        <div style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 8, color: '#999' }}>❓ 其他问题</h3>
-          {groups.other.map((g, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #999', padding: 14, marginBottom: 10 }}>
-              {g.questions?.map((q, j) => <div key={j} style={{ padding: '3px 0', fontSize: 14, color: '#555' }}>• {q}</div>)}
             </div>
           ))}
         </div>
