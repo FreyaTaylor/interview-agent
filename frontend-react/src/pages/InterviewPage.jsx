@@ -4,12 +4,15 @@ const API = 'http://127.0.0.1:8000/api'
 
 export default function InterviewPage() {
   const [text, setText] = useState('')
-  const [company, setCompany] = useState('')
-  const [position, setPosition] = useState('')
+  const [company, setCompany] = useState(() => sessionStorage.getItem('iv_company') || '')
+  const [position, setPosition] = useState(() => sessionStorage.getItem('iv_position') || '')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(null)
+  const [result, setResult] = useState(() => {
+    const s = sessionStorage.getItem('iv_result')
+    return s ? JSON.parse(s) : null
+  })
   const [expanded, setExpanded] = useState({})
-  const [activeTab, setActiveTab] = useState('review')
+  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('iv_tab') || 'knowledge')
 
   const [error, setError] = useState('')
 
@@ -82,6 +85,10 @@ export default function InterviewPage() {
       }).then(r => r.json())
       if (resp.code === 0) {
         setResult(resp.data); setExpanded({}); setActiveTab('knowledge')
+        sessionStorage.setItem('iv_result', JSON.stringify(resp.data))
+        sessionStorage.setItem('iv_company', company)
+        sessionStorage.setItem('iv_position', position)
+        sessionStorage.setItem('iv_tab', 'knowledge')
         sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
         mergeToLocalStorage(resp.data)
       }
@@ -171,7 +178,7 @@ export default function InterviewPage() {
       {/* ---- Tab 栏 ---- */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
         {tabs.map(t => (
-          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+          <button key={t.key} onClick={() => { setActiveTab(t.key); sessionStorage.setItem('iv_tab', t.key) }} style={{
             padding: '10px 20px', fontSize: 14, fontWeight: activeTab === t.key ? 600 : 400,
             color: activeTab === t.key ? '#1677ff' : '#888', background: 'none', border: 'none',
             borderBottom: activeTab === t.key ? '2px solid #1677ff' : '2px solid transparent',
@@ -428,7 +435,7 @@ export default function InterviewPage() {
         </>
       )}
 
-      <button className="parse-btn" onClick={() => { setResult(null); setText('') }} style={{ marginTop: 20 }}>📋 重新上传</button>
+      <button className="parse-btn" onClick={() => { setResult(null); setText(''); sessionStorage.removeItem('iv_result') }} style={{ marginTop: 20 }}>📋 重新上传</button>
     </div>
   )
 }
