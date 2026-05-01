@@ -114,7 +114,7 @@ async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int) 
         extra = ""
     prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=chunk_text) + extra
 
-    for attempt in range(2):
+    for attempt in range(3):
         try:
             response = await llm.ainvoke(prompt)
             return _parse_json(response.content)

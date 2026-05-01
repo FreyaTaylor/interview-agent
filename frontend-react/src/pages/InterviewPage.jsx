@@ -345,7 +345,9 @@ export default function InterviewPage() {
               <h3 style={{ fontSize: 15, marginBottom: 8, color: '#fa8c16' }}>💻 算法题</h3>
               {algorithmGroups.map((g, i) => {
                 const sr = g.score_result; const isOpen = expanded[`algo${i}`]
-                const lcUrl = sr?.leetcode_url || g.leetcode_url || (g.leetcode_id ? `https://leetcode.cn/problems/` : null)
+                const lcUrl = sr?.leetcode_url || g.leetcode_url || null
+                const lcId = sr?.leetcode_id || g.leetcode_id
+                const lcText = lcId ? `LeetCode #${lcId}` : 'LeetCode'
                 return (
                 <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #fa8c16', padding: 14, marginBottom: 10 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
@@ -354,25 +356,36 @@ export default function InterviewPage() {
                     {lcUrl && (
                       <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
                          style={{ fontSize: 12, color: '#fa8c16', padding: '2px 8px', border: '1px solid #fa8c16', borderRadius: 4, textDecoration: 'none' }}>
-                        LeetCode
+                        {lcText}
                       </a>
                     )}
                   </div>
                   {isOpen && (
                     <div style={{ marginTop: 10, paddingLeft: 24 }}>
+                      {/* 原始对话 */}
+                      {g.original_dialogue && (
+                        <div style={{ fontSize: 13, color: '#555', marginBottom: 8, padding: '8px 12px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+                          <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
+                          {g.original_dialogue}
+                        </div>
+                      )}
+                      {/* 评价 */}
                       {sr?.feedback && <div style={{ fontSize: 13, color: '#555', marginBottom: 8, padding: '6px 12px', background: '#fffbe6', borderLeft: '3px solid #fa8c16', borderRadius: 4 }}>💬 {sr.feedback}</div>}
+                      {/* 题目描述 */}
                       {(sr?.description || g.description) && (
                         <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>
                           <div style={{ fontWeight: 600, marginBottom: 4 }}>📝 题目</div>
                           <div style={{ padding: '6px 12px', background: '#fafafa', borderRadius: 4, lineHeight: 1.8 }}>{sr?.description || g.description}</div>
                         </div>
                       )}
+                      {/* 示例 */}
                       {sr?.example && (
                         <div style={{ fontSize: 13, color: '#555', marginBottom: 8 }}>
                           <div style={{ fontWeight: 600, marginBottom: 4 }}>💡 示例</div>
                           <pre style={{ padding: '8px 12px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre-wrap', margin: 0, lineHeight: 1.6 }}>{sr.example}</pre>
                         </div>
                       )}
+                      {/* 建议解法 */}
                       {sr?.suggested_approach && (
                         <div style={{ fontSize: 13, color: '#555' }}>
                           <div style={{ fontWeight: 600, marginBottom: 4 }}>📖 建议解法</div>

@@ -26,6 +26,7 @@ body {
 }
 .nav-links a:hover { color: #333; }
 .nav-links a.active { color: #1677ff; border-bottom-color: #1677ff; }
+.nav-divider { display: flex; align-items: center; color: #ddd; padding: 0 4px; font-size: 16px; user-select: none; }
 
 /* ---- 主体容器 ---- */
 .main {

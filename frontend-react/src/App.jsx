@@ -12,9 +12,10 @@ export default function App() {
       <nav className="navbar">
         <span className="nav-brand">📚 面试备考 Agent</span>
         <div className="nav-links">
-          <NavLink to="/" end>🌳 知识树</NavLink>
-          <NavLink to="/study">📖 学习</NavLink>
           <NavLink to="/interview">📋 面试复盘</NavLink>
+          <NavLink to="/study">📖 每日一学</NavLink>
+          <span className="nav-divider">|</span>
+          <NavLink to="/" end>🌳 知识树</NavLink>
           <NavLink to="/projects">🔨 项目拷打</NavLink>
           <NavLink to="/others">📎 其他问题</NavLink>
         </div>
