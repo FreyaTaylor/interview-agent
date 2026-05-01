@@ -103,19 +103,13 @@ export default function InterviewPage() {
   // ---- 输入页 ----
   if (!result) return (
     <div className="interview-upload">
-      <h2>📋 面试复盘</h2>
-      <p style={{ color: '#888', marginBottom: 16 }}>粘贴面试记录 → 自动解析+评分 → 查看薄弱点</p>
-      <div className="form-row">
-        <input className="form-input" placeholder="公司（可选）" value={company} onChange={e => setCompany(e.target.value)} style={{ flex: 1 }} />
-        <input className="form-input" placeholder="岗位（可选）" value={position} onChange={e => setPosition(e.target.value)} style={{ flex: 1 }} />
-      </div>
-      <textarea className="form-textarea" rows={12} value={text} onChange={e => setText(e.target.value)}
-        placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
-      <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
+      <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
         <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}>
-          {loading ? '🧠 解析+评分中（长文本约需1-2分钟）...' : '🔍 开始解析'}
+          {loading ? '🧠 解析中...' : '🔍 开始解析'}
         </button>
       </div>
+      <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
+        placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
       {error && (
         <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
           ❌ {error}
