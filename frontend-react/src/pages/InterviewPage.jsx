@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 
 const API = 'http://127.0.0.1:8000/api'
 
@@ -91,7 +90,7 @@ export default function InterviewPage() {
                 {g.auto_created && <span style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>新增</span>}
               </span>
               {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
-              <Link to={`/study/${g.matched_node_id}`} className="study-btn" onClick={e => e.stopPropagation()}>深入学习</Link>
+              <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(i) }}>{isOpen ? '收起' : '展开'}</button>
             </div>
             {isOpen && (
               <div style={{ marginTop: 8 }}>
@@ -138,27 +137,52 @@ export default function InterviewPage() {
           <h3 style={{ fontSize: 15, marginBottom: 12 }}>📎 其他面试信息</h3>
 
           {/* 项目拷打 */}
-          {projectGroups.map((g, i) => (
+          {projectGroups.map((g, i) => {
+            const sr = g.score_result; const isOpen = expanded[`p${i}`]
+            return (
             <div className="result-group" key={`p${i}`} style={{ borderLeft: '3px solid #722ed1' }}>
               <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
-                <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{expanded[`p${i}`] ? '▾' : '▸'}</span>
+                <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{isOpen ? '▾' : '▸'}</span>
                 <span className="group-type">🔨</span>
                 <span className="group-title">{g.project_name || '项目'} · {g.topic || '拷打'}</span>
-                <span className="group-count">{g.questions?.length || 0} 个问题</span>
+                {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
+                <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(`p${i}`) }}>{isOpen ? '收起' : '展开'}</button>
               </div>
-              {expanded[`p${i}`] && (
+              {isOpen && (
                 <div style={{ marginTop: 8 }}>
                   {g.original_dialogue && (
                     <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, marginBottom: 8, whiteSpace: 'pre-wrap' }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
                       {g.original_dialogue}
                     </div>
                   )}
                   <ul className="group-questions">{g.questions?.map((q, j) => <li key={j}>{q}</li>)}</ul>
-                  {g.user_answer && <div style={{ fontSize: 13, color: '#666', padding: '6px 14px', background: '#f0e6ff', borderRadius: 4 }}>💬 {g.user_answer}</div>}
+                  {g.user_answer && <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: '#f0e6ff', borderLeft: '3px solid #722ed1', borderRadius: 6, margin: '8px 0' }}>💬 我的回答：{g.user_answer}</div>}
+                  {sr && (
+                    <div style={{ background: '#f9f0ff', borderLeft: '3px solid #722ed1', borderRadius: 6, padding: '12px 14px', marginTop: 8 }}>
+                      <div style={{ marginBottom: 8 }}><b>表达质量: {sr.total_score}/100</b> — {sr.feedback}</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
+                        {(sr.rubric_result || []).map((item, k) => (
+                          <tr key={k} style={{ background: item.hit ? '#f0e6ff' : '#fff2f0', borderBottom: '1px solid #e0e0e0' }}>
+                            <td style={{ padding: '4px 8px' }}>
+                              {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
+                              {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody></table>
+                      {sr.recommended_answer && Array.isArray(sr.recommended_answer) && sr.recommended_answer.length > 0 && (
+                        <div style={{ marginTop: 8, fontSize: 13 }}>
+                          📖 <b>推荐表达</b>: {sr.recommended_answer.map((p, j) => <div key={j}>{j + 1}. {p}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
-          ))}
+          )})}
+
 
           {/* 算法题 */}
           {algorithmGroups.map((g, i) => (
