@@ -138,59 +138,28 @@ export default function InterviewPage() {
 
   return (
     <div className="interview-result">
-      {/* ---- 整体分析 ---- */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: 20, marginBottom: 20 }}>
-        <h2 style={{ marginBottom: 8 }}>📋 面试复盘 {company && `· ${company}`} {position}</h2>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
-          <span style={{ fontSize: 15 }}>
-            知识点平均分 <b style={{ color: sc(result.avg_score), fontSize: 22 }}>{result.avg_score}</b>/100
-          </span>
-          {oa && (
-            <span style={{ fontSize: 15 }}>
-              {'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b>
-            </span>
-          )}
+      {/* ---- 整体分析（精简版） ---- */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '16px 20px', marginBottom: 16 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
+          <h2 style={{ margin: 0, flex: 1 }}>📋 面试复盘 {company && `· ${company}`} {position}</h2>
+          <span style={{ fontSize: 15 }}>知识点 <b style={{ color: sc(result.avg_score), fontSize: 20 }}>{result.avg_score}</b>/100</span>
+          {oa && <span style={{ fontSize: 14 }}>{'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b></span>}
         </div>
         {oa && (
-          <div>
-            {/* 四维评估 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
-              <div style={{ padding: '10px 14px', background: '#f6ffed', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
-                <b style={{ color: '#52c41a' }}>📐 技术广度</b><br/>{oa.tech_breadth}
-              </div>
-              <div style={{ padding: '10px 14px', background: '#e6f7ff', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
-                <b style={{ color: '#1677ff' }}>🔬 技术深度</b><br/>{oa.tech_depth}
-              </div>
-              <div style={{ padding: '10px 14px', background: '#fff7e6', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
-                <b style={{ color: '#fa8c16' }}>🗣️ 表达能力</b><br/>{oa.expression}
-              </div>
-              <div style={{ padding: '10px 14px', background: '#f9f0ff', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
-                <b style={{ color: '#722ed1' }}>🏗️ 项目掌控</b><br/>{oa.project_mastery}
-              </div>
+          <>
+            <div style={{ fontSize: 13, color: '#555', lineHeight: 1.8, marginBottom: 8 }}>{oa.comment}</div>
+            <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+              {oa.top3_improvements?.length > 0 && (
+                <div style={{ flex: 1 }}>
+                  <b style={{ color: '#ff4d4f' }}>🎯 改进</b>
+                  {oa.top3_improvements.map((s, i) => <div key={i} style={{ color: '#666', paddingLeft: 12 }}>{i + 1}. {s}</div>)}
+                </div>
+              )}
+              {oa.prediction && <div style={{ color: '#888', alignSelf: 'flex-end' }}>🔮 {oa.prediction}</div>}
             </div>
-            {/* 亮点 */}
-            {oa.strengths?.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#52c41a', marginBottom: 4 }}>✅ 亮点</div>
-                {oa.strengths.map((s, i) => <div key={i} style={{ fontSize: 13, color: '#555', paddingLeft: 16 }}>• {s}</div>)}
-              </div>
-            )}
-            {/* Top3 改进 */}
-            {oa.top3_improvements?.length > 0 && (
-              <div style={{ marginBottom: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: '#ff4d4f', marginBottom: 4 }}>🎯 最该改进（按优先级）</div>
-                {oa.top3_improvements.map((s, i) => <div key={i} style={{ fontSize: 13, color: '#555', paddingLeft: 16 }}>{i + 1}. {s}</div>)}
-              </div>
-            )}
-            {/* 预判 */}
-            {oa.prediction && (
-              <div style={{ padding: '8px 14px', background: '#fafafa', borderRadius: 6, border: '1px solid #eee', fontSize: 13, color: '#666' }}>
-                🔮 <b>结果预判：</b>{oa.prediction}
-              </div>
-            )}
-          </div>
+          </>
         )}
-        {!oa && <p style={{ color: '#666' }}>{result.summary}</p>}
+        {!oa && <p style={{ color: '#666', margin: 0 }}>{result.summary}</p>}
       </div>
 
       {result.missed_count > 0 && (
@@ -374,20 +343,39 @@ export default function InterviewPage() {
           {algorithmGroups.length > 0 && (
             <div style={{ marginBottom: 20 }}>
               <h3 style={{ fontSize: 15, marginBottom: 8, color: '#fa8c16' }}>💻 算法题</h3>
-              {algorithmGroups.map((g, i) => (
+              {algorithmGroups.map((g, i) => {
+                const sr = g.score_result; const isOpen = expanded[`algo${i}`]
+                const lcUrl = sr?.leetcode_url || g.leetcode_url || (g.leetcode_id ? `https://leetcode.cn/problems/` : null)
+                return (
                 <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #fa8c16', padding: 14, marginBottom: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
+                    <span style={{ color: '#fa8c16', fontSize: 14 }}>{isOpen ? '▼' : '▶'}</span>
                     <span style={{ fontWeight: 600, flex: 1 }}>{g.title}</span>
-                    {g.leetcode_id && (
-                      <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer"
+                    {lcUrl && (
+                      <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
                          style={{ fontSize: 12, color: '#fa8c16', padding: '2px 8px', border: '1px solid #fa8c16', borderRadius: 4, textDecoration: 'none' }}>
-                        LeetCode #{g.leetcode_id}
+                        LeetCode
                       </a>
                     )}
                   </div>
-                  {g.original_dialogue && <div style={{ fontSize: 13, color: '#888', marginTop: 6, whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
+                  {isOpen && (
+                    <div style={{ marginTop: 10, paddingLeft: 24 }}>
+                      {/* 评价 */}
+                      {sr?.feedback && <div style={{ fontSize: 13, color: '#555', marginBottom: 8, padding: '6px 12px', background: '#fffbe6', borderLeft: '3px solid #fa8c16', borderRadius: 4 }}>💬 {sr.feedback}</div>}
+                      {/* 题目描述 */}
+                      {(sr?.description || g.description) && (
+                        <div style={{ fontSize: 13, color: '#555', marginBottom: 6 }}>
+                          <b>📝 题目：</b>{sr?.description || g.description}
+                        </div>
+                      )}
+                      {/* 示例 */}
+                      {sr?.example && <div style={{ fontSize: 13, color: '#666', marginBottom: 6, padding: '6px 12px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace' }}>💡 {sr.example}</div>}
+                      {/* 建议解法 */}
+                      {sr?.suggested_approach && <div style={{ fontSize: 13, color: '#555' }}>📖 <b>建议解法：</b>{sr.suggested_approach}</div>}
+                    </div>
+                  )}
                 </div>
-              ))}
+              )})}
             </div>
           )}
           {hrGroups.length > 0 && (

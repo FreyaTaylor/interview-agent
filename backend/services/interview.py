@@ -16,6 +16,7 @@ from backend.prompts.interview_prompts import (
     INTERVIEW_SCORE_PROMPT,
     INTERVIEW_PROJECT_SCORE_PROMPT,
     INTERVIEW_OVERALL_ANALYSIS_PROMPT,
+    INTERVIEW_ALGORITHM_SCORE_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -285,29 +286,37 @@ async def parse_interview_text(raw_text: str) -> dict:
 async def score_interview_group(group: dict) -> dict | None:
     """
     对面试复盘中的单个分组进行评分。
-    与学习模式不同：基于面试官实际问的问题评分，不生成新问题。
+    knowledge: rubric 评分; project: 面试官印象; algorithm: 解题评价+题目描述
     """
     g_type = group.get("type")
-    user_answer = group.get("user_answer", "").strip()
-    if not user_answer:
-        return None
-
     questions_text = "\n".join(f"- {q}" for q in group.get("questions", []))
     llm = _get_llm(temperature=0.1)
 
     try:
         if g_type == "knowledge":
+            user_answer = group.get("user_answer", "").strip()
+            if not user_answer:
+                return None
             prompt = INTERVIEW_SCORE_PROMPT.format(
                 knowledge_point=group.get("knowledge_point", ""),
                 questions=questions_text,
                 user_answer=user_answer,
             )
         elif g_type == "project":
+            user_answer = group.get("user_answer", "").strip()
+            if not user_answer:
+                return None
             prompt = INTERVIEW_PROJECT_SCORE_PROMPT.format(
                 project_name=group.get("project_name", "项目"),
                 topic=group.get("topic", "拷打"),
                 questions=questions_text,
                 user_answer=user_answer,
+            )
+        elif g_type == "algorithm":
+            prompt = INTERVIEW_ALGORITHM_SCORE_PROMPT.format(
+                title=group.get("title", "未知算法题"),
+                user_answer=group.get("user_answer", "") or "未提供解题过程",
+                original_dialogue=group.get("original_dialogue", "") or "无",
             )
         else:
             return None
@@ -316,7 +325,6 @@ async def score_interview_group(group: dict) -> dict | None:
         result = _parse_json(response.content)
 
         if g_type == "project":
-            # 项目拷打：面试官整体印象，星级制
             return {
                 "type": "project",
                 "rating": result.get("rating", 3),
@@ -327,8 +335,16 @@ async def score_interview_group(group: dict) -> dict | None:
                 "follow_up_risks": result.get("follow_up_risks", []),
                 "suggested_answer": result.get("suggested_answer", []),
             }
+        elif g_type == "algorithm":
+            return {
+                "type": "algorithm",
+                "feedback": result.get("feedback", ""),
+                "description": result.get("description", ""),
+                "example": result.get("example", ""),
+                "suggested_approach": result.get("suggested_approach", ""),
+                "leetcode_url": result.get("leetcode_url"),
+            }
         else:
-            # 知识点：rubric 评分
             return {
                 "type": "knowledge",
                 "total_score": result.get("total_score", 0),

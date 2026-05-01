@@ -108,10 +108,7 @@ async def parse_interview(
 
     for g in enriched_groups:
         g = dict(g)
-        should_score = (
-            g.get("type") in ("knowledge", "project")
-            and g.get("user_answer", "").strip()
-        )
+        should_score = g.get("type") in ("knowledge", "project", "algorithm")
         if should_score:
             try:
                 sr = await score_interview_group(g)
