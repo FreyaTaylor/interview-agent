@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 
 const API = 'http://127.0.0.1:8000/api'
 
@@ -18,7 +19,11 @@ export default function InterviewPage() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, company, position }),
       }).then(r => r.json())
-      if (resp.code === 0) { setResult(resp.data); setExpanded({}) }
+      if (resp.code === 0) {
+        setResult(resp.data); setExpanded({})
+        // 存到 sessionStorage 供子页面读取
+        sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
+      }
       else alert(resp.message || '解析失败')
     } catch { alert('请求失败') }
     setLoading(false)
@@ -150,89 +155,31 @@ export default function InterviewPage() {
         )
       })}
 
-      {/* ---- 其他信息区域 ---- */}
-      {(projectGroups.length > 0 || algorithmGroups.length > 0 || hrGroups.length > 0 || otherGroups.length > 0) && (
-        <div style={{ marginTop: 24, borderTop: '2px solid #eee', paddingTop: 16 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 12 }}>📎 其他面试信息</h3>
-
-          {/* 项目拷打 */}
-          {projectGroups.map((g, i) => {
-            const sr = g.score_result; const isOpen = expanded[`p${i}`]
-            return (
-            <div className="result-group" key={`p${i}`} style={{ borderLeft: '3px solid #722ed1' }}>
-              <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
-                <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{isOpen ? '▾' : '▸'}</span>
-                <span className="group-type">🔨</span>
-                <span className="group-title">{g.project_name || '项目'} · {g.topic || '拷打'}</span>
-                {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
-                <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(`p${i}`) }}>{isOpen ? '收起' : '展开'}</button>
+      {/* ---- 项目拷打 + 其他问题 跳转卡片 ---- */}
+      <div style={{ display: 'flex', gap: 14, marginTop: 20 }}>
+        {projectGroups.length > 0 && (
+          <Link to="/interview/projects" style={{ flex: 1, textDecoration: 'none' }}>
+            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: '16px 20px' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#722ed1', marginBottom: 4 }}>🔨 项目拷打</div>
+              <div style={{ fontSize: 13, color: '#888' }}>{projectGroups.length} 个项目 · {projectGroups.reduce((s, g) => s + (g.questions?.length || 0), 0)} 个问题</div>
+              <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>点击查看详情 + 评分 →</div>
+            </div>
+          </Link>
+        )}
+        {(algorithmGroups.length > 0 || hrGroups.length > 0 || otherGroups.length > 0) && (
+          <Link to="/interview/others" style={{ flex: 1, textDecoration: 'none' }}>
+            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #999', padding: '16px 20px' }}>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#555', marginBottom: 4 }}>📎 其他问题</div>
+              <div style={{ fontSize: 13, color: '#888' }}>
+                {algorithmGroups.length > 0 && \`💻算法${algorithmGroups.length} \`}
+                {hrGroups.length > 0 && \`💬HR${hrGroups.length} \`}
+                {otherGroups.length > 0 && \`❓其他${otherGroups.length}\`}
               </div>
-              {isOpen && (
-                <div style={{ marginTop: 8 }}>
-                  {g.original_dialogue && (
-                    <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, marginBottom: 8, whiteSpace: 'pre-wrap' }}>
-                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
-                      {g.original_dialogue}
-                    </div>
-                  )}
-                  <ul className="group-questions">{g.questions?.map((q, j) => <li key={j}>{q}</li>)}</ul>
-                  {g.user_answer && <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: '#f0e6ff', borderLeft: '3px solid #722ed1', borderRadius: 6, margin: '8px 0' }}>💬 我的回答：{g.user_answer}</div>}
-                  {sr && (
-                    <div style={{ background: '#f9f0ff', borderLeft: '3px solid #722ed1', borderRadius: 6, padding: '12px 14px', marginTop: 8 }}>
-                      <div style={{ marginBottom: 8 }}><b>表达质量: {sr.total_score}/100</b> — {sr.feedback}</div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
-                        {(sr.rubric_result || []).map((item, k) => (
-                          <tr key={k} style={{ background: item.hit ? '#f0e6ff' : '#fff2f0', borderBottom: '1px solid #e0e0e0' }}>
-                            <td style={{ padding: '4px 8px' }}>
-                              {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
-                              {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody></table>
-                      {sr.recommended_answer && Array.isArray(sr.recommended_answer) && sr.recommended_answer.length > 0 && (
-                        <div style={{ marginTop: 8, fontSize: 13 }}>
-                          📖 <b>推荐表达</b>: {sr.recommended_answer.map((p, j) => <div key={j}>{j + 1}. {p}</div>)}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
+              <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>点击查看详情 →</div>
             </div>
-          )})}
-
-
-          {/* 算法题 */}
-          {algorithmGroups.map((g, i) => (
-            <div className="result-group algorithm" key={`a${i}`}>
-              <div className="group-header">
-                <span className="group-type">💻</span>
-                <span className="group-title">{g.title}</span>
-                {g.leetcode_id && <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer" className="lc-link">LeetCode #{g.leetcode_id}</a>}
-              </div>
-              {g.original_dialogue && <div style={{ fontSize: 13, color: '#555', padding: '6px 14px', background: '#f9fafb', borderRadius: 4, margin: '6px 0', whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
-            </div>
-          ))}
-
-          {/* HR题 */}
-          {hrGroups.map((g, i) => (
-            <div className="result-group hr" key={`h${i}`}>
-              <div className="group-header"><span className="group-type">💬</span><span className="group-title">HR 题</span></div>
-              <ul className="group-questions">{g.questions?.map((q, j) => <li key={j}>{q}</li>)}</ul>
-              {g.original_dialogue && <div style={{ fontSize: 13, color: '#555', padding: '6px 14px', background: '#f9fafb', borderRadius: 4, margin: '6px 0', whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
-            </div>
-          ))}
-
-          {/* 其他 */}
-          {otherGroups.map((g, i) => (
-            <div className="result-group" key={`o${i}`} style={{ borderLeft: '3px solid #999' }}>
-              <div className="group-header"><span className="group-type">❓</span><span className="group-title">其他问题</span></div>
-              <ul className="group-questions">{g.questions?.map((q, j) => <li key={j}>{q}</li>)}</ul>
-            </div>
-          ))}
-        </div>
-      )}
+          </Link>
+        )}
+      </div>
 
       <button className="parse-btn" onClick={() => { setResult(null); setText('') }} style={{ marginTop: 20 }}>📋 重新上传</button>
     </div>
