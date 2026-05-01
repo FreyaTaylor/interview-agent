@@ -21,6 +21,7 @@ export default function InterviewPage() {
       }).then(r => r.json())
       if (resp.code === 0) {
         setResult(resp.data); setExpanded({}); setActiveTab('review')
+        sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
       }
       else alert(resp.message || '解析失败')
     } catch { alert('请求失败') }
