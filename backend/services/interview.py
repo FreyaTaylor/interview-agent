@@ -224,12 +224,28 @@ async def score_interview_group(group: dict) -> dict | None:
 
         response = await llm.ainvoke(prompt)
         result = _parse_json(response.content)
-        return {
-            "total_score": result.get("total_score", 0),
-            "feedback": result.get("feedback", ""),
-            "rubric_result": result.get("items", []),
-            "recommended_answer": result.get("recommended_answer", []),
-        }
+
+        if g_type == "project":
+            # 项目拷打：面试官整体印象，星级制
+            return {
+                "type": "project",
+                "rating": result.get("rating", 3),
+                "rating_label": result.get("rating_label", ""),
+                "impression": result.get("impression", ""),
+                "highlights": result.get("highlights", []),
+                "improvements": result.get("improvements", []),
+                "follow_up_risks": result.get("follow_up_risks", []),
+                "suggested_answer": result.get("suggested_answer", []),
+            }
+        else:
+            # 知识点：rubric 评分
+            return {
+                "type": "knowledge",
+                "total_score": result.get("total_score", 0),
+                "feedback": result.get("feedback", ""),
+                "rubric_result": result.get("items", []),
+                "recommended_answer": result.get("recommended_answer", []),
+            }
     except Exception as e:
         logger.error(f"面试评分失败: {e}")
         return None

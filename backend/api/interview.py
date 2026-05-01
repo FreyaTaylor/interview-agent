@@ -115,8 +115,8 @@ async def parse_interview(
             try:
                 sr = await score_interview_group(g)
                 g["score_result"] = sr
-                if sr:
-                    total_score_sum += sr["total_score"]
+                if sr and sr.get("type") == "knowledge":
+                    total_score_sum += sr.get("total_score", 0)
                     scored_count += 1
 
                     # 更新掌握度 (EMA) — 仅 knowledge 类型

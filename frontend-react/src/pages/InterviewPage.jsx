@@ -190,20 +190,27 @@ export default function InterviewPage() {
         ? <div className="empty">暂无项目拷打记录</div>
         : projectGroups.map((g, i) => {
           const sr = g.score_result; const isOpen = expanded[`p${i}`] !== false
+          const stars = sr ? '⭐'.repeat(sr.rating || 3) : ''
           return (
             <div key={`p${i}`} style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: 16, marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
                 <span style={{ color: '#aaa', fontSize: 12 }}>{isOpen ? '▾' : '▸'}</span>
                 <span style={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{g.project_name || '项目'} · {g.topic || '拷打'}</span>
                 <span style={{ color: '#888', fontSize: 13 }}>{g.questions?.length || 0} 个问题</span>
-                {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600 }}>{sr.total_score}分</span>}
+                {sr && <span style={{ fontSize: 14 }}>{stars}</span>}
               </div>
               {isOpen && (
                 <div style={{ marginTop: 12 }}>
                   {g.original_dialogue && (
-                    <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, marginBottom: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
-                      {g.original_dialogue}
+                    <div style={{ marginBottom: 10 }}>
+                      <div style={{ padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6 }}
+                           onClick={e => { e.stopPropagation(); toggle(`d${i}`) }}>
+                        <span style={{ color: '#aaa', fontSize: 11 }}>{expanded[`d${i}`] ? '▾' : '▸'}</span>
+                        <span style={{ fontSize: 12, color: '#aaa' }}>📝 原始对话</span>
+                      </div>
+                      {expanded[`d${i}`] && (
+                        <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', borderRadius: '0 0 6px 6px', whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>{g.original_dialogue}</div>
+                      )}
                     </div>
                   )}
                   <div style={{ marginBottom: 8 }}>
@@ -216,21 +223,40 @@ export default function InterviewPage() {
                     </div>
                   )}
                   {sr && (
-                    <div style={{ background: '#f9f0ff', borderLeft: '3px solid #722ed1', borderRadius: 6, padding: '12px 14px' }}>
-                      <div style={{ marginBottom: 8 }}><b>表达质量: {sr.total_score}/100</b> — {sr.feedback}</div>
-                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
-                        {(sr.rubric_result || []).map((item, k) => (
-                          <tr key={k} style={{ background: item.hit ? '#f0e6ff' : '#fff2f0', borderBottom: '1px solid #e0e0e0' }}>
-                            <td style={{ padding: '4px 8px' }}>
-                              {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
-                              {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody></table>
-                      {sr.recommended_answer && Array.isArray(sr.recommended_answer) && sr.recommended_answer.length > 0 && (
-                        <div style={{ marginTop: 8, fontSize: 13 }}>
-                          📖 <b>推荐表达：</b> {sr.recommended_answer.map((p, j) => <div key={j}>{j + 1}. {p}</div>)}
+                    <div style={{ background: '#f9f0ff', borderRadius: 8, padding: '14px 16px', marginTop: 8 }}>
+                      {/* 星级 + 整体印象 */}
+                      <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 8 }}>
+                        {stars} <span style={{ color: '#722ed1' }}>{sr.rating_label}</span>
+                      </div>
+                      <div style={{ fontSize: 13, color: '#555', lineHeight: 1.8, marginBottom: 12, padding: '8px 12px', background: '#fff', borderRadius: 6, border: '1px solid #f0e6ff' }}>
+                        💬 {sr.impression}
+                      </div>
+                      {/* 亮点 */}
+                      {sr.highlights?.length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#52c41a', marginBottom: 4 }}>✅ 亮点</div>
+                          {sr.highlights.map((h, k) => <div key={k} style={{ fontSize: 13, color: '#555', padding: '2px 0 2px 16px' }}>• {h}</div>)}
+                        </div>
+                      )}
+                      {/* 改进建议 */}
+                      {sr.improvements?.length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#fa8c16', marginBottom: 4 }}>💡 改进建议</div>
+                          {sr.improvements.map((h, k) => <div key={k} style={{ fontSize: 13, color: '#555', padding: '2px 0 2px 16px' }}>• {h}</div>)}
+                        </div>
+                      )}
+                      {/* 追问风险 */}
+                      {sr.follow_up_risks?.length > 0 && (
+                        <div style={{ marginBottom: 10 }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#ff4d4f', marginBottom: 4 }}>⚠️ 面试官可能继续追问</div>
+                          {sr.follow_up_risks.map((h, k) => <div key={k} style={{ fontSize: 13, color: '#555', padding: '2px 0 2px 16px' }}>• {h}</div>)}
+                        </div>
+                      )}
+                      {/* 建议回答 */}
+                      {sr.suggested_answer?.length > 0 && (
+                        <div style={{ background: '#fff', border: '1px solid #f0e6ff', borderRadius: 6, padding: '10px 14px' }}>
+                          <div style={{ fontSize: 13, fontWeight: 500, color: '#722ed1', marginBottom: 6 }}>📖 建议下次这样回答</div>
+                          {sr.suggested_answer.map((p, j) => <div key={j} style={{ fontSize: 13, color: '#555', padding: '2px 0' }}>{j + 1}. {p}</div>)}
                         </div>
                       )}
                     </div>
