@@ -270,6 +270,16 @@ body {
 }
 .lc-link:hover { background: #fa8c16; color: #fff; }
 
+/* LeetCode 题号标签 */
+.lc-tag {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 11px; color: #fa8c16; text-decoration: none;
+  padding: 1px 8px; border: 1px solid #ffd591; border-radius: 10px;
+  background: #fff7e6; transition: all 0.15s; white-space: nowrap;
+}
+.lc-tag:hover { background: #fa8c16; color: #fff; border-color: #fa8c16; }
+.lc-tag::before { content: '⚡'; font-size: 10px; }
+
 .group-questions {
   list-style: none; padding: 0;
 }

@@ -298,7 +298,7 @@ export default function InterviewPage() {
                     <span className={`toggle ${isOpen ? 'open' : ''}`} />
                     <span className="node-name">{g.title}</span>
                     {lcId && <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>#{lcId}</span>}
-                    {lcUrl && <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ fontSize: 11, color: '#fa8c16', marginLeft: 4, textDecoration: 'none' }}>↗</a>}
+                    {lcUrl && <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{lcId ? ` #${lcId}` : ''}</a>}
                   </div>
                   {isOpen && (
                     <div style={{ paddingLeft: 60 }}>

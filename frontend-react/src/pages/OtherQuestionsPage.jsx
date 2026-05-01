@@ -80,11 +80,8 @@ export default function OtherQuestionsPage() {
             {hasDetail ? <span className={`toggle ${isOpen ? 'open' : ''}`} /> : <span className="bullet" />}
             <span className="node-name">{g.title || g.question || '—'}</span>
             {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 6px', marginLeft: 6 }}>×{g.count}</span>}
-            {lcText && <span style={{ fontSize: 11, color: '#888', marginLeft: 6 }}>{lcText}</span>}
-            {lcUrl && (
-              <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                 style={{ fontSize: 11, color: cfg.color, marginLeft: 4, textDecoration: 'none' }}>↗</a>
-            )}
+            {lcText && lcUrl && <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode {lcText}</a>}
+            {lcText && !lcUrl && <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode {lcText}</span>}
           </div>
           {isOpen && (
             <div style={{ paddingLeft: 38 }}>
