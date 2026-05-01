@@ -11,9 +11,11 @@ export default function InterviewPage() {
   const [expanded, setExpanded] = useState({})
   const [activeTab, setActiveTab] = useState('review')
 
+  const [error, setError] = useState('')
+
   async function handleParse() {
     if (!text.trim() || loading) return
-    setLoading(true); setResult(null)
+    setLoading(true); setResult(null); setError('')
     try {
       const resp = await fetch(`${API}/interview/parse`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -23,8 +25,8 @@ export default function InterviewPage() {
         setResult(resp.data); setExpanded({}); setActiveTab('review')
         sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
       }
-      else alert(resp.message || '解析失败')
-    } catch { alert('请求失败') }
+      else setError(resp.message || resp.detail || '解析失败，请重试')
+    } catch (e) { setError(`请求失败: ${e.message || '网络错误'}`) }
     setLoading(false)
   }
 
@@ -44,9 +46,17 @@ export default function InterviewPage() {
         placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
       <div style={{ marginTop: 12, display: 'flex', gap: 12, alignItems: 'center' }}>
         <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}>
-          {loading ? '🧠 解析+评分中...' : '🔍 开始解析'}
+          {loading ? '🧠 解析+评分中（长文本约需1-2分钟）...' : '🔍 开始解析'}
         </button>
       </div>
+      {error && (
+        <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
+          ❌ {error}
+          <button onClick={() => { setError(''); handleParse() }} style={{ marginLeft: 12, fontSize: 12, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+            重试
+          </button>
+        </div>
+      )}
     </div>
   )
 

@@ -22,32 +22,66 @@ def _get_llm(temperature: float = 0.1) -> ChatOpenAI:
         api_key=settings.DEEPSEEK_API_KEY,
         base_url=settings.DEEPSEEK_BASE_URL,
         temperature=temperature,
+        max_tokens=8192,
+        timeout=120,
     )
 
 
 def _parse_json(content: str) -> dict:
+    """解析 LLM 返回的 JSON，处理 markdown 包裹和可能的截断"""
     content = content.strip()
     if "```json" in content:
-        content = content.split("```json")[1].split("```")[0].strip()
+        content = content.split("```json")[1]
+        if "```" in content:
+            content = content.split("```")[0]
+        content = content.strip()
     elif "```" in content:
-        content = content.split("```")[1].split("```")[0].strip()
-    return json.loads(content)
+        content = content.split("```")[1]
+        if "```" in content:
+            content = content.split("```")[0]
+        content = content.strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        # JSON 可能被截断，尝试修复
+        # 补齐常见截断情况：缺少 ]} 或 }
+        for suffix in [']}}', ']}', '}}', '}', ']']:
+            try:
+                return json.loads(content + suffix)
+            except json.JSONDecodeError:
+                continue
+        raise
 
 
 async def parse_interview_text(raw_text: str) -> dict:
     """
     解析面试文本，返回聚类结果。包含二次检查防遗漏。
+    长文本自动重试一次。
     Returns: {"groups": [...], "summary": "..."}
     """
     prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=raw_text)
     llm = _get_llm(temperature=0.1)
-    response = await llm.ainvoke(prompt)
 
-    try:
-        result = _parse_json(response.content)
-    except (json.JSONDecodeError, IndexError) as e:
-        logger.error(f"面试文本解析 JSON 失败: {e}\nLLM 输出: {response.content}")
-        return {"groups": [], "summary": "解析失败，请重试"}
+    result = None
+    last_error = None
+    for attempt in range(2):  # 最多重试一次
+        try:
+            response = await llm.ainvoke(prompt)
+            result = _parse_json(response.content)
+            break
+        except (json.JSONDecodeError, IndexError) as e:
+            last_error = e
+            logger.warning(f"面试文本解析 JSON 失败(第{attempt+1}次): {e}\nLLM 输出前200字: {response.content[:200] if response else 'N/A'}")
+            continue
+        except Exception as e:
+            last_error = e
+            logger.error(f"面试文本解析异常(第{attempt+1}次): {type(e).__name__}: {e}")
+            continue
+
+    if result is None:
+        logger.error(f"面试文本解析最终失败: {last_error}")
+        return {"groups": [], "summary": f"解析失败: {type(last_error).__name__}，请重试"}
 
     # 二次检查：让 LLM 对比原文和提取结果，找遗漏
     groups = result.get("groups", [])

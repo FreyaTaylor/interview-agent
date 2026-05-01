@@ -49,12 +49,17 @@ async def parse_interview(
         raise HTTPException(status_code=400, detail="面试文本不能为空")
 
     # 1. LLM 解析
-    parsed = await parse_interview_text(req.text)
+    try:
+        parsed = await parse_interview_text(req.text)
+    except Exception as e:
+        logger.error(f"面试文本解析异常: {type(e).__name__}: {e}")
+        return ApiResponse.error(code=50001, message=f"解析服务异常: {type(e).__name__}，请重试")
+
     groups = parsed.get("groups", [])
     summary = parsed.get("summary", "")
 
     if not groups:
-        raise HTTPException(status_code=400, detail="未能从文本中识别出面试提问，请检查内容")
+        return ApiResponse.error(code=40001, message=summary or "未能从文本中识别出面试提问，请检查内容")
 
     # 2. 匹配知识树
     enriched_groups = await match_knowledge_nodes(groups, db)
