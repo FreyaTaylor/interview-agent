@@ -56,7 +56,8 @@ class HrQuestion(TimestampMixin, Base):
     interview_record_id: Mapped[int | None] = mapped_column(
         BigInteger, ForeignKey("interview_record.id"), nullable=True
     )
-    question: Mapped[str] = mapped_column(Text, nullable=False)
+    question: Mapped[str] = mapped_column(Text, nullable=False)  # 原始问题
+    normalized_question: Mapped[str | None] = mapped_column(String(200), nullable=True)  # LLM归一化后的标准问题
     answer: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 

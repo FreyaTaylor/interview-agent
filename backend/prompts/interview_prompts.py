@@ -212,13 +212,38 @@ INTERVIEW_ALGORITHM_SCORE_PROMPT = """你是一位面试评估专家。请评估
 评估候选人的解题过程，包括：思路是否清晰、沟通是否高效、代码是否写出来了、时间控制如何。
 同时给出这道题的简要描述和示例，帮助候选人后续刷题。
 
+**LeetCode链接要求**：如果能识别出对应的 LeetCode 题目，请给出**完整的正确链接**，格式为 `https://leetcode.cn/problems/{英文slug}/`。
+例如：LRU缓存 → `https://leetcode.cn/problems/lru-cache/`，两数之和 → `https://leetcode.cn/problems/two-sum/`。
+如果不确定，填 null。
+
 ```json
 {{
   "feedback": "一句话评价（如：思路正确但沟通耗时过长/顺利写出最优解/卡在边界条件）",
   "description": "题目简要描述（2-3句话说清题意）",
   "example": "输入:\\n  xxx\\n输出:\\n  xxx\\n解释:\\n  xxx",
   "suggested_approach": "建议解法要点（3-5个要点）",
-  "leetcode_url": "https://leetcode.cn/problems/xxx/ 或 null"
+  "leetcode_id": 题号数字或null,
+  "leetcode_url": "完整的 LeetCode 链接或 null"
+}}
+```"""
+
+
+HR_NORMALIZE_PROMPT = """请将以下面试中的 HR/行为题归一化为标准问题。
+很多问题虽然措辞不同，但本质是同一个问题，请合并。
+
+## 原始问题列表
+{questions}
+
+## 要求
+将每个原始问题映射到一个标准化的简短问题（如"离职原因"、"自我介绍"、"职业规划"）。
+同义的问题必须映射到同一个标准问题。
+
+```json
+{{
+  "mappings": [
+    {{"original": "原始问题1", "normalized": "标准问题"}},
+    {{"original": "原始问题2", "normalized": "标准问题"}}
+  ]
 }}
 ```"""
 

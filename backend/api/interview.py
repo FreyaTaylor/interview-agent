@@ -13,7 +13,7 @@ from backend.models.knowledge import KnowledgeNode
 from backend.models.study import StudySession, Conversation, ConversationMessage, MasteryRecord
 from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion, ProjectQuestion, UserAnswerEmbedding
 from backend.schemas.common import ApiResponse
-from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group, generate_overall_analysis
+from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group, generate_overall_analysis, normalize_hr_questions
 from backend.services.embedding import get_embedding
 
 logger = logging.getLogger(__name__)
@@ -111,11 +111,22 @@ async def parse_interview(
                 await db.flush()
                 algo_db_map[idx] = new_algo
         elif g["type"] == "hr":
-            for q in g.get("questions", []):
-                db.add(HrQuestion(
-                    interview_record_id=record.id,
-                    question=q,
-                ))
+            pass  # HR 题在下面批量归一化后再存
+
+    # 4b. HR 题批量归一化后存储
+    all_hr_questions = []
+    for g in enriched_groups:
+        if g["type"] == "hr":
+            all_hr_questions.extend(g.get("questions", []))
+    if all_hr_questions:
+        norm_map = await normalize_hr_questions(all_hr_questions)
+        for q in all_hr_questions:
+            normalized = norm_map.get(q, q)
+            db.add(HrQuestion(
+                interview_record_id=record.id,
+                question=q,
+                normalized_question=normalized,
+            ))
 
     await db.commit()
 
@@ -166,6 +177,8 @@ async def parse_interview(
             algo_rec.feedback = sr.get("feedback") or algo_rec.feedback
             if sr.get("leetcode_url"):
                 algo_rec.leetcode_url = sr["leetcode_url"]
+            if sr.get("leetcode_id") and not algo_rec.leetcode_id:
+                algo_rec.leetcode_id = sr["leetcode_id"]
     for g in scored_groups:
         if g.get("type") == "knowledge" and g.get("matched_node_id"):
             node = await db.get(KnowledgeNode, g["matched_node_id"])
@@ -300,15 +313,16 @@ async def get_other_questions(
             }
     algos = list(algo_map.values())
 
-    # HR题：按问题文本去重
+    # HR题：按 normalized_question 归类去重，显示出现次数
     hr_stmt = select(HrQuestion).order_by(HrQuestion.id)
     hr_result = await db.execute(hr_stmt)
-    hr_seen = set()
-    hrs = []
+    hr_map = {}
     for r in hr_result.scalars().all():
-        key = (r.question or "").strip().lower()
-        if key not in hr_seen:
-            hr_seen.add(key)
-            hrs.append({"question": r.question, "answer": r.answer})
+        key = (r.normalized_question or r.question or "").strip()
+        if key in hr_map:
+            hr_map[key]["count"] += 1
+        else:
+            hr_map[key] = {"question": key, "answer": r.answer, "count": 1}
+    hrs = list(hr_map.values())
 
     return ApiResponse.ok(data={"algorithm": algos, "hr": hrs})

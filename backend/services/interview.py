@@ -18,6 +18,7 @@ from backend.prompts.interview_prompts import (
     INTERVIEW_OVERALL_ANALYSIS_PROMPT,
     INTERVIEW_ALGORITHM_SCORE_PROMPT,
     INTERVIEW_HR_SCORE_PROMPT,
+    HR_NORMALIZE_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -351,6 +352,7 @@ async def score_interview_group(group: dict) -> dict | None:
                 "description": result.get("description", ""),
                 "example": result.get("example", ""),
                 "suggested_approach": result.get("suggested_approach", ""),
+                "leetcode_id": result.get("leetcode_id"),
                 "leetcode_url": result.get("leetcode_url"),
             }
         elif g_type == "hr":
@@ -370,6 +372,26 @@ async def score_interview_group(group: dict) -> dict | None:
     except Exception as e:
         logger.error(f"面试评分失败: {e}")
         return None
+
+
+async def normalize_hr_questions(questions: list[str]) -> dict[str, str]:
+    """
+    批量归一化 HR 题：一次 LLM 调用，把所有 HR 题映射到标准问题。
+    返回: {"原始问题": "标准问题"}
+    """
+    if not questions:
+        return {}
+    llm = _get_llm(temperature=0.1)
+    q_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
+    prompt = HR_NORMALIZE_PROMPT.format(questions=q_list)
+    try:
+        resp = await llm.ainvoke(prompt)
+        result = _parse_json(resp.content)
+        mappings = result.get("mappings", [])
+        return {m["original"]: m["normalized"] for m in mappings if "original" in m and "normalized" in m}
+    except Exception as e:
+        logger.warning(f"HR题归一化失败: {e}")
+        return {}
 
 
 async def generate_overall_analysis(
