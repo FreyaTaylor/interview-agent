@@ -171,9 +171,9 @@ export default function InterviewPage() {
             <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #999', padding: '16px 20px' }}>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#555', marginBottom: 4 }}>📎 其他问题</div>
               <div style={{ fontSize: 13, color: '#888' }}>
-                {algorithmGroups.length > 0 && \`💻算法${algorithmGroups.length} \`}
-                {hrGroups.length > 0 && \`💬HR${hrGroups.length} \`}
-                {otherGroups.length > 0 && \`❓其他${otherGroups.length}\`}
+                {algorithmGroups.length > 0 && `💻算法${algorithmGroups.length} `}
+                {hrGroups.length > 0 && `💬HR${hrGroups.length} `}
+                {otherGroups.length > 0 && `❓其他${otherGroups.length}`}
               </div>
               <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>点击查看详情 →</div>
             </div>
