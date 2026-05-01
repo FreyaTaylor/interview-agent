@@ -178,3 +178,75 @@ cd frontend && streamlit run app.py
 | 算法题去重 | 优先 leetcode_id，其次 title.lower() | 同一道题不同措辞归一 |
 | 项目问题合并 | project_name + topic 精确匹配 + LLM 语义合并 | 跨面试同项目问题累积 |
 | embedding 存储 | 问题+回答拼接后向量化 | 便于后续 RAG 检索用户历史理解 |
+
+---
+
+## 2026-05-01（下午）— 知识树初始化 + Prompt 优化
+
+### 变更概述
+
+新增「管理页」，实现知识树 LLM 初始化全流程：用户画像编辑 → Agent 生成骨架（一级+二级） → 并发展开叶子知识点 → SSE 流式进度。首次生成后发现知识点粒度问题（413 个叶子，像面试题而非知识点），优化 Prompt 明确知识点 vs 问题的边界。
+
+### 功能清单
+
+| 功能 | 说明 |
+|------|------|
+| 用户画像 | 自由文本描述背景/目标/薄弱方向，存入 `user.profile_text`，带入 LLM prompt |
+| 知识树初始化 | 两步生成：骨架（1 次 LLM）→ 逐个二级展开叶子（N 次并发 LLM） |
+| SSE 流式进度 | 前端实时显示进度条 + 终端风格日志（清空→骨架→展开→完成） |
+| 重新初始化 | 清空旧树（按 FK 依赖顺序删除 6 张表）+ 确认弹窗 |
+
+### 新增/修改文件
+
+| 文件 | 变更类型 | 说明 |
+|------|---------|------|
+| `backend/prompts/tree_prompts.py` | 新增 | 骨架生成 + 叶子展开 Prompt（含正反示例） |
+| `backend/services/tree.py` | 新增 | 初始化服务：`generate_skeleton` + `expand_subcategory` + `init_knowledge_tree`（AsyncGenerator） |
+| `backend/api/admin.py` | 新增 | 管理 API：画像 CRUD + 树统计 + SSE 初始化 |
+| `backend/main.py` | 修改 | 注册 admin_router |
+| `frontend-react/src/pages/AdminPage.jsx` | 新增 | 管理页：画像编辑框 + 初始化按钮 + 进度条 + 日志 |
+| `frontend-react/src/App.jsx` | 修改 | 导航栏新增 ⚙️ 管理 Tab |
+
+### API 接口
+
+| 方法 | 路径 | 说明 | 状态 |
+|------|------|------|------|
+| GET | `/api/admin/profile` | 获取用户画像 | 新增 |
+| PUT | `/api/admin/profile` | 更新用户画像 | 新增 |
+| GET | `/api/admin/tree-stats` | 知识树统计（知识点数/是否已初始化） | 新增 |
+| POST | `/api/admin/init-tree` | 初始化知识树（SSE 流式） | 新增 |
+
+### Bug 修复
+
+| 问题 | 原因 | 修复 |
+|------|------|------|
+| 初始化报错 FK violation | `DELETE FROM knowledge_node` 但 `conversation`/`mastery_record` 等表有外键引用 | 按依赖顺序删 6 张表，`knowledge_node` 先 `UPDATE parent_id=NULL` 再 `DELETE` |
+
+### 技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 初始化方式 | 两步（骨架 + 逐个展开） | 一次 LLM 调用无法生成完整三层树，会被截断 |
+| 并发控制 | `asyncio.Semaphore(3)` | 限制同时 3 个二级分类展开，避免 LLM rate limit |
+| 进度推送 | SSE (Server-Sent Events) | 比 WebSocket 轻量，单向推送足够 |
+| 清空策略 | 全量删除 + 重建 | 初始化是低频操作，增量更新复杂度高收益低 |
+| 画像存储 | `user.profile_text` 原文 | 不做结构化解析，直接带入 prompt 由 LLM 理解 |
+
+### Prompt 优化记录
+
+| 版本 | 问题 | 修改 |
+|------|------|------|
+| v1 | 生成 413 个叶子，名字 30+ 字，像面试题不像知识点 | Prompt 说"面试最小考察单元"，LLM 理解为每道面试题 |
+| v2 | — | 加正/反示例（✅ `ConcurrentHashMap 原理` vs ❌ `put 操作流程`），名称 ≤15 字，每二级 3-6 个叶子 |
+
+---
+
+## 今日总结（2026-05-01）
+
+| 维度 | 数据 |
+|------|------|
+| 提交数 | 42 个 |
+| 新增文件 | 7 个（`llm.py`, `tree.py`, `admin.py`, `tree_prompts.py`, `AdminPage.jsx` 等） |
+| 完成模块 | 面试复盘全链路、代码重构、知识树初始化 |
+| 当前页面 | 知识树、学习、面试复盘、项目拷打、其他问题、管理（共 6 个） |
+| 当前 API | 8 个端点（study×3 + knowledge×1 + interview×3 + admin×4） |
