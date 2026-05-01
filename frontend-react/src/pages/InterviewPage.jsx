@@ -22,7 +22,7 @@ export default function InterviewPage() {
         body: JSON.stringify({ text, company, position }),
       }).then(r => r.json())
       if (resp.code === 0) {
-        setResult(resp.data); setExpanded({}); setActiveTab('review')
+        setResult(resp.data); setExpanded({}); setActiveTab('knowledge')
         sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
       }
       else setError(resp.message || resp.detail || '解析失败，请重试')
@@ -61,7 +61,7 @@ export default function InterviewPage() {
   )
 
   // ---- 结果页 ----
-  const scoredGroups = result.groups.filter(g => g.type === 'knowledge' || g.type === 'project')
+  const knowledgeGroups = result.groups.filter(g => g.type === 'knowledge')
   const projectGroups = result.groups.filter(g => g.type === 'project')
   const algorithmGroups = result.groups.filter(g => g.type === 'algorithm')
   const hrGroups = result.groups.filter(g => g.type === 'hr')
@@ -69,7 +69,7 @@ export default function InterviewPage() {
   const otherCount = algorithmGroups.length + hrGroups.length + otherGroups.length
 
   const tabs = [
-    { key: 'review', label: '面试复盘', count: scoredGroups.length },
+    { key: 'knowledge', label: '📖 知识点', count: knowledgeGroups.length },
     { key: 'project', label: '🔨 项目拷打', count: projectGroups.length },
     { key: 'other', label: '📎 其他问题', count: otherCount },
   ]
@@ -129,18 +129,18 @@ export default function InterviewPage() {
         ))}
       </div>
 
-      {/* ---- Tab: 面试复盘 — 所有评分项混合展示 ---- */}
-      {activeTab === 'review' && scoredGroups.map((g, i) => {
+      {/* ---- Tab: 知识点 ---- */}
+      {activeTab === 'knowledge' && (knowledgeGroups.length === 0
+        ? <div className="empty">暂无知识点问题</div>
+        : knowledgeGroups.map((g, i) => {
         const sr = g.score_result; const isOpen = expanded[`r${i}`]
-        const icon = g.type === 'project' ? '🔨' : '📖'
-        const title = g.type === 'project' ? `${g.project_name || '项目'} · ${g.topic || '拷打'}` : g.knowledge_point
         return (
-          <div className="result-group" key={`r${i}`} style={{ borderLeft: g.type === 'project' ? '3px solid #722ed1' : undefined }}>
+          <div className="result-group knowledge" key={`r${i}`}>
             <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
               <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{isOpen ? '▾' : '▸'}</span>
-              <span className="group-type">{icon}</span>
+              <span className="group-type">📖</span>
               <span className="group-title">
-                {title}
+                {g.knowledge_point}
                 {g.auto_created && <span style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>新增</span>}
               </span>
               {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
@@ -155,16 +155,16 @@ export default function InterviewPage() {
                   </div>
                 )}
                 {g.user_answer && (
-                  <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: g.type === 'project' ? '#f0e6ff' : '#fff8e1', borderLeft: `3px solid ${g.type === 'project' ? '#722ed1' : '#fa8c16'}`, borderRadius: 6, marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: '#fff8e1', borderLeft: '3px solid #fa8c16', borderRadius: 6, marginBottom: 8 }}>
                     💬 我的回答：{g.user_answer}
                   </div>
                 )}
                 {sr && (
-                  <div style={{ background: g.type === 'project' ? '#f9f0ff' : '#f6ffed', borderLeft: `3px solid ${g.type === 'project' ? '#722ed1' : '#52c41a'}`, borderRadius: 6, padding: '12px 14px' }}>
-                    <div style={{ marginBottom: 8 }}><b>{g.type === 'project' ? '表达质量' : '得分'}: {sr.total_score}/100</b> — {sr.feedback}</div>
+                  <div style={{ background: '#f6ffed', borderLeft: '3px solid #52c41a', borderRadius: 6, padding: '12px 14px' }}>
+                    <div style={{ marginBottom: 8 }}><b>得分: {sr.total_score}/100</b> — {sr.feedback}</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
                       {(sr.rubric_result || []).map((item, k) => (
-                        <tr key={k} style={{ background: item.hit ? (g.type === 'project' ? '#f0e6ff' : '#e8f5e9') : '#ffebee', borderBottom: '1px solid #e0e0e0' }}>
+                        <tr key={k} style={{ background: item.hit ? '#e8f5e9' : '#ffebee', borderBottom: '1px solid #e0e0e0' }}>
                           <td style={{ padding: '4px 8px' }}>
                             {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
                             {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
@@ -183,7 +183,7 @@ export default function InterviewPage() {
             )}
           </div>
         )
-      })}
+      }))}
 
       {/* ---- Tab: 项目拷打 ---- */}
       {activeTab === 'project' && (projectGroups.length === 0

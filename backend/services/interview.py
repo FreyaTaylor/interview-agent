@@ -11,7 +11,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.config import settings
 from backend.models.knowledge import KnowledgeNode
-from backend.prompts.interview_prompts import INTERVIEW_PARSE_PROMPT
+from backend.prompts.interview_prompts import (
+    INTERVIEW_PARSE_PROMPT,
+    INTERVIEW_SCORE_PROMPT,
+    INTERVIEW_PROJECT_SCORE_PROMPT,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -186,6 +190,49 @@ async def parse_interview_text(raw_text: str) -> dict:
             logger.warning(f"二次检查失败（不影响主流程）: {e}")
 
     return result
+
+
+async def score_interview_group(group: dict) -> dict | None:
+    """
+    对面试复盘中的单个分组进行评分。
+    与学习模式不同：基于面试官实际问的问题评分，不生成新问题。
+    """
+    g_type = group.get("type")
+    user_answer = group.get("user_answer", "").strip()
+    if not user_answer:
+        return None
+
+    questions_text = "\n".join(f"- {q}" for q in group.get("questions", []))
+    llm = _get_llm(temperature=0.1)
+
+    try:
+        if g_type == "knowledge":
+            prompt = INTERVIEW_SCORE_PROMPT.format(
+                knowledge_point=group.get("knowledge_point", ""),
+                questions=questions_text,
+                user_answer=user_answer,
+            )
+        elif g_type == "project":
+            prompt = INTERVIEW_PROJECT_SCORE_PROMPT.format(
+                project_name=group.get("project_name", "项目"),
+                topic=group.get("topic", "拷打"),
+                questions=questions_text,
+                user_answer=user_answer,
+            )
+        else:
+            return None
+
+        response = await llm.ainvoke(prompt)
+        result = _parse_json(response.content)
+        return {
+            "total_score": result.get("total_score", 0),
+            "feedback": result.get("feedback", ""),
+            "rubric_result": result.get("items", []),
+            "recommended_answer": result.get("recommended_answer", []),
+        }
+    except Exception as e:
+        logger.error(f"面试评分失败: {e}")
+        return None
 
 
 async def match_knowledge_nodes(

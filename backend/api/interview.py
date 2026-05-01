@@ -13,8 +13,7 @@ from backend.models.knowledge import KnowledgeNode
 from backend.models.study import StudySession, Conversation, ConversationMessage, MasteryRecord
 from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion
 from backend.schemas.common import ApiResponse
-from backend.services.interview import parse_interview_text, match_knowledge_nodes
-from backend.agents.study_agent import study_graph
+from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/interview", tags=["面试复盘"])
@@ -101,73 +100,40 @@ async def parse_interview(
 
     await db.commit()
 
-    # 5. 批量评分所有 knowledge 类型的知识点
+    # 5. 批量评分 knowledge + project
     scored_groups = []
     total_score_sum = 0
-    knowledge_count = 0
+    scored_count = 0
 
     for g in enriched_groups:
         g = dict(g)
         should_score = (
-            (g.get("type") == "knowledge" and g.get("matched_node_id") and g.get("user_answer", "").strip())
-            or (g.get("type") == "project" and g.get("user_answer", "").strip())
+            g.get("type") in ("knowledge", "project")
+            and g.get("user_answer", "").strip()
         )
         if should_score:
             try:
-                # 确定知识点名称
-                kp_name = g.get("matched_node_name") or g.get("knowledge_point") or ""
-                if g["type"] == "project":
-                    kp_name = f"{g.get('project_name', '项目')} · {g.get('topic', '拷打')}"
+                sr = await score_interview_group(g)
+                g["score_result"] = sr
+                if sr:
+                    total_score_sum += sr["total_score"]
+                    scored_count += 1
 
-                # 出题
-                gen_state = {
-                    "action": "start", "knowledge_point_name": kp_name,
-                    "user_input": "", "question_history": [],
-                    "question_content": "", "rubric_items": [],
-                    "score": 0, "rubric_result": {}, "feedback": "",
-                    "follow_up": None, "follow_up_rubric": [], "summary": [],
-                    "agent_response": "", "phase": "",
-                }
-                gen_result = await study_graph.ainvoke(gen_state)
-
-                # 评分
-                score_state = {
-                    "action": "answer", "knowledge_point_name": kp_name,
-                    "user_input": g["user_answer"],
-                    "question_history": [],
-                    "question_content": gen_result["question_content"],
-                    "rubric_items": gen_result["rubric_items"],
-                    "score": 0, "rubric_result": {}, "feedback": "",
-                    "follow_up": None, "follow_up_rubric": [], "summary": [],
-                    "agent_response": "", "phase": "",
-                }
-                score_result = await study_graph.ainvoke(score_state)
-
-                g["score_result"] = {
-                    "question": gen_result["question_content"],
-                    "total_score": score_result.get("score", 0),
-                    "feedback": score_result.get("feedback", ""),
-                    "rubric_result": score_result.get("rubric_result", {}).get("items", []),
-                    "recommended_answer": score_result.get("rubric_result", {}).get("recommended_answer", []),
-                }
-                total_score_sum += score_result.get("score", 0)
-                knowledge_count += 1
-
-                # 更新掌握度 (EMA) — 仅 knowledge 类型
-                if g["type"] == "knowledge" and g.get("matched_node_id"):
-                    mastery_stmt = select(MasteryRecord).where(
-                        MasteryRecord.user_id == 1,
-                        MasteryRecord.knowledge_point_id == g["matched_node_id"])
-                    mastery = (await db.execute(mastery_stmt)).scalar_one_or_none()
-                    if mastery:
-                        mastery.mastery_level = int(0.4 * score_result.get("score", 0) + 0.6 * mastery.mastery_level)
-                        mastery.study_count += 1
-                    else:
-                        db.add(MasteryRecord(
-                            knowledge_point_id=g["matched_node_id"],
-                            mastery_level=score_result.get("score", 0), study_count=1))
+                    # 更新掌握度 (EMA) — 仅 knowledge 类型
+                    if g["type"] == "knowledge" and g.get("matched_node_id"):
+                        mastery_stmt = select(MasteryRecord).where(
+                            MasteryRecord.user_id == 1,
+                            MasteryRecord.knowledge_point_id == g["matched_node_id"])
+                        mastery = (await db.execute(mastery_stmt)).scalar_one_or_none()
+                        if mastery:
+                            mastery.mastery_level = int(0.4 * sr["total_score"] + 0.6 * mastery.mastery_level)
+                            mastery.study_count += 1
+                        else:
+                            db.add(MasteryRecord(
+                                knowledge_point_id=g["matched_node_id"],
+                                mastery_level=sr["total_score"], study_count=1))
             except Exception as e:
-                logger.error(f"评分失败: {g.get('knowledge_point')}: {e}")
+                logger.error(f"评分失败: {g.get('knowledge_point', g.get('project_name'))}: {e}")
                 g["score_result"] = None
         else:
             g["score_result"] = None
@@ -181,7 +147,7 @@ async def parse_interview(
         t = g.get("type", "other")
         stats[t] = stats.get(t, 0) + 1
 
-    avg_score = round(total_score_sum / knowledge_count) if knowledge_count > 0 else 0
+    avg_score = round(total_score_sum / scored_count) if scored_count > 0 else 0
 
     return ApiResponse.ok(data={
         "record_id": record.id,
