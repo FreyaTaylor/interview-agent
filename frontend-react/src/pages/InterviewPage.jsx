@@ -22,12 +22,8 @@ export default function InterviewPage() {
       }).then(r => r.json())
       if (resp.code === 0) {
         setResult(resp.data)
-        // 默认展开所有有评分的知识点
-        const exp = {}
-        resp.data.groups.forEach((g, i) => {
-          if (g.score_result) exp[i] = true
-        })
-        setExpanded(exp)
+        // 默认全部收起，用户点击展开
+        setExpanded({})
       } else {
         alert(resp.message || '解析失败')
       }
@@ -127,7 +123,17 @@ export default function InterviewPage() {
 
             {isOpen && (
               <div style={{ marginTop: 8 }}>
-                {/* 面试问题 */}
+                {/* 原始对话片段（校验用） */}
+                {g.original_dialogue && (
+                  <div style={{
+                    fontSize: 13, color: '#555', margin: '0 0 10px 0', padding: '10px 14px',
+                    background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6,
+                    whiteSpace: 'pre-wrap', lineHeight: 1.7,
+                  }}>
+                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
+                    {g.original_dialogue}
+                  </div>
+                )}
                 <ul className="group-questions">
                   {g.questions.map((q, j) => <li key={j}>{q}</li>)}
                 </ul>
@@ -189,6 +195,11 @@ export default function InterviewPage() {
               </a>
             )}
           </div>
+          {g.original_dialogue && (
+            <div style={{ fontSize: 13, color: '#555', padding: '6px 14px', background: '#f9fafb', borderRadius: 4, margin: '6px 0', whiteSpace: 'pre-wrap' }}>
+              {g.original_dialogue}
+            </div>
+          )}
         </div>
       ))}
 
@@ -202,6 +213,11 @@ export default function InterviewPage() {
           <ul className="group-questions">
             {g.questions.map((q, j) => <li key={j}>{q}</li>)}
           </ul>
+          {g.original_dialogue && (
+            <div style={{ fontSize: 13, color: '#555', padding: '6px 14px', background: '#f9fafb', borderRadius: 4, margin: '6px 0', whiteSpace: 'pre-wrap' }}>
+              {g.original_dialogue}
+            </div>
+          )}
         </div>
       ))}
 
