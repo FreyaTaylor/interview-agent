@@ -20,6 +20,9 @@ const CATEGORY_CONFIG = {
 export default function OtherQuestionsPage() {
   const [data, setData] = useState({})
   const [activeTab, setActiveTab] = useState('')
+  const [expanded, setExpanded] = useState({})
+
+  const toggle = k => setExpanded(p => ({ ...p, [k]: !p[k] }))
 
   useEffect(() => {
     fetch(`${API}/interview/other-questions`)
