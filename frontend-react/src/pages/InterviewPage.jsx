@@ -81,12 +81,8 @@ export default function InterviewPage() {
         <h2 style={{ marginBottom: 8 }}>📋 面试复盘 {company && `· ${company}`} {position}</h2>
         <p style={{ color: '#666', marginBottom: 12 }}>{result.summary}</p>
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
-          <span className="stat-badge know">📖 知识点 {result.stats.knowledge}</span>
-          {result.stats.project > 0 && <span className="stat-badge" style={{ background: '#f0e6ff', color: '#722ed1' }}>🔨 项目 {result.stats.project}</span>}
-          <span className="stat-badge algo">💻 算法 {result.stats.algorithm}</span>
-          <span className="stat-badge hr">💬 HR {result.stats.hr}</span>
-          <span style={{ marginLeft: 'auto', fontSize: 15 }}>
-            平均分 <b style={{ color: sc(result.avg_score), fontSize: 22 }}>{result.avg_score}</b>/100
+          <span style={{ fontSize: 15 }}>
+            知识点平均分 <b style={{ color: sc(result.avg_score), fontSize: 22 }}>{result.avg_score}</b>/100
           </span>
           <span style={{
             padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500,
@@ -96,24 +92,11 @@ export default function InterviewPage() {
         </div>
       </div>
 
-      {/* ---- 原始文本（默认收起） ---- */}
       {result.missed_count > 0 && (
         <div style={{ background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: '#ff4d4f' }}>
           ⚠️ 二次检查发现 {result.missed_count} 个可能遗漏的问题，已补充到"其他问题"中，请检查
         </div>
       )}
-      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', marginBottom: 16, overflow: 'hidden' }}>
-        <div style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: expanded['raw'] ? '1px solid #eee' : 'none' }}
-             onClick={() => toggle('raw')}>
-          <span style={{ color: '#aaa', fontSize: 12 }}>{expanded['raw'] ? '▾' : '▸'}</span>
-          <span style={{ fontSize: 13, color: '#888' }}>📄 查看原始文本</span>
-        </div>
-        {expanded['raw'] && (
-          <div style={{ padding: '12px 16px', fontSize: 13, color: '#555', whiteSpace: 'pre-wrap', lineHeight: 1.8, maxHeight: 400, overflow: 'auto', background: '#fafbfc' }}>
-            {text}
-          </div>
-        )}
-      </div>
 
       {/* ---- Tab 栏 ---- */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
@@ -190,7 +173,7 @@ export default function InterviewPage() {
         ? <div className="empty">暂无项目拷打记录</div>
         : projectGroups.map((g, i) => {
           const sr = g.score_result; const isOpen = expanded[`p${i}`] !== false
-          const stars = sr ? '⭐'.repeat(sr.rating || 3) : ''
+          const stars = sr ? '⭐'.repeat(Math.min(sr.rating || 3, 5)) : ''
           return (
             <div key={`p${i}`} style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: 16, marginBottom: 14 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>

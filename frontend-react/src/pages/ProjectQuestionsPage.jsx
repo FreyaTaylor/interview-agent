@@ -36,7 +36,7 @@ export default function ProjectQuestionsPage() {
       {projects.map((g, i) => {
         const sr = g.score_result
         const isOpen = expanded[i] !== false // 默认展开
-        const stars = sr ? '⭐'.repeat(sr.rating || 3) : ''
+        const stars = sr ? '⭐'.repeat(Math.min(sr.rating || 3, 5)) : ''
         return (
           <div key={i} style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: 16, marginBottom: 14 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(i)}>
