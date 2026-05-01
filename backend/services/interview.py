@@ -54,42 +54,107 @@ def _parse_json(content: str) -> dict:
         raise
 
 
-async def parse_interview_text(raw_text: str) -> dict:
-    """
-    解析面试文本，返回聚类结果。包含二次检查防遗漏。
-    长文本自动重试一次。
-    Returns: {"groups": [...], "summary": "..."}
-    """
-    prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=raw_text)
-    llm = _get_llm(temperature=0.1)
+CHUNK_SIZE = 2000  # 每段约 2000 字符
 
-    result = None
-    last_error = None
-    for attempt in range(2):  # 最多重试一次
+
+def _split_text(text: str) -> list[str]:
+    """将长文本按段落分割，每段不超过 CHUNK_SIZE"""
+    if len(text) <= CHUNK_SIZE:
+        return [text]
+
+    chunks = []
+    lines = text.split('\n')
+    current = []
+    current_len = 0
+
+    for line in lines:
+        if current_len + len(line) > CHUNK_SIZE and current:
+            chunks.append('\n'.join(current))
+            current = [line]
+            current_len = len(line)
+        else:
+            current.append(line)
+            current_len += len(line) + 1
+
+    if current:
+        chunks.append('\n'.join(current))
+
+    # 如果按行分割后某段还是太长（没有换行的大段文本），按字符截断
+    final = []
+    for chunk in chunks:
+        while len(chunk) > CHUNK_SIZE * 1.5:
+            # 找一个句号/问号/感叹号的位置截断
+            cut = CHUNK_SIZE
+            for sep in ['。', '？', '！', '？', '\n', '，', ',']:
+                pos = chunk.rfind(sep, 0, CHUNK_SIZE + 200)
+                if pos > CHUNK_SIZE // 2:
+                    cut = pos + 1
+                    break
+            final.append(chunk[:cut])
+            chunk = chunk[cut:]
+        if chunk.strip():
+            final.append(chunk)
+
+    return final if final else [text]
+
+
+async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int) -> dict | None:
+    """解析单段面试文本"""
+    if total > 1:
+        extra = f"\n\n注意：这是面试记录的第 {chunk_idx+1}/{total} 段，请只解析本段内容。"
+    else:
+        extra = ""
+    prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=chunk_text) + extra
+
+    for attempt in range(2):
         try:
             response = await llm.ainvoke(prompt)
-            result = _parse_json(response.content)
-            break
+            return _parse_json(response.content)
         except (json.JSONDecodeError, IndexError) as e:
-            last_error = e
-            logger.warning(f"面试文本解析 JSON 失败(第{attempt+1}次): {e}\nLLM 输出前200字: {response.content[:200] if response else 'N/A'}")
+            logger.warning(f"分段{chunk_idx+1}解析JSON失败(第{attempt+1}次): {e}")
             continue
         except Exception as e:
-            last_error = e
-            logger.error(f"面试文本解析异常(第{attempt+1}次): {type(e).__name__}: {e}")
+            logger.error(f"分段{chunk_idx+1}解析异常(第{attempt+1}次): {type(e).__name__}: {e}")
             continue
+    return None
 
-    if result is None:
-        logger.error(f"面试文本解析最终失败: {last_error}")
-        return {"groups": [], "summary": f"解析失败: {type(last_error).__name__}，请重试"}
 
-    # 二次检查：让 LLM 对比原文和提取结果，找遗漏
-    groups = result.get("groups", [])
-    all_questions = []
-    for g in groups:
-        all_questions.extend(g.get("questions", []))
+async def parse_interview_text(raw_text: str) -> dict:
+    """
+    解析面试文本，返回聚类结果。
+    长文本自动分段解析，最后合并所有分组。
+    Returns: {"groups": [...], "summary": "..."}
+    """
+    chunks = _split_text(raw_text)
+    llm = _get_llm(temperature=0.1)
 
-    check_prompt = f"""请对比以下面试原文和已提取的问题列表，检查是否有遗漏的面试提问。
+    logger.info(f"面试文本 {len(raw_text)} 字，分为 {len(chunks)} 段解析")
+
+    # 逐段解析
+    all_groups = []
+    summaries = []
+    for i, chunk in enumerate(chunks):
+        result = await _parse_single_chunk(llm, chunk, i, len(chunks))
+        if result:
+            all_groups.extend(result.get("groups", []))
+            if result.get("summary"):
+                summaries.append(result["summary"])
+
+    if not all_groups:
+        return {"groups": [], "summary": "解析失败，请重试"}
+
+    # 合并 summary
+    summary = summaries[0] if len(summaries) == 1 else "；".join(summaries) if summaries else ""
+
+    result = {"groups": all_groups, "summary": summary}
+
+    # 二次检查（仅短文本做，长文本分段已经够了）
+    if len(chunks) == 1:
+        all_questions = []
+        for g in all_groups:
+            all_questions.extend(g.get("questions", []))
+
+        check_prompt = f"""请对比以下面试原文和已提取的问题列表，检查是否有遗漏的面试提问。
 
 ## 面试原文
 {raw_text}
@@ -104,22 +169,21 @@ async def parse_interview_text(raw_text: str) -> dict:
 {{"missed": ["遗漏的问题1", "遗漏的问题2"]}}
 ```"""
 
-    try:
-        check_resp = await llm.ainvoke(check_prompt)
-        check_result = _parse_json(check_resp.content)
-        missed = check_result.get("missed", [])
-        if missed:
-            logger.info(f"二次检查发现 {len(missed)} 个遗漏问题: {missed}")
-            # 把遗漏的问题加到 other 组
-            result["groups"].append({
-                "type": "other",
-                "questions": missed,
-                "user_answer": "",
-                "original_dialogue": "",
-            })
-            result["missed_count"] = len(missed)
-    except Exception as e:
-        logger.warning(f"二次检查失败（不影响主流程）: {e}")
+        try:
+            check_resp = await llm.ainvoke(check_prompt)
+            check_result = _parse_json(check_resp.content)
+            missed = check_result.get("missed", [])
+            if missed:
+                logger.info(f"二次检查发现 {len(missed)} 个遗漏问题: {missed}")
+                result["groups"].append({
+                    "type": "other",
+                    "questions": missed,
+                    "user_answer": "",
+                    "original_dialogue": "",
+                })
+                result["missed_count"] = len(missed)
+        except Exception as e:
+            logger.warning(f"二次检查失败（不影响主流程）: {e}")
 
     return result
 
