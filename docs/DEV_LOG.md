@@ -96,3 +96,85 @@ cd frontend && streamlit run app.py
 ---
 
 *后续开发记录追加在此文件末尾*
+
+---
+
+## 2026-05-01 — 面试复盘模块完整实现 + 前端重构
+
+### 变更概述
+
+完成面试复盘模块从零到完整可用的全链路开发，包含：文本解析、聚类归类、知识树匹配、多类型评分（知识点 Rubric / 项目面试官印象 / 算法题题解 / HR 评价）、整体分析、embedding 长期记忆、持久化去重。React 前端全面重构为幕布风格 + Tab 布局。最后一轮代码重构提取共享模块。
+
+### 功能清单
+
+| 功能 | 说明 |
+|------|------|
+| 面试文本解析 | 长文本自动分段 → LLM 解析 → 聚类 → 5 种类型分类（knowledge/project/algorithm/hr/other） |
+| 知识树匹配 | 解析出的知识点自动匹配叶子节点，未匹配则自动创建 |
+| 多类型评分 | knowledge: Rubric 打分; project: 面试官印象评估; algorithm: 题解+LeetCode 匹配; hr: 表现评价 |
+| 整体分析 | 面试官视角 3-5 句话系统性评语 + 通过预测 |
+| HR 归一化 | LLM 批量归一化 HR 题为标准书面提问 |
+| 算法题去重 | 按 leetcode_id 或 title 去重 upsert，评分结果回写 |
+| 项目问题持久化 | 跨面试累积，按 project_name + topic 语义合并 |
+| 用户回答 embedding | 向量化存储用户回答，用于 Agent 长期记忆 |
+| 掌握度更新 | 面试评分自动更新知识点掌握度（EMA） |
+| 面试权重提升 | 面试中出现的知识点自动提升面试权重 |
+| 二次检查 | LLM 对比原文和已提取问题，补漏 |
+| 同项目话题合并 | 同项目下语义相似的 topic 自动合并 |
+
+### 前端变更
+
+| 变更 | 说明 |
+|------|------|
+| 幕布风格统一 | 全局使用 `tree-card/tree-tabs/tree-node` 组件体系 |
+| InterviewPage | 输入页精简（去掉标题/公司/岗位），结果页 Tab 三栏（知识点/项目/其他） |
+| ProjectQuestionsPage | 独立持久化页面，从后端 DB 读取，按项目→话题→问题三级树展示 |
+| OtherQuestionsPage | 动态子 Tab（算法/HR/其他），从后端 DB 读取，去重+计数 |
+| sessionStorage 持久化 | 切换 Tab 不丢失面试复盘结果 |
+| localStorage merge | 项目/其他问题跨会话持久化到 localStorage |
+| LeetCode 标签样式 | `.lc-tag` CSS 类（圆角标签 + hover 效果 + 可点击跳转） |
+
+### 新增/修改文件
+
+| 文件 | 变更类型 | 说明 |
+|------|---------|------|
+| `backend/services/llm.py` | 新增 | 共享 LLM 工具：`get_llm()` + `parse_llm_json()` |
+| `backend/services/interview.py` | 大幅扩展 | 面试解析+评分+归一化+编排层（7 个新 service 函数） |
+| `backend/api/interview.py` | 重构 | API handler 从 ~250 行瘦身到 ~50 行，业务逻辑提取到 service 层 |
+| `backend/prompts/interview_prompts.py` | 大幅扩展 | 6 个 Prompt 模板（解析/知识点评分/项目评分/算法评分/HR评分/整体分析/HR归一化） |
+| `backend/models/interview.py` | 扩展 | 新增 ProjectQuestion、UserAnswerEmbedding 模型；AlgorithmQuestion 新增评分字段 |
+| `backend/services/embedding.py` | 扩展 | DashScope embedding 服务 |
+| `backend/services/rubric.py` | 重构 | 改用共享 `llm.py`，去除重复代码 |
+| `frontend-react/src/pages/InterviewPage.jsx` | 重写 | 幕布风格 + Tab 三栏布局 |
+| `frontend-react/src/pages/ProjectQuestionsPage.jsx` | 重写 | 独立持久化页面 |
+| `frontend-react/src/pages/OtherQuestionsPage.jsx` | 重写 | 动态子 Tab + 去重计数 |
+| `frontend-react/src/styles.css` | 扩展 | `.lc-tag` 样式 |
+| `frontend-react/src/App.jsx` | 修改 | 导航栏重排 |
+
+### API 接口
+
+| 方法 | 路径 | 说明 | 状态 |
+|------|------|------|------|
+| POST | `/api/interview/parse` | 上传面试文本 → 全链路处理（解析+匹配+评分+整体分析） | 新增 |
+| GET | `/api/interview/project-questions` | 获取所有累积的项目拷打问题 | 新增 |
+| GET | `/api/interview/other-questions` | 获取算法题+HR题（去重+计数） | 新增 |
+
+### 代码重构
+
+| 重构项 | Before | After |
+|--------|--------|-------|
+| API handler | `parse_interview` 250 行（混合 API/DB/业务逻辑） | 50 行编排代码，业务逻辑在 service 层 |
+| LLM 工具 | `_get_llm()` 和 `_parse_json()` 在 interview.py 和 rubric.py 各写一遍 | 提取到 `services/llm.py` 共享 |
+| Service 函数 | 全部内联在 API handler | 7 个独立函数：`store_algorithm_questions`, `store_hr_questions`, `score_all_groups`, `update_algo_scores`, `update_knowledge_weights`, `store_answer_embeddings`, `store_project_questions` |
+
+### 技术决策
+
+| 决策 | 选择 | 理由 |
+|------|------|------|
+| 长文本处理 | 分段解析（2000 字/段）| 防止 LLM 截断，保证解析完整性 |
+| LLM 重试 | 3 次重试 | 解析/评分调用不稳定时自动重试 |
+| 掌握度更新 | EMA（0.4 新分 + 0.6 旧分） | 平滑更新，避免单次波动 |
+| HR 题去重 | LLM 归一化 → 标准问题映射 | 同义问题（"为啥离职" vs "离职原因"）归一 |
+| 算法题去重 | 优先 leetcode_id，其次 title.lower() | 同一道题不同措辞归一 |
+| 项目问题合并 | project_name + topic 精确匹配 + LLM 语义合并 | 跨面试同项目问题累积 |
+| embedding 存储 | 问题+回答拼接后向量化 | 便于后续 RAG 检索用户历史理解 |

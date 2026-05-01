@@ -5,16 +5,21 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
 from backend.models.knowledge import KnowledgeNode
-from backend.models.study import StudySession, Conversation, ConversationMessage, MasteryRecord
-from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion, ProjectQuestion, UserAnswerEmbedding
+from backend.models.study import StudySession
+from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion, ProjectQuestion
 from backend.schemas.common import ApiResponse
-from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group, generate_overall_analysis, normalize_hr_questions
-from backend.services.embedding import get_embedding
+from backend.services.interview import (
+    parse_interview_text, match_knowledge_nodes,
+    generate_overall_analysis,
+    store_algorithm_questions, store_hr_questions, score_all_groups,
+    update_algo_scores, update_knowledge_weights,
+    store_answer_embeddings, store_project_questions,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/interview", tags=["面试复盘"])
@@ -84,170 +89,26 @@ async def parse_interview(
     db.add(record)
     await db.flush()
 
-    # 4. 存储算法题和 HR 题（算法题按 leetcode_id 或 title 去重 upsert）
-    algo_db_map = {}  # 保存 group index → db record 映射，评分后回填
-    for idx, g in enumerate(enriched_groups):
-        if g["type"] == "algorithm":
-            title = g.get("title", "未知算法题")
-            lc_id = g.get("leetcode_id")
-            # 按 leetcode_id 或 title 查重
-            if lc_id:
-                existing_stmt = select(AlgorithmQuestion).where(AlgorithmQuestion.leetcode_id == lc_id)
-            else:
-                existing_stmt = select(AlgorithmQuestion).where(
-                    func.lower(AlgorithmQuestion.title) == title.strip().lower()
-                )
-            existing = (await db.execute(existing_stmt)).scalar_one_or_none()
-            if existing:
-                algo_db_map[idx] = existing
-            else:
-                new_algo = AlgorithmQuestion(
-                    interview_record_id=record.id,
-                    title=title,
-                    leetcode_id=lc_id,
-                    leetcode_url=g.get("leetcode_url"),
-                )
-                db.add(new_algo)
-                await db.flush()
-                algo_db_map[idx] = new_algo
-        elif g["type"] == "hr":
-            pass  # HR 题在下面批量归一化后再存
-
-    # 4b. HR 题批量归一化后存储
-    all_hr_questions = []
-    for g in enriched_groups:
-        if g["type"] == "hr":
-            all_hr_questions.extend(g.get("questions", []))
-    if all_hr_questions:
-        norm_map = await normalize_hr_questions(all_hr_questions)
-        for q in all_hr_questions:
-            normalized = norm_map.get(q, q)
-            db.add(HrQuestion(
-                interview_record_id=record.id,
-                question=q,
-                normalized_question=normalized,
-            ))
-
+    # 4. 存储算法题和 HR 题
+    algo_db_map = await store_algorithm_questions(enriched_groups, record.id, db)
+    await store_hr_questions(enriched_groups, record.id, db)
     await db.commit()
 
-    # 5. 批量评分 knowledge + project
-    scored_groups = []
-    total_score_sum = 0
-    scored_count = 0
+    # 5. 批量评分 + 更新掌握度
+    scored_groups, total_score_sum, scored_count = await score_all_groups(enriched_groups, db)
 
-    for g in enriched_groups:
-        g = dict(g)
-        should_score = g.get("type") in ("knowledge", "project", "algorithm", "hr")
-        if should_score:
-            try:
-                sr = await score_interview_group(g)
-                g["score_result"] = sr
-                if sr and sr.get("type") == "knowledge":
-                    total_score_sum += sr.get("total_score", 0)
-                    scored_count += 1
-
-                    # 更新掌握度 (EMA) — 仅 knowledge 类型
-                    if g["type"] == "knowledge" and g.get("matched_node_id"):
-                        mastery_stmt = select(MasteryRecord).where(
-                            MasteryRecord.user_id == 1,
-                            MasteryRecord.knowledge_point_id == g["matched_node_id"])
-                        mastery = (await db.execute(mastery_stmt)).scalar_one_or_none()
-                        if mastery:
-                            mastery.mastery_level = int(0.4 * sr["total_score"] + 0.6 * mastery.mastery_level)
-                            mastery.study_count += 1
-                        else:
-                            db.add(MasteryRecord(
-                                knowledge_point_id=g["matched_node_id"],
-                                mastery_level=sr["total_score"], study_count=1))
-            except Exception as e:
-                logger.error(f"评分失败: {g.get('knowledge_point', g.get('project_name'))}: {e}")
-                g["score_result"] = None
-        else:
-            g["score_result"] = None
-        scored_groups.append(g)
-
-    # 5b. 算法题评分结果回写 DB
-    for idx, g in enumerate(scored_groups):
-        if g.get("type") == "algorithm" and g.get("score_result") and idx in algo_db_map:
-            algo_rec = algo_db_map[idx]
-            sr = g["score_result"]
-            algo_rec.description = sr.get("description") or algo_rec.description
-            algo_rec.example = sr.get("example") or algo_rec.example
-            algo_rec.suggested_approach = sr.get("suggested_approach") or algo_rec.suggested_approach
-            algo_rec.feedback = sr.get("feedback") or algo_rec.feedback
-            if sr.get("leetcode_url"):
-                algo_rec.leetcode_url = sr["leetcode_url"]
-            if sr.get("leetcode_id") and not algo_rec.leetcode_id:
-                algo_rec.leetcode_id = sr["leetcode_id"]
-    for g in scored_groups:
-        if g.get("type") == "knowledge" and g.get("matched_node_id"):
-            node = await db.get(KnowledgeNode, g["matched_node_id"])
-            if node and node.interview_weight < 5:
-                node.interview_weight = min(5, node.interview_weight + 1)
+    # 6. 评分结果回写 DB
+    await update_algo_scores(scored_groups, algo_db_map)
+    await update_knowledge_weights(scored_groups, db)
 
     # 7. 用户回答 embedding → Agent 长期记忆
-    for g in scored_groups:
-        user_answer = g.get("user_answer", "").strip()
-        if not user_answer:
-            continue
-        g_type = g.get("type")
-        if g_type in ("knowledge", "project"):
-            kp_name = g.get("knowledge_point") or g.get("matched_node_name") or ""
-            if g_type == "project":
-                kp_name = f"{g.get('project_name', '')} · {g.get('topic', '')}"
-            questions_text = " | ".join(g.get("questions", []))
-            embed_text = f"问题: {questions_text}\n回答: {user_answer}"
-            embedding = await get_embedding(embed_text)
-            score_val = None
-            sr = g.get("score_result")
-            if sr and sr.get("type") == "knowledge":
-                score_val = sr.get("total_score")
-            db.add(UserAnswerEmbedding(
-                knowledge_point_id=g.get("matched_node_id"),
-                source="interview",
-                knowledge_point_name=kp_name,
-                question_text=questions_text,
-                answer_text=user_answer,
-                embedding=embedding,
-                score=score_val,
-            ))
+    await store_answer_embeddings(scored_groups, db)
 
     # 8. 项目问题落库（语义合并）
-    for g in scored_groups:
-        if g.get("type") != "project":
-            continue
-        proj_name = g.get("project_name", "").strip()
-        topic = g.get("topic", "").strip()
-        if not proj_name:
-            continue
-        # 查找已有记录（同 project_name + topic）
-        existing_stmt = select(ProjectQuestion).where(
-            ProjectQuestion.user_id == 1,
-            ProjectQuestion.project_name == proj_name,
-            ProjectQuestion.topic == topic,
-        )
-        existing = (await db.execute(existing_stmt)).scalar_one_or_none()
-        new_qs = g.get("questions", [])
-        suggested = g.get("score_result", {}).get("suggested_answer", []) if g.get("score_result") else []
-        if existing:
-            # 合并 questions 去重
-            old_qs = existing.questions or []
-            merged = list(dict.fromkeys(old_qs + new_qs))
-            existing.questions = merged
-            if suggested:
-                existing.suggested_answer = suggested
-            existing.interview_count = (existing.interview_count or 1) + 1
-        else:
-            db.add(ProjectQuestion(
-                project_name=proj_name,
-                topic=topic,
-                questions=new_qs,
-                suggested_answer=suggested,
-            ))
-
+    await store_project_questions(scored_groups, db)
     await db.commit()
 
-    # 7. 整体分析（面试官视角系统性评价）
+    # 9. 整体分析（面试官视角系统性评价）
     overall_analysis = await generate_overall_analysis(scored_groups, req.company, req.position)
 
     # 统计

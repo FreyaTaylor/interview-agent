@@ -5,12 +5,11 @@
 """
 import json
 import logging
-from langchain_openai import ChatOpenAI
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.config import settings
 from backend.models.knowledge import KnowledgeNode
+from backend.services.llm import get_llm, parse_llm_json
 from backend.prompts.interview_prompts import (
     INTERVIEW_PARSE_PROMPT,
     INTERVIEW_SCORE_PROMPT,
@@ -22,44 +21,6 @@ from backend.prompts.interview_prompts import (
 )
 
 logger = logging.getLogger(__name__)
-
-
-def _get_llm(temperature: float = 0.1) -> ChatOpenAI:
-    return ChatOpenAI(
-        model=settings.DEEPSEEK_MODEL,
-        api_key=settings.DEEPSEEK_API_KEY,
-        base_url=settings.DEEPSEEK_BASE_URL,
-        temperature=temperature,
-        max_tokens=8192,
-        timeout=120,
-    )
-
-
-def _parse_json(content: str) -> dict:
-    """解析 LLM 返回的 JSON，处理 markdown 包裹和可能的截断"""
-    content = content.strip()
-    if "```json" in content:
-        content = content.split("```json")[1]
-        if "```" in content:
-            content = content.split("```")[0]
-        content = content.strip()
-    elif "```" in content:
-        content = content.split("```")[1]
-        if "```" in content:
-            content = content.split("```")[0]
-        content = content.strip()
-
-    try:
-        return json.loads(content)
-    except json.JSONDecodeError:
-        # JSON 可能被截断，尝试修复
-        # 补齐常见截断情况：缺少 ]} 或 }
-        for suffix in [']}}', ']}', '}}', '}', ']']:
-            try:
-                return json.loads(content + suffix)
-            except json.JSONDecodeError:
-                continue
-        raise
 
 
 CHUNK_SIZE = 2000  # 每段约 2000 字符
@@ -117,7 +78,7 @@ async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int) 
     for attempt in range(3):
         try:
             response = await llm.ainvoke(prompt)
-            return _parse_json(response.content)
+            return parse_llm_json(response.content)
         except (json.JSONDecodeError, IndexError) as e:
             logger.warning(f"分段{chunk_idx+1}解析JSON失败(第{attempt+1}次): {e}")
             continue
@@ -170,7 +131,7 @@ async def _merge_project_topics(groups: list[dict], llm) -> list[dict]:
 
         try:
             resp = await llm.ainvoke(merge_prompt)
-            merge_result = _parse_json(resp.content)
+            merge_result = parse_llm_json(resp.content)
             merge_groups = merge_result.get("merge_groups", [])
 
             for mg in merge_groups:
@@ -220,7 +181,7 @@ async def parse_interview_text(raw_text: str) -> dict:
     Returns: {"groups": [...], "summary": "..."}
     """
     chunks = _split_text(raw_text)
-    llm = _get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1, max_tokens=8192, timeout=120)
 
     logger.info(f"面试文本 {len(raw_text)} 字，分为 {len(chunks)} 段解析")
 
@@ -268,7 +229,7 @@ async def parse_interview_text(raw_text: str) -> dict:
 
         try:
             check_resp = await llm.ainvoke(check_prompt)
-            check_result = _parse_json(check_resp.content)
+            check_result = parse_llm_json(check_resp.content)
             missed = check_result.get("missed", [])
             if missed:
                 logger.info(f"二次检查发现 {len(missed)} 个遗漏问题: {missed}")
@@ -292,7 +253,7 @@ async def score_interview_group(group: dict) -> dict | None:
     """
     g_type = group.get("type")
     questions_text = "\n".join(f"- {q}" for q in group.get("questions", []))
-    llm = _get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1)
 
     try:
         if g_type == "knowledge":
@@ -332,7 +293,7 @@ async def score_interview_group(group: dict) -> dict | None:
             return None
 
         response = await llm.ainvoke(prompt)
-        result = _parse_json(response.content)
+        result = parse_llm_json(response.content)
 
         if g_type == "project":
             return {
@@ -381,12 +342,12 @@ async def normalize_hr_questions(questions: list[str]) -> dict[str, str]:
     """
     if not questions:
         return {}
-    llm = _get_llm(temperature=0.1)
+    llm = get_llm(temperature=0.1)
     q_list = "\n".join(f"{i+1}. {q}" for i, q in enumerate(questions))
     prompt = HR_NORMALIZE_PROMPT.format(questions=q_list)
     try:
         resp = await llm.ainvoke(prompt)
-        result = _parse_json(resp.content)
+        result = parse_llm_json(resp.content)
         mappings = result.get("mappings", [])
         return {m["original"]: m["normalized"] for m in mappings if "original" in m and "normalized" in m}
     except Exception as e:
@@ -428,10 +389,10 @@ async def generate_overall_analysis(
         scored_summary=scored_summary,
     )
 
-    llm = _get_llm(temperature=0.3)
+    llm = get_llm(temperature=0.3)
     try:
         response = await llm.ainvoke(prompt)
-        return _parse_json(response.content)
+        return parse_llm_json(response.content)
     except Exception as e:
         logger.error(f"整体分析生成失败: {e}")
         return None
@@ -523,3 +484,214 @@ async def match_knowledge_nodes(
 
         enriched.append(g)
     return enriched
+
+
+# ============================================================
+# 面试复盘编排层 — 从 API 层提取的 DB 操作
+# ============================================================
+
+async def store_algorithm_questions(
+    enriched_groups: list[dict],
+    record_id: int,
+    db: AsyncSession,
+) -> dict[int, "AlgorithmQuestion"]:
+    """存储算法题（按 leetcode_id 或 title 去重 upsert），返回 group index → db record 映射"""
+    from backend.models.interview import AlgorithmQuestion
+    algo_db_map = {}
+    for idx, g in enumerate(enriched_groups):
+        if g["type"] != "algorithm":
+            continue
+        title = g.get("title", "未知算法题")
+        lc_id = g.get("leetcode_id")
+        if lc_id:
+            stmt = select(AlgorithmQuestion).where(AlgorithmQuestion.leetcode_id == lc_id)
+        else:
+            stmt = select(AlgorithmQuestion).where(
+                func.lower(AlgorithmQuestion.title) == title.strip().lower()
+            )
+        existing = (await db.execute(stmt)).scalar_one_or_none()
+        if existing:
+            algo_db_map[idx] = existing
+        else:
+            new_algo = AlgorithmQuestion(
+                interview_record_id=record_id,
+                title=title,
+                leetcode_id=lc_id,
+                leetcode_url=g.get("leetcode_url"),
+            )
+            db.add(new_algo)
+            await db.flush()
+            algo_db_map[idx] = new_algo
+    return algo_db_map
+
+
+async def store_hr_questions(
+    enriched_groups: list[dict],
+    record_id: int,
+    db: AsyncSession,
+) -> None:
+    """批量归一化 HR 题后存储"""
+    from backend.models.interview import HrQuestion
+    all_hr_questions = []
+    for g in enriched_groups:
+        if g["type"] == "hr":
+            all_hr_questions.extend(g.get("questions", []))
+    if not all_hr_questions:
+        return
+    norm_map = await normalize_hr_questions(all_hr_questions)
+    for q in all_hr_questions:
+        normalized = norm_map.get(q, q)
+        db.add(HrQuestion(
+            interview_record_id=record_id,
+            question=q,
+            normalized_question=normalized,
+        ))
+
+
+async def score_all_groups(
+    enriched_groups: list[dict],
+    db: AsyncSession,
+) -> tuple[list[dict], int, int]:
+    """
+    批量评分所有分组，更新掌握度。
+    返回: (scored_groups, total_score_sum, scored_count)
+    """
+    from backend.models.study import MasteryRecord
+    scored_groups = []
+    total_score_sum = 0
+    scored_count = 0
+
+    for g in enriched_groups:
+        g = dict(g)
+        should_score = g.get("type") in ("knowledge", "project", "algorithm", "hr")
+        if should_score:
+            try:
+                sr = await score_interview_group(g)
+                g["score_result"] = sr
+                if sr and sr.get("type") == "knowledge":
+                    total_score_sum += sr.get("total_score", 0)
+                    scored_count += 1
+                    # 更新掌握度 (EMA)
+                    if g["type"] == "knowledge" and g.get("matched_node_id"):
+                        mastery_stmt = select(MasteryRecord).where(
+                            MasteryRecord.user_id == 1,
+                            MasteryRecord.knowledge_point_id == g["matched_node_id"])
+                        mastery = (await db.execute(mastery_stmt)).scalar_one_or_none()
+                        if mastery:
+                            mastery.mastery_level = int(0.4 * sr["total_score"] + 0.6 * mastery.mastery_level)
+                            mastery.study_count += 1
+                        else:
+                            db.add(MasteryRecord(
+                                knowledge_point_id=g["matched_node_id"],
+                                mastery_level=sr["total_score"], study_count=1))
+            except Exception as e:
+                logger.error(f"评分失败: {g.get('knowledge_point', g.get('project_name'))}: {e}")
+                g["score_result"] = None
+        else:
+            g["score_result"] = None
+        scored_groups.append(g)
+
+    return scored_groups, total_score_sum, scored_count
+
+
+async def update_algo_scores(
+    scored_groups: list[dict],
+    algo_db_map: dict[int, "AlgorithmQuestion"],
+) -> None:
+    """将评分结果回写算法题 DB 记录"""
+    for idx, g in enumerate(scored_groups):
+        if g.get("type") != "algorithm" or not g.get("score_result") or idx not in algo_db_map:
+            continue
+        algo_rec = algo_db_map[idx]
+        sr = g["score_result"]
+        algo_rec.description = sr.get("description") or algo_rec.description
+        algo_rec.example = sr.get("example") or algo_rec.example
+        algo_rec.suggested_approach = sr.get("suggested_approach") or algo_rec.suggested_approach
+        algo_rec.feedback = sr.get("feedback") or algo_rec.feedback
+        if sr.get("leetcode_url"):
+            algo_rec.leetcode_url = sr["leetcode_url"]
+        if sr.get("leetcode_id") and not algo_rec.leetcode_id:
+            algo_rec.leetcode_id = sr["leetcode_id"]
+
+
+async def update_knowledge_weights(
+    scored_groups: list[dict],
+    db: AsyncSession,
+) -> None:
+    """面试中出现的知识点，提升面试权重"""
+    for g in scored_groups:
+        if g.get("type") == "knowledge" and g.get("matched_node_id"):
+            node = await db.get(KnowledgeNode, g["matched_node_id"])
+            if node and node.interview_weight < 5:
+                node.interview_weight = min(5, node.interview_weight + 1)
+
+
+async def store_answer_embeddings(
+    scored_groups: list[dict],
+    db: AsyncSession,
+) -> None:
+    """将用户回答向量化存储，用于 Agent 长期记忆"""
+    from backend.models.interview import UserAnswerEmbedding
+    from backend.services.embedding import get_embedding
+    for g in scored_groups:
+        user_answer = g.get("user_answer", "").strip()
+        if not user_answer:
+            continue
+        g_type = g.get("type")
+        if g_type not in ("knowledge", "project"):
+            continue
+        kp_name = g.get("knowledge_point") or g.get("matched_node_name") or ""
+        if g_type == "project":
+            kp_name = f"{g.get('project_name', '')} · {g.get('topic', '')}"
+        questions_text = " | ".join(g.get("questions", []))
+        embed_text = f"问题: {questions_text}\n回答: {user_answer}"
+        embedding = await get_embedding(embed_text)
+        score_val = None
+        sr = g.get("score_result")
+        if sr and sr.get("type") == "knowledge":
+            score_val = sr.get("total_score")
+        db.add(UserAnswerEmbedding(
+            knowledge_point_id=g.get("matched_node_id"),
+            source="interview",
+            knowledge_point_name=kp_name,
+            question_text=questions_text,
+            answer_text=user_answer,
+            embedding=embedding,
+            score=score_val,
+        ))
+
+
+async def store_project_questions(
+    scored_groups: list[dict],
+    db: AsyncSession,
+) -> None:
+    """项目问题落库（语义合并，去重）"""
+    from backend.models.interview import ProjectQuestion
+    for g in scored_groups:
+        if g.get("type") != "project":
+            continue
+        proj_name = g.get("project_name", "").strip()
+        topic = g.get("topic", "").strip()
+        if not proj_name:
+            continue
+        existing_stmt = select(ProjectQuestion).where(
+            ProjectQuestion.user_id == 1,
+            ProjectQuestion.project_name == proj_name,
+            ProjectQuestion.topic == topic,
+        )
+        existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+        new_qs = g.get("questions", [])
+        suggested = g.get("score_result", {}).get("suggested_answer", []) if g.get("score_result") else []
+        if existing:
+            old_qs = existing.questions or []
+            existing.questions = list(dict.fromkeys(old_qs + new_qs))
+            if suggested:
+                existing.suggested_answer = suggested
+            existing.interview_count = (existing.interview_count or 1) + 1
+        else:
+            db.add(ProjectQuestion(
+                project_name=proj_name,
+                topic=topic,
+                questions=new_qs,
+                suggested_answer=suggested,
+            ))

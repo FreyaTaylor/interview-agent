@@ -3,34 +3,12 @@
 - 动态出题（LLM 生成题目 + Rubric）
 - Rubric 评分（含追问决策 + 学习小结）
 """
-import json
 import logging
-from langchain_openai import ChatOpenAI
 
-from backend.config import settings
+from backend.services.llm import get_llm, parse_llm_json
 from backend.prompts.study_prompts import GENERATE_QUESTION_PROMPT, RUBRIC_SCORING_PROMPT
 
 logger = logging.getLogger(__name__)
-
-
-def _get_llm(temperature: float = 0.1) -> ChatOpenAI:
-    """获取 DeepSeek LLM 实例"""
-    return ChatOpenAI(
-        model=settings.DEEPSEEK_MODEL,
-        api_key=settings.DEEPSEEK_API_KEY,
-        base_url=settings.DEEPSEEK_BASE_URL,
-        temperature=temperature,
-    )
-
-
-def _parse_json_response(content: str) -> dict:
-    """从 LLM 响应中提取 JSON"""
-    content = content.strip()
-    if "```json" in content:
-        content = content.split("```json")[1].split("```")[0].strip()
-    elif "```" in content:
-        content = content.split("```")[1].split("```")[0].strip()
-    return json.loads(content)
 
 
 async def generate_question(
@@ -60,11 +38,11 @@ async def generate_question(
         history=history_text,
     )
 
-    llm = _get_llm(temperature=0.3)
+    llm = get_llm(temperature=0.3)
     response = await llm.ainvoke(prompt)
 
     try:
-        result = _parse_json_response(response.content)
+        result = parse_llm_json(response.content)
         # 强制归一化 rubric 分值之和 = 100
         rubric = result.get("rubric", [])
         if rubric:
@@ -112,11 +90,11 @@ async def score_answer_with_rubric(
         user_answer=user_answer,
     )
 
-    llm = _get_llm()
+    llm = get_llm()
     response = await llm.ainvoke(prompt)
 
     try:
-        result = _parse_json_response(response.content)
+        result = parse_llm_json(response.content)
         # 确保 summary 字段存在
         if "summary" not in result:
             result["summary"] = []
