@@ -123,6 +123,92 @@ async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int) 
     return None
 
 
+async def _merge_project_topics(groups: list[dict], llm) -> list[dict]:
+    """
+    合并同项目下语义相似的 topic。
+    1. 按 project_name 归组
+    2. 同项目下多个 topic → LLM 判断哪些可以合并
+    3. 合并 questions/user_answer/original_dialogue
+    非 project 类型原样保留。
+    """
+    non_project = [g for g in groups if g.get("type") != "project"]
+    projects = [g for g in groups if g.get("type") == "project"]
+
+    if len(projects) <= 1:
+        return groups
+
+    # 按 project_name 归组
+    by_name = {}
+    for g in projects:
+        name = (g.get("project_name") or "").strip() or "未命名项目"
+        by_name.setdefault(name, []).append(g)
+
+    merged_projects = []
+    for proj_name, topics in by_name.items():
+        if len(topics) <= 1:
+            merged_projects.extend(topics)
+            continue
+
+        # LLM 判断同项目下哪些 topic 可以合并
+        topic_list = [f"{i+1}. {t.get('topic', '未知')}" for i, t in enumerate(topics)]
+        merge_prompt = f"""以下是同一个项目「{proj_name}」下的多个面试话题，请判断哪些话题在语义上重复或高度相似，应该合并。
+
+话题列表：
+{chr(10).join(topic_list)}
+
+请返回合并方案。如果某些话题应合并，用数组表示（如 [1,3] 表示话题1和3合并）。不需要合并的单独成组。
+```json
+{{
+  "merge_groups": [[1, 3], [2], [4, 5, 6]]
+}}
+```
+只返回 JSON，不要其他内容。如果都不需要合并，每个单独成组即可。"""
+
+        try:
+            resp = await llm.ainvoke(merge_prompt)
+            merge_result = _parse_json(resp.content)
+            merge_groups = merge_result.get("merge_groups", [])
+
+            for mg in merge_groups:
+                indices = [idx - 1 for idx in mg if 1 <= idx <= len(topics)]
+                if not indices:
+                    continue
+                # 合并：第一个 topic 作为基础，追加后续的 questions/answer/dialogue
+                base = dict(topics[indices[0]])
+                for idx in indices[1:]:
+                    t = topics[idx]
+                    # 合并 topic 名称（取第一个）
+                    base["questions"] = (base.get("questions") or []) + (t.get("questions") or [])
+                    if t.get("user_answer", "").strip():
+                        existing = base.get("user_answer", "").strip()
+                        if existing:
+                            base["user_answer"] = existing + "\n" + t["user_answer"]
+                        else:
+                            base["user_answer"] = t["user_answer"]
+                    if t.get("original_dialogue", "").strip():
+                        existing = base.get("original_dialogue", "").strip()
+                        if existing:
+                            base["original_dialogue"] = existing + "\n---\n" + t["original_dialogue"]
+                        else:
+                            base["original_dialogue"] = t["original_dialogue"]
+                # 去重 questions
+                seen = set()
+                unique_q = []
+                for q in base.get("questions", []):
+                    if q not in seen:
+                        seen.add(q)
+                        unique_q.append(q)
+                base["questions"] = unique_q
+                merged_projects.append(base)
+
+            logger.info(f"项目「{proj_name}」: {len(topics)}个topic → {len(merge_groups)}组")
+        except Exception as e:
+            logger.warning(f"项目话题合并失败（保留原始）: {e}")
+            merged_projects.extend(topics)
+
+    return non_project + merged_projects
+
+
 async def parse_interview_text(raw_text: str) -> dict:
     """
     解析面试文本，返回聚类结果。
@@ -146,6 +232,9 @@ async def parse_interview_text(raw_text: str) -> dict:
 
     if not all_groups:
         return {"groups": [], "summary": "解析失败，请重试"}
+
+    # 合并同项目的 topic（分段解析 + 语义去重）
+    all_groups = await _merge_project_topics(all_groups, llm)
 
     # 合并 summary
     summary = summaries[0] if len(summaries) == 1 else "；".join(summaries) if summaries else ""
