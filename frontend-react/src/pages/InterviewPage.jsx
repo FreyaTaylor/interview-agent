@@ -76,6 +76,11 @@ export default function InterviewPage() {
       </div>
 
       {/* ---- 原始文本（可折叠） ---- */}
+      {result.missed_count > 0 && (
+        <div style={{ background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: '#ff4d4f' }}>
+          ⚠️ 二次检查发现 {result.missed_count} 个可能遗漏的问题，已补充到"其他问题"中，请检查
+        </div>
+      )}
       <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', marginBottom: 16, overflow: 'hidden' }}>
         <div style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: expanded['raw'] ? '1px solid #eee' : 'none' }}
              onClick={() => toggle('raw')}>

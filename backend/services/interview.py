@@ -36,7 +36,7 @@ def _parse_json(content: str) -> dict:
 
 async def parse_interview_text(raw_text: str) -> dict:
     """
-    解析面试文本，返回聚类结果
+    解析面试文本，返回聚类结果。包含二次检查防遗漏。
     Returns: {"groups": [...], "summary": "..."}
     """
     prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=raw_text)
@@ -44,10 +44,50 @@ async def parse_interview_text(raw_text: str) -> dict:
     response = await llm.ainvoke(prompt)
 
     try:
-        return _parse_json(response.content)
+        result = _parse_json(response.content)
     except (json.JSONDecodeError, IndexError) as e:
         logger.error(f"面试文本解析 JSON 失败: {e}\nLLM 输出: {response.content}")
         return {"groups": [], "summary": "解析失败，请重试"}
+
+    # 二次检查：让 LLM 对比原文和提取结果，找遗漏
+    groups = result.get("groups", [])
+    all_questions = []
+    for g in groups:
+        all_questions.extend(g.get("questions", []))
+
+    check_prompt = f"""请对比以下面试原文和已提取的问题列表，检查是否有遗漏的面试提问。
+
+## 面试原文
+{raw_text}
+
+## 已提取的问题（{len(all_questions)}个）
+{chr(10).join(f'{i+1}. {q}' for i, q in enumerate(all_questions))}
+
+## 要求
+如果有遗漏的面试提问，按JSON格式返回遗漏的问题。如果没有遗漏，返回空数组。
+只返回被遗漏的面试官提问，不要重复已提取的。
+```json
+{{"missed": ["遗漏的问题1", "遗漏的问题2"]}}
+```"""
+
+    try:
+        check_resp = await llm.ainvoke(check_prompt)
+        check_result = _parse_json(check_resp.content)
+        missed = check_result.get("missed", [])
+        if missed:
+            logger.info(f"二次检查发现 {len(missed)} 个遗漏问题: {missed}")
+            # 把遗漏的问题加到 other 组
+            result["groups"].append({
+                "type": "other",
+                "questions": missed,
+                "user_answer": "",
+                "original_dialogue": "",
+            })
+            result["missed_count"] = len(missed)
+    except Exception as e:
+        logger.warning(f"二次检查失败（不影响主流程）: {e}")
+
+    return result
 
 
 async def match_knowledge_nodes(
