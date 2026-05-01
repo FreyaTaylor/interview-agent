@@ -5,7 +5,7 @@
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.database import get_db
@@ -84,14 +84,32 @@ async def parse_interview(
     db.add(record)
     await db.flush()
 
-    # 4. 存储算法题和 HR 题
-    for g in enriched_groups:
+    # 4. 存储算法题和 HR 题（算法题按 leetcode_id 或 title 去重 upsert）
+    algo_db_map = {}  # 保存 group index → db record 映射，评分后回填
+    for idx, g in enumerate(enriched_groups):
         if g["type"] == "algorithm":
-            db.add(AlgorithmQuestion(
-                interview_record_id=record.id,
-                title=g.get("title", "未知算法题"),
-                leetcode_id=g.get("leetcode_id"),
-            ))
+            title = g.get("title", "未知算法题")
+            lc_id = g.get("leetcode_id")
+            # 按 leetcode_id 或 title 查重
+            if lc_id:
+                existing_stmt = select(AlgorithmQuestion).where(AlgorithmQuestion.leetcode_id == lc_id)
+            else:
+                existing_stmt = select(AlgorithmQuestion).where(
+                    func.lower(AlgorithmQuestion.title) == title.strip().lower()
+                )
+            existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+            if existing:
+                algo_db_map[idx] = existing
+            else:
+                new_algo = AlgorithmQuestion(
+                    interview_record_id=record.id,
+                    title=title,
+                    leetcode_id=lc_id,
+                    leetcode_url=g.get("leetcode_url"),
+                )
+                db.add(new_algo)
+                await db.flush()
+                algo_db_map[idx] = new_algo
         elif g["type"] == "hr":
             for q in g.get("questions", []):
                 db.add(HrQuestion(
@@ -137,7 +155,17 @@ async def parse_interview(
             g["score_result"] = None
         scored_groups.append(g)
 
-    # 6. 更新面试频率 interview_weight（被问到的知识点权重 +1）
+    # 5b. 算法题评分结果回写 DB
+    for idx, g in enumerate(scored_groups):
+        if g.get("type") == "algorithm" and g.get("score_result") and idx in algo_db_map:
+            algo_rec = algo_db_map[idx]
+            sr = g["score_result"]
+            algo_rec.description = sr.get("description") or algo_rec.description
+            algo_rec.example = sr.get("example") or algo_rec.example
+            algo_rec.suggested_approach = sr.get("suggested_approach") or algo_rec.suggested_approach
+            algo_rec.feedback = sr.get("feedback") or algo_rec.feedback
+            if sr.get("leetcode_url"):
+                algo_rec.leetcode_url = sr["leetcode_url"]
     for g in scored_groups:
         if g.get("type") == "knowledge" and g.get("matched_node_id"):
             node = await db.get(KnowledgeNode, g["matched_node_id"])
@@ -255,11 +283,21 @@ async def get_other_questions(
     algo_result = await db.execute(algo_stmt)
     algo_map = {}
     for r in algo_result.scalars().all():
-        key = (r.title or "").strip().lower()
+        # 优先按 leetcode_id 去重，否则按 title
+        key = str(r.leetcode_id) if r.leetcode_id else (r.title or "").strip().lower()
         if key in algo_map:
             algo_map[key]["count"] += 1
         else:
-            algo_map[key] = {"title": r.title, "leetcode_id": r.leetcode_id, "count": 1}
+            algo_map[key] = {
+                "title": r.title,
+                "leetcode_id": r.leetcode_id,
+                "leetcode_url": r.leetcode_url,
+                "description": r.description,
+                "example": r.example,
+                "suggested_approach": r.suggested_approach,
+                "feedback": r.feedback,
+                "count": 1,
+            }
     algos = list(algo_map.values())
 
     # HR题：按问题文本去重

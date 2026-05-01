@@ -30,7 +30,7 @@ class InterviewRecord(TimestampMixin, Base):
 
 
 class AlgorithmQuestion(TimestampMixin, Base):
-    """算法题记录 — 从面试文本中提取的算法题"""
+    """算法题记录 — 从面试文本中提取的算法题，含 LLM 生成的题解"""
     __tablename__ = "algorithm_question"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -41,6 +41,11 @@ class AlgorithmQuestion(TimestampMixin, Base):
     leetcode_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     leetcode_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     user_performance: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # LLM 评分后填充的字段
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)  # 题目描述
+    example: Mapped[str | None] = mapped_column(Text, nullable=True)  # 输入输出示例
+    suggested_approach: Mapped[str | None] = mapped_column(Text, nullable=True)  # 建议解法
+    feedback: Mapped[str | None] = mapped_column(Text, nullable=True)  # 表现评价
 
 
 class HrQuestion(TimestampMixin, Base):

@@ -71,19 +71,35 @@ export default function OtherQuestionsPage() {
       </div>
 
       {/* 内容区 */}
-      {items.map((g, i) => (
-        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: `3px solid ${cfg.color}`, padding: '10px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-          <span style={{ fontWeight: 600, flex: 1, minWidth: 150 }}>{g.title || g.question || '—'}</span>
-          {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 8px' }}>考过{g.count}次</span>}
-          {g.leetcode_id && (
-            <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer"
-               style={{ fontSize: 12, color: cfg.color, padding: '2px 8px', border: `1px solid ${cfg.color}`, borderRadius: 4, textDecoration: 'none' }}>
-              LeetCode
-            </a>
+      {items.map((g, i) => {
+        const isOpen = expanded[`${activeTab}_${i}`]
+        const hasDetail = g.description || g.example || g.suggested_approach || g.feedback
+        const lcUrl = g.leetcode_url || (g.leetcode_id ? `https://leetcode.cn/problems/` : null)
+        return (
+        <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: `3px solid ${cfg.color}`, padding: '10px 14px', marginBottom: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: hasDetail ? 'pointer' : 'default' }} onClick={() => hasDetail && toggle(`${activeTab}_${i}`)}>
+            {hasDetail && <span style={{ color: cfg.color, fontSize: 14 }}>{isOpen ? '▼' : '▶'}</span>}
+            <span style={{ fontWeight: 600, flex: 1 }}>{g.title || g.question || '—'}</span>
+            {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 8px' }}>考过{g.count}次</span>}
+            {g.leetcode_id && <span style={{ fontSize: 12, color: '#888' }}>#{g.leetcode_id}</span>}
+            {lcUrl && (
+              <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                 style={{ fontSize: 12, color: cfg.color, padding: '2px 8px', border: `1px solid ${cfg.color}`, borderRadius: 4, textDecoration: 'none' }}>
+                LeetCode
+              </a>
+            )}
+          </div>
+          {g.answer && <div style={{ fontSize: 13, color: '#666', marginTop: 4, paddingLeft: 12 }}>💬 {g.answer}</div>}
+          {isOpen && (
+            <div style={{ marginTop: 8, paddingLeft: 24, fontSize: 13 }}>
+              {g.feedback && <div style={{ color: '#555', marginBottom: 6, padding: '4px 10px', background: '#fffbe6', borderLeft: `3px solid ${cfg.color}`, borderRadius: 4 }}>💬 {g.feedback}</div>}
+              {g.description && <div style={{ marginBottom: 6 }}><b>📝 题目</b><div style={{ padding: '4px 10px', background: '#fafafa', borderRadius: 4, lineHeight: 1.7 }}>{g.description}</div></div>}
+              {g.example && <div style={{ marginBottom: 6 }}><b>💡 示例</b><pre style={{ padding: '6px 10px', background: '#f5f5f5', borderRadius: 4, fontFamily: 'monospace', fontSize: 12, whiteSpace: 'pre-wrap', margin: '4px 0', lineHeight: 1.6 }}>{g.example}</pre></div>}
+              {g.suggested_approach && <div><b>📖 建议解法</b><div style={{ padding: '4px 10px', background: '#f6ffed', borderRadius: 4, lineHeight: 1.7 }}>{g.suggested_approach}</div></div>}
+            </div>
           )}
-          {g.answer && <div style={{ width: '100%', fontSize: 13, color: '#666', marginTop: 2, paddingLeft: 12 }}>💬 {g.answer}</div>}
         </div>
-      ))}
+      )})}
     </div>
   )
 }
