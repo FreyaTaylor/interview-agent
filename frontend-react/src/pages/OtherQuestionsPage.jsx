@@ -36,28 +36,16 @@ export default function OtherQuestionsPage() {
       {/* 算法题 */}
       {groups.algorithm.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 8, color: '#fa8c16' }}>💻 算法题</h3>
+          <h3 style={{ fontSize: 15, marginBottom: 8, color: '#fa8c16' }}>💻 算法题（{groups.algorithm.length}）</h3>
           {groups.algorithm.map((g, i) => (
-            <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #fa8c16', padding: 14, marginBottom: 10 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontWeight: 600, flex: 1 }}>{g.title}</span>
-                {g.leetcode_id && (
-                  <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer"
-                     style={{ fontSize: 12, color: '#fa8c16', padding: '2px 8px', border: '1px solid #fa8c16', borderRadius: 4, textDecoration: 'none' }}>
-                    LeetCode #{g.leetcode_id}
-                  </a>
-                )}
-              </div>
-              {g.original_dialogue && (
-                <div style={{ marginTop: 6 }}>
-                  <div style={{ padding: '4px 0', cursor: 'pointer', fontSize: 12, color: '#aaa' }}
-                       onClick={() => toggle(`a${i}`)}>
-                    {expanded[`a${i}`] ? '▾' : '▸'} 原始对话
-                  </div>
-                  {expanded[`a${i}`] && (
-                    <div style={{ fontSize: 13, color: '#888', whiteSpace: 'pre-wrap', padding: '6px 12px', background: '#fffbf0', borderRadius: 4 }}>{g.original_dialogue}</div>
-                  )}
-                </div>
+            <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #fa8c16', padding: '10px 14px', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontWeight: 600, flex: 1 }}>{g.title}</span>
+              {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: '#fa8c16', borderRadius: 10, padding: '1px 8px' }}>考过{g.count}次</span>}
+              {g.leetcode_id && (
+                <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer"
+                   style={{ fontSize: 12, color: '#fa8c16', padding: '2px 8px', border: '1px solid #fa8c16', borderRadius: 4, textDecoration: 'none' }}>
+                  LeetCode
+                </a>
               )}
             </div>
           ))}
@@ -67,7 +55,7 @@ export default function OtherQuestionsPage() {
       {/* HR题 */}
       {groups.hr.length > 0 && (
         <div style={{ marginBottom: 20 }}>
-          <h3 style={{ fontSize: 15, marginBottom: 8, color: '#52c41a' }}>💬 HR / 行为题</h3>
+          <h3 style={{ fontSize: 15, marginBottom: 8, color: '#52c41a' }}>💬 HR / 行为题（{groups.hr.length}）</h3>
           {groups.hr.map((g, i) => (
             <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #52c41a', padding: 14, marginBottom: 10 }}>
               <div style={{ fontSize: 14, color: '#333', fontWeight: 500 }}>• {g.question}</div>

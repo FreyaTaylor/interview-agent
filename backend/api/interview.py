@@ -246,16 +246,31 @@ async def get_project_questions(
     } for r in rows])
 
 
-@router.get("/other-questions", summary="获取所有累积的其他问题")
+@router.get("/other-questions", summary="获取所有累积的其他问题（去重）")
 async def get_other_questions(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
+    # 算法题：按 title 去重，记录出现次数
     algo_stmt = select(AlgorithmQuestion).order_by(AlgorithmQuestion.id)
     algo_result = await db.execute(algo_stmt)
-    algos = [{"type": "algorithm", "title": r.title, "leetcode_id": r.leetcode_id} for r in algo_result.scalars().all()]
+    algo_map = {}
+    for r in algo_result.scalars().all():
+        key = (r.title or "").strip().lower()
+        if key in algo_map:
+            algo_map[key]["count"] += 1
+        else:
+            algo_map[key] = {"title": r.title, "leetcode_id": r.leetcode_id, "count": 1}
+    algos = list(algo_map.values())
 
+    # HR题：按问题文本去重
     hr_stmt = select(HrQuestion).order_by(HrQuestion.id)
     hr_result = await db.execute(hr_stmt)
-    hrs = [{"type": "hr", "question": r.question, "answer": r.answer} for r in hr_result.scalars().all()]
+    hr_seen = set()
+    hrs = []
+    for r in hr_result.scalars().all():
+        key = (r.question or "").strip().lower()
+        if key not in hr_seen:
+            hr_seen.add(key)
+            hrs.append({"question": r.question, "answer": r.answer})
 
     return ApiResponse.ok(data={"algorithm": algos, "hr": hrs})
