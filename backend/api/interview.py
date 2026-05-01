@@ -161,9 +161,9 @@ async def parse_interview(
     await db.commit()
 
     # 统计
-    stats = {"knowledge": 0, "algorithm": 0, "hr": 0}
+    stats = {"knowledge": 0, "algorithm": 0, "hr": 0, "project": 0, "other": 0}
     for g in scored_groups:
-        t = g.get("type", "knowledge")
+        t = g.get("type", "other")
         stats[t] = stats.get(t, 0) + 1
 
     avg_score = round(total_score_sum / knowledge_count) if knowledge_count > 0 else 0
