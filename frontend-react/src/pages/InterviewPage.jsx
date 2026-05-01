@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
 
 const API = 'http://127.0.0.1:8000/api'
 
@@ -10,6 +9,7 @@ export default function InterviewPage() {
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState(null)
   const [expanded, setExpanded] = useState({})
+  const [activeTab, setActiveTab] = useState('review')
 
   async function handleParse() {
     if (!text.trim() || loading) return
@@ -20,9 +20,7 @@ export default function InterviewPage() {
         body: JSON.stringify({ text, company, position }),
       }).then(r => r.json())
       if (resp.code === 0) {
-        setResult(resp.data); setExpanded({})
-        // 存到 sessionStorage 供子页面读取
-        sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
+        setResult(resp.data); setExpanded({}); setActiveTab('review')
       }
       else alert(resp.message || '解析失败')
     } catch { alert('请求失败') }
@@ -52,11 +50,18 @@ export default function InterviewPage() {
   )
 
   // ---- 结果页 ----
-  const knowledgeGroups = result.groups.filter(g => g.type === 'knowledge')
+  const scoredGroups = result.groups.filter(g => g.type === 'knowledge' || g.type === 'project')
   const projectGroups = result.groups.filter(g => g.type === 'project')
   const algorithmGroups = result.groups.filter(g => g.type === 'algorithm')
   const hrGroups = result.groups.filter(g => g.type === 'hr')
   const otherGroups = result.groups.filter(g => g.type === 'other')
+  const otherCount = algorithmGroups.length + hrGroups.length + otherGroups.length
+
+  const tabs = [
+    { key: 'review', label: '面试复盘', count: scoredGroups.length },
+    { key: 'project', label: '🔨 项目拷打', count: projectGroups.length },
+    { key: 'other', label: '📎 其他问题', count: otherCount },
+  ]
 
   return (
     <div className="interview-result">
@@ -80,7 +85,7 @@ export default function InterviewPage() {
         </div>
       </div>
 
-      {/* ---- 原始文本（可折叠） ---- */}
+      {/* ---- 原始文本（默认收起） ---- */}
       {result.missed_count > 0 && (
         <div style={{ background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, padding: '10px 16px', marginBottom: 12, fontSize: 13, color: '#ff4d4f' }}>
           ⚠️ 二次检查发现 {result.missed_count} 个可能遗漏的问题，已补充到"其他问题"中，请检查
@@ -90,7 +95,7 @@ export default function InterviewPage() {
         <div style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: expanded['raw'] ? '1px solid #eee' : 'none' }}
              onClick={() => toggle('raw')}>
           <span style={{ color: '#aaa', fontSize: 12 }}>{expanded['raw'] ? '▾' : '▸'}</span>
-          <span style={{ fontSize: 13, color: '#888' }}>📄 查看原始文本（校验解析是否完整）</span>
+          <span style={{ fontSize: 13, color: '#888' }}>📄 查看原始文本</span>
         </div>
         {expanded['raw'] && (
           <div style={{ padding: '12px 16px', fontSize: 13, color: '#555', whiteSpace: 'pre-wrap', lineHeight: 1.8, maxHeight: 400, overflow: 'auto', background: '#fafbfc' }}>
@@ -99,22 +104,36 @@ export default function InterviewPage() {
         )}
       </div>
 
-      {/* ---- 知识点（可展开评分，不跳转） ---- */}
-      {knowledgeGroups.length > 0 && <h3 style={{ margin: '16px 0 8px', fontSize: 15 }}>📖 技术知识点</h3>}
-      {result.groups.map((g, i) => {
-        if (g.type !== 'knowledge') return null
-        const sr = g.score_result; const isOpen = expanded[i]
+      {/* ---- Tab 栏 ---- */}
+      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
+        {tabs.map(t => (
+          <button key={t.key} onClick={() => setActiveTab(t.key)} style={{
+            padding: '10px 20px', fontSize: 14, fontWeight: activeTab === t.key ? 600 : 400,
+            color: activeTab === t.key ? '#1677ff' : '#888', background: 'none', border: 'none',
+            borderBottom: activeTab === t.key ? '2px solid #1677ff' : '2px solid transparent',
+            marginBottom: -2, cursor: 'pointer', transition: 'all .2s',
+          }}>
+            {t.label}{t.count > 0 ? ` (${t.count})` : ''}
+          </button>
+        ))}
+      </div>
+
+      {/* ---- Tab: 面试复盘 — 所有评分项混合展示 ---- */}
+      {activeTab === 'review' && scoredGroups.map((g, i) => {
+        const sr = g.score_result; const isOpen = expanded[`r${i}`]
+        const icon = g.type === 'project' ? '🔨' : '📖'
+        const title = g.type === 'project' ? `${g.project_name || '项目'} · ${g.topic || '拷打'}` : g.knowledge_point
         return (
-          <div className="result-group knowledge" key={i}>
-            <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(i)}>
+          <div className="result-group" key={`r${i}`} style={{ borderLeft: g.type === 'project' ? '3px solid #722ed1' : undefined }}>
+            <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
               <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{isOpen ? '▾' : '▸'}</span>
-              <span className="group-type">📖</span>
+              <span className="group-type">{icon}</span>
               <span className="group-title">
-                {g.knowledge_point}
+                {title}
                 {g.auto_created && <span style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>新增</span>}
               </span>
               {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
-              <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(i) }}>{isOpen ? '收起' : '展开'}</button>
+              <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(`r${i}`) }}>{isOpen ? '收起' : '展开'}</button>
             </div>
             {isOpen && (
               <div style={{ marginTop: 8 }}>
@@ -125,16 +144,16 @@ export default function InterviewPage() {
                   </div>
                 )}
                 {g.user_answer && (
-                  <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: '#fff8e1', borderLeft: '3px solid #fa8c16', borderRadius: 6, marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: g.type === 'project' ? '#f0e6ff' : '#fff8e1', borderLeft: `3px solid ${g.type === 'project' ? '#722ed1' : '#fa8c16'}`, borderRadius: 6, marginBottom: 8 }}>
                     💬 我的回答：{g.user_answer}
                   </div>
                 )}
                 {sr && (
-                  <div style={{ background: '#f6ffed', borderLeft: '3px solid #52c41a', borderRadius: 6, padding: '12px 14px' }}>
-                    <div style={{ marginBottom: 8 }}><b>得分: {sr.total_score}/100</b> — {sr.feedback}</div>
+                  <div style={{ background: g.type === 'project' ? '#f9f0ff' : '#f6ffed', borderLeft: `3px solid ${g.type === 'project' ? '#722ed1' : '#52c41a'}`, borderRadius: 6, padding: '12px 14px' }}>
+                    <div style={{ marginBottom: 8 }}><b>{g.type === 'project' ? '表达质量' : '得分'}: {sr.total_score}/100</b> — {sr.feedback}</div>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
                       {(sr.rubric_result || []).map((item, k) => (
-                        <tr key={k} style={{ background: item.hit ? '#e8f5e9' : '#ffebee', borderBottom: '1px solid #e0e0e0' }}>
+                        <tr key={k} style={{ background: item.hit ? (g.type === 'project' ? '#f0e6ff' : '#e8f5e9') : '#ffebee', borderBottom: '1px solid #e0e0e0' }}>
                           <td style={{ padding: '4px 8px' }}>
                             {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
                             {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
@@ -155,31 +174,112 @@ export default function InterviewPage() {
         )
       })}
 
-      {/* ---- 项目拷打 + 其他问题 跳转卡片 ---- */}
-      <div style={{ display: 'flex', gap: 14, marginTop: 20 }}>
-        {projectGroups.length > 0 && (
-          <Link to="/interview/projects" style={{ flex: 1, textDecoration: 'none' }}>
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: '16px 20px' }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#722ed1', marginBottom: 4 }}>🔨 项目拷打</div>
-              <div style={{ fontSize: 13, color: '#888' }}>{projectGroups.length} 个项目 · {projectGroups.reduce((s, g) => s + (g.questions?.length || 0), 0)} 个问题</div>
-              <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>点击查看详情 + 评分 →</div>
-            </div>
-          </Link>
-        )}
-        {(algorithmGroups.length > 0 || hrGroups.length > 0 || otherGroups.length > 0) && (
-          <Link to="/interview/others" style={{ flex: 1, textDecoration: 'none' }}>
-            <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #999', padding: '16px 20px' }}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#555', marginBottom: 4 }}>📎 其他问题</div>
-              <div style={{ fontSize: 13, color: '#888' }}>
-                {algorithmGroups.length > 0 && `💻算法${algorithmGroups.length} `}
-                {hrGroups.length > 0 && `💬HR${hrGroups.length} `}
-                {otherGroups.length > 0 && `❓其他${otherGroups.length}`}
+      {/* ---- Tab: 项目拷打 ---- */}
+      {activeTab === 'project' && (projectGroups.length === 0
+        ? <div className="empty">暂无项目拷打记录</div>
+        : projectGroups.map((g, i) => {
+          const sr = g.score_result; const isOpen = expanded[`p${i}`] !== false
+          return (
+            <div key={`p${i}`} style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', borderLeft: '4px solid #722ed1', padding: 16, marginBottom: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
+                <span style={{ color: '#aaa', fontSize: 12 }}>{isOpen ? '▾' : '▸'}</span>
+                <span style={{ fontSize: 16, fontWeight: 600, flex: 1 }}>{g.project_name || '项目'} · {g.topic || '拷打'}</span>
+                <span style={{ color: '#888', fontSize: 13 }}>{g.questions?.length || 0} 个问题</span>
+                {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600 }}>{sr.total_score}分</span>}
               </div>
-              <div style={{ fontSize: 12, color: '#aaa', marginTop: 4 }}>点击查看详情 →</div>
+              {isOpen && (
+                <div style={{ marginTop: 12 }}>
+                  {g.original_dialogue && (
+                    <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, marginBottom: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
+                      <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
+                      {g.original_dialogue}
+                    </div>
+                  )}
+                  <div style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, fontWeight: 500, color: '#333', marginBottom: 6 }}>面试问题：</div>
+                    {g.questions?.map((q, j) => <div key={j} style={{ padding: '4px 0 4px 16px', fontSize: 13, color: '#555' }}>• {q}</div>)}
+                  </div>
+                  {g.user_answer && (
+                    <div style={{ fontSize: 13, color: '#666', padding: '10px 14px', background: '#f0e6ff', borderLeft: '3px solid #722ed1', borderRadius: 6, marginBottom: 8 }}>
+                      💬 <b>我的回答：</b>{g.user_answer}
+                    </div>
+                  )}
+                  {sr && (
+                    <div style={{ background: '#f9f0ff', borderLeft: '3px solid #722ed1', borderRadius: 6, padding: '12px 14px' }}>
+                      <div style={{ marginBottom: 8 }}><b>表达质量: {sr.total_score}/100</b> — {sr.feedback}</div>
+                      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
+                        {(sr.rubric_result || []).map((item, k) => (
+                          <tr key={k} style={{ background: item.hit ? '#f0e6ff' : '#fff2f0', borderBottom: '1px solid #e0e0e0' }}>
+                            <td style={{ padding: '4px 8px' }}>
+                              {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
+                              {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody></table>
+                      {sr.recommended_answer && Array.isArray(sr.recommended_answer) && sr.recommended_answer.length > 0 && (
+                        <div style={{ marginTop: 8, fontSize: 13 }}>
+                          📖 <b>推荐表达：</b> {sr.recommended_answer.map((p, j) => <div key={j}>{j + 1}. {p}</div>)}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
-          </Link>
-        )}
-      </div>
+          )
+        })
+      )}
+
+      {/* ---- Tab: 其他问题 ---- */}
+      {activeTab === 'other' && (otherCount === 0
+        ? <div className="empty">暂无其他面试问题</div>
+        : <>
+          {algorithmGroups.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, marginBottom: 8, color: '#fa8c16' }}>💻 算法题</h3>
+              {algorithmGroups.map((g, i) => (
+                <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #fa8c16', padding: 14, marginBottom: 10 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontWeight: 600, flex: 1 }}>{g.title}</span>
+                    {g.leetcode_id && (
+                      <a href={`https://leetcode.cn/problems/`} target="_blank" rel="noreferrer"
+                         style={{ fontSize: 12, color: '#fa8c16', padding: '2px 8px', border: '1px solid #fa8c16', borderRadius: 4, textDecoration: 'none' }}>
+                        LeetCode #{g.leetcode_id}
+                      </a>
+                    )}
+                  </div>
+                  {g.original_dialogue && <div style={{ fontSize: 13, color: '#888', marginTop: 6, whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {hrGroups.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, marginBottom: 8, color: '#52c41a' }}>💬 HR / 行为题</h3>
+              {hrGroups.map((g, i) => (
+                <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #52c41a', padding: 14, marginBottom: 10 }}>
+                  {g.questions?.map((q, j) => <div key={j} style={{ padding: '3px 0', fontSize: 14, color: '#333' }}>• {q}</div>)}
+                  {g.user_answer && (
+                    <div style={{ fontSize: 13, color: '#666', marginTop: 6, padding: '6px 12px', background: '#f6ffed', borderRadius: 4 }}>💬 {g.user_answer}</div>
+                  )}
+                  {g.original_dialogue && <div style={{ fontSize: 12, color: '#aaa', marginTop: 4, whiteSpace: 'pre-wrap' }}>{g.original_dialogue}</div>}
+                </div>
+              ))}
+            </div>
+          )}
+          {otherGroups.length > 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <h3 style={{ fontSize: 15, marginBottom: 8, color: '#999' }}>❓ 其他问题</h3>
+              {otherGroups.map((g, i) => (
+                <div key={i} style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', borderLeft: '3px solid #999', padding: 14, marginBottom: 10 }}>
+                  {g.questions?.map((q, j) => <div key={j} style={{ padding: '3px 0', fontSize: 14, color: '#555' }}>• {q}</div>)}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      )}
 
       <button className="parse-btn" onClick={() => { setResult(null); setText('') }} style={{ marginTop: 20 }}>📋 重新上传</button>
     </div>
