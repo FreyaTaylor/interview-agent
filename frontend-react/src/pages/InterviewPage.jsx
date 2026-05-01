@@ -13,6 +13,65 @@ export default function InterviewPage() {
 
   const [error, setError] = useState('')
 
+  // 将新解析的 project/other 数据 merge 进 localStorage（跨会话持久化）
+  function mergeToLocalStorage(data) {
+    // ---- 项目拷打 merge ----
+    const newProjects = data.groups?.filter(g => g.type === 'project') || []
+    if (newProjects.length > 0) {
+      const stored = JSON.parse(localStorage.getItem('project_questions') || '[]')
+      const merged = [...stored]
+      for (const np of newProjects) {
+        const name = (np.project_name || '').toLowerCase().trim()
+        const topic = (np.topic || '').toLowerCase().trim()
+        // 按 project_name + topic 语义匹配（简单字符串匹配，LLM 合并已在后端做过）
+        const existing = merged.find(m =>
+          (m.project_name || '').toLowerCase().trim() === name &&
+          (m.topic || '').toLowerCase().trim() === topic
+        )
+        if (existing) {
+          // 合并 questions 去重
+          const qSet = new Set(existing.questions || [])
+          for (const q of (np.questions || [])) qSet.add(q)
+          existing.questions = [...qSet]
+          // 更新评分（用最新的）
+          if (np.score_result) existing.score_result = np.score_result
+          if (np.user_answer) existing.user_answer = np.user_answer
+          if (np.original_dialogue) existing.original_dialogue = np.original_dialogue
+        } else {
+          merged.push(np)
+        }
+      }
+      localStorage.setItem('project_questions', JSON.stringify(merged))
+    }
+
+    // ---- 其他问题 merge ----
+    const newOthers = data.groups?.filter(g => ['algorithm', 'hr', 'other'].includes(g.type)) || []
+    if (newOthers.length > 0) {
+      const stored = JSON.parse(localStorage.getItem('other_questions') || '[]')
+      const merged = [...stored]
+      for (const no of newOthers) {
+        // 算法题按 title 去重，HR/other 按 questions 去重
+        if (no.type === 'algorithm') {
+          const t = (no.title || '').toLowerCase().trim()
+          if (!merged.some(m => m.type === 'algorithm' && (m.title || '').toLowerCase().trim() === t)) {
+            merged.push(no)
+          }
+        } else {
+          // HR/other: 合并 questions 到同类型的第一个组
+          const existing = merged.find(m => m.type === no.type)
+          if (existing) {
+            const qSet = new Set(existing.questions || [])
+            for (const q of (no.questions || [])) qSet.add(q)
+            existing.questions = [...qSet]
+          } else {
+            merged.push(no)
+          }
+        }
+      }
+      localStorage.setItem('other_questions', JSON.stringify(merged))
+    }
+  }
+
   async function handleParse() {
     if (!text.trim() || loading) return
     setLoading(true); setResult(null); setError('')
@@ -24,6 +83,7 @@ export default function InterviewPage() {
       if (resp.code === 0) {
         setResult(resp.data); setExpanded({}); setActiveTab('knowledge')
         sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
+        mergeToLocalStorage(resp.data)
       }
       else setError(resp.message || resp.detail || '解析失败，请重试')
     } catch (e) { setError(`请求失败: ${e.message || '网络错误'}`) }

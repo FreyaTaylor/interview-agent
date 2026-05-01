@@ -1,26 +1,24 @@
 /**
- * 面试其他问题页 — 独立 Tab 页面，展示算法题/HR题/其他问题
- * 从 sessionStorage 读取最近一次面试复盘结果
+ * 面试其他问题页 — 独立 Tab 页面，累积所有面试的算法题/HR题/其他问题
+ * 从 localStorage 读取（跨会话持久化，每次复盘自动 merge）
+ * 只展示：问题列表 + LeetCode 链接
  */
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
 export default function OtherQuestionsPage() {
   const [groups, setGroups] = useState({ algorithm: [], hr: [], other: [] })
-  const [company, setCompany] = useState('')
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
-    const stored = sessionStorage.getItem('interview_result')
+    const stored = localStorage.getItem('other_questions')
     if (stored) {
-      const data = JSON.parse(stored)
-      const all = data.groups || []
+      const all = JSON.parse(stored)
       setGroups({
         algorithm: all.filter(g => g.type === 'algorithm'),
         hr: all.filter(g => g.type === 'hr'),
         other: all.filter(g => g.type === 'other'),
       })
-      setCompany(data.company || '')
     }
   }, [])
 
@@ -37,7 +35,7 @@ export default function OtherQuestionsPage() {
 
   return (
     <div>
-      <h2 style={{ marginBottom: 16 }}>📎 其他面试问题 {company && <span style={{ fontSize: 14, color: '#999', fontWeight: 400 }}>· {company}</span>}</h2>
+      <h2 style={{ marginBottom: 16 }}>📎 其他面试问题</h2>
 
       {/* 算法题 */}
       {groups.algorithm.length > 0 && (
