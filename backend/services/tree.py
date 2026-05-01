@@ -8,11 +8,12 @@ import asyncio
 import logging
 from typing import AsyncGenerator
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.knowledge import KnowledgeNode
-from backend.models.study import MasteryRecord
+from backend.models.study import MasteryRecord, MasteryHistory, Conversation, ConversationMessage
+from backend.models.interview import UserAnswerEmbedding
 from backend.services.llm import get_llm, parse_llm_json
 from backend.prompts.tree_prompts import TREE_SKELETON_PROMPT, TREE_EXPAND_PROMPT
 
@@ -74,8 +75,14 @@ async def init_knowledge_tree(
     3. 逐个展开二级分类为叶子
     每一步 yield 进度消息。
     """
-    # 1. 清空旧数据
+    # 1. 清空旧数据（按外键依赖顺序删除）
+    await db.execute(delete(ConversationMessage))
+    await db.execute(delete(MasteryHistory))
+    await db.execute(delete(Conversation))
     await db.execute(delete(MasteryRecord))
+    await db.execute(delete(UserAnswerEmbedding))
+    # knowledge_node 有自引用外键（parent_id），先置空再删
+    await db.execute(update(KnowledgeNode).values(parent_id=None))
     await db.execute(delete(KnowledgeNode))
     await db.commit()
     yield {"step": "clear", "message": "已清空旧知识树"}
