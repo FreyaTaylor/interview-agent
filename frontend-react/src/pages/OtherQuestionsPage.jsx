@@ -1,29 +1,25 @@
 /**
- * 面试其他问题页 — 独立 Tab 页面，累积所有面试的算法题/HR题/其他问题
- * 从 localStorage 读取（跨会话持久化，每次复盘自动 merge）
- * 只展示：问题列表 + LeetCode 链接
+ * 面试其他问题页 — 独立 Tab 页面，累积所有面试的算法题/HR题
+ * 从后端 DB 读取（跨会话持久化）
  */
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 
+const API = 'http://127.0.0.1:8000/api'
+
 export default function OtherQuestionsPage() {
-  const [groups, setGroups] = useState({ algorithm: [], hr: [], other: [] })
+  const [groups, setGroups] = useState({ algorithm: [], hr: [] })
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
-    const stored = localStorage.getItem('other_questions')
-    if (stored) {
-      const all = JSON.parse(stored)
-      setGroups({
-        algorithm: all.filter(g => g.type === 'algorithm'),
-        hr: all.filter(g => g.type === 'hr'),
-        other: all.filter(g => g.type === 'other'),
-      })
-    }
+    fetch(`${API}/interview/other-questions`)
+      .then(r => r.json())
+      .then(resp => { if (resp.code === 0) setGroups(resp.data || { algorithm: [], hr: [] }) })
+      .catch(() => {})
   }, [])
 
   const toggle = k => setExpanded(p => ({ ...p, [k]: !p[k] }))
-  const hasContent = groups.algorithm.length + groups.hr.length + groups.other.length > 0
+  const hasContent = groups.algorithm.length + groups.hr.length > 0
 
   if (!hasContent) return (
     <div style={{ textAlign: 'center', padding: '60px 20px', color: '#aaa' }}>

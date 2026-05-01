@@ -15,6 +15,7 @@ from backend.prompts.interview_prompts import (
     INTERVIEW_PARSE_PROMPT,
     INTERVIEW_SCORE_PROMPT,
     INTERVIEW_PROJECT_SCORE_PROMPT,
+    INTERVIEW_OVERALL_ANALYSIS_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -337,6 +338,49 @@ async def score_interview_group(group: dict) -> dict | None:
             }
     except Exception as e:
         logger.error(f"面试评分失败: {e}")
+        return None
+
+
+async def generate_overall_analysis(
+    scored_groups: list[dict],
+    company: str = "",
+    position: str = "",
+) -> dict | None:
+    """
+    根据所有评分结果，生成面试官视角的整体分析。
+    在所有逐题评分完成后调用一次。
+    """
+    # 构建摘要：让 LLM 看到全局
+    lines = []
+    for g in scored_groups:
+        t = g.get("type", "other")
+        sr = g.get("score_result")
+        if t == "knowledge":
+            score_info = f"（{sr['total_score']}分）" if sr and sr.get("total_score") else "（未评分）"
+            lines.append(f"📖 知识点：{g.get('knowledge_point', '?')} {score_info}")
+        elif t == "project":
+            rating = f"（{'⭐' * sr.get('rating', 0)}）" if sr and sr.get("rating") else "（未评分）"
+            lines.append(f"🔨 项目拷打：{g.get('project_name', '?')} · {g.get('topic', '?')} {rating}")
+        elif t == "algorithm":
+            lines.append(f"💻 算法题：{g.get('title', '?')}")
+        elif t == "hr":
+            qs = ", ".join(g.get("questions", [])[:2])
+            lines.append(f"💬 HR题：{qs}")
+
+    scored_summary = "\n".join(lines) if lines else "无有效数据"
+
+    prompt = INTERVIEW_OVERALL_ANALYSIS_PROMPT.format(
+        company=company or "未知",
+        position=position or "未知",
+        scored_summary=scored_summary,
+    )
+
+    llm = _get_llm(temperature=0.3)
+    try:
+        response = await llm.ainvoke(prompt)
+        return _parse_json(response.content)
+    except Exception as e:
+        logger.error(f"整体分析生成失败: {e}")
         return None
 
 

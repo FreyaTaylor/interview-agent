@@ -134,22 +134,63 @@ export default function InterviewPage() {
     { key: 'other', label: '📎 其他问题', count: otherCount },
   ]
 
+  const oa = result.overall_analysis
+
   return (
     <div className="interview-result">
-      {/* ---- 汇总 ---- */}
+      {/* ---- 整体分析 ---- */}
       <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: 20, marginBottom: 20 }}>
         <h2 style={{ marginBottom: 8 }}>📋 面试复盘 {company && `· ${company}`} {position}</h2>
-        <p style={{ color: '#666', marginBottom: 12 }}>{result.summary}</p>
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center' }}>
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center', marginBottom: 12 }}>
           <span style={{ fontSize: 15 }}>
             知识点平均分 <b style={{ color: sc(result.avg_score), fontSize: 22 }}>{result.avg_score}</b>/100
           </span>
-          <span style={{
-            padding: '4px 12px', borderRadius: 20, fontSize: 13, fontWeight: 500,
-            background: result.avg_score >= 70 ? '#f6ffed' : result.avg_score >= 50 ? '#fffbe6' : '#fff2f0',
-            color: sc(result.avg_score),
-          }}>通过概率: {result.pass_estimate}</span>
+          {oa && (
+            <span style={{ fontSize: 15 }}>
+              {'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b>
+            </span>
+          )}
         </div>
+        {oa && (
+          <div>
+            {/* 四维评估 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 14 }}>
+              <div style={{ padding: '10px 14px', background: '#f6ffed', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
+                <b style={{ color: '#52c41a' }}>📐 技术广度</b><br/>{oa.tech_breadth}
+              </div>
+              <div style={{ padding: '10px 14px', background: '#e6f7ff', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
+                <b style={{ color: '#1677ff' }}>🔬 技术深度</b><br/>{oa.tech_depth}
+              </div>
+              <div style={{ padding: '10px 14px', background: '#fff7e6', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
+                <b style={{ color: '#fa8c16' }}>🗣️ 表达能力</b><br/>{oa.expression}
+              </div>
+              <div style={{ padding: '10px 14px', background: '#f9f0ff', borderRadius: 8, fontSize: 13, lineHeight: 1.7 }}>
+                <b style={{ color: '#722ed1' }}>🏗️ 项目掌控</b><br/>{oa.project_mastery}
+              </div>
+            </div>
+            {/* 亮点 */}
+            {oa.strengths?.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#52c41a', marginBottom: 4 }}>✅ 亮点</div>
+                {oa.strengths.map((s, i) => <div key={i} style={{ fontSize: 13, color: '#555', paddingLeft: 16 }}>• {s}</div>)}
+              </div>
+            )}
+            {/* Top3 改进 */}
+            {oa.top3_improvements?.length > 0 && (
+              <div style={{ marginBottom: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: '#ff4d4f', marginBottom: 4 }}>🎯 最该改进（按优先级）</div>
+                {oa.top3_improvements.map((s, i) => <div key={i} style={{ fontSize: 13, color: '#555', paddingLeft: 16 }}>{i + 1}. {s}</div>)}
+              </div>
+            )}
+            {/* 预判 */}
+            {oa.prediction && (
+              <div style={{ padding: '8px 14px', background: '#fafafa', borderRadius: 6, border: '1px solid #eee', fontSize: 13, color: '#666' }}>
+                🔮 <b>结果预判：</b>{oa.prediction}
+              </div>
+            )}
+          </div>
+        )}
+        {!oa && <p style={{ color: '#666' }}>{result.summary}</p>}
       </div>
 
       {result.missed_count > 0 && (

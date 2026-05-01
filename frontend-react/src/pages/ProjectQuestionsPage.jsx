@@ -1,20 +1,22 @@
 /**
  * 项目拷打页 — 独立 Tab 页面，累积所有面试的项目问题
- * 从 localStorage 读取（跨会话持久化，每次复盘自动 merge）
+ * 从后端 DB 读取（跨会话持久化，每次复盘自动 merge）
  * 只展示：问题树状分类 + 推荐回答
  */
 import { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
+
+const API = 'http://127.0.0.1:8000/api'
 
 export default function ProjectQuestionsPage() {
   const [projects, setProjects] = useState([])
   const [expanded, setExpanded] = useState({})
 
   useEffect(() => {
-    const stored = localStorage.getItem('project_questions')
-    if (stored) {
-      setProjects(JSON.parse(stored))
-    }
+    fetch(`${API}/interview/project-questions`)
+      .then(r => r.json())
+      .then(resp => { if (resp.code === 0) setProjects(resp.data || []) })
+      .catch(() => {})
   }, [])
 
   const toggle = k => setExpanded(p => ({ ...p, [k]: !p[k] }))

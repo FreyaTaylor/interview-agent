@@ -11,9 +11,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models.knowledge import KnowledgeNode
 from backend.models.study import StudySession, Conversation, ConversationMessage, MasteryRecord
-from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion
+from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion, ProjectQuestion, UserAnswerEmbedding
 from backend.schemas.common import ApiResponse
-from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group
+from backend.services.interview import parse_interview_text, match_knowledge_nodes, score_interview_group, generate_overall_analysis
+from backend.services.embedding import get_embedding
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/interview", tags=["面试复盘"])
@@ -139,7 +140,77 @@ async def parse_interview(
             g["score_result"] = None
         scored_groups.append(g)
 
+    # 6. 更新面试频率 interview_weight（被问到的知识点权重 +1）
+    for g in scored_groups:
+        if g.get("type") == "knowledge" and g.get("matched_node_id"):
+            node = await db.get(KnowledgeNode, g["matched_node_id"])
+            if node and node.interview_weight < 5:
+                node.interview_weight = min(5, node.interview_weight + 1)
+
+    # 7. 用户回答 embedding → Agent 长期记忆
+    for g in scored_groups:
+        user_answer = g.get("user_answer", "").strip()
+        if not user_answer:
+            continue
+        g_type = g.get("type")
+        if g_type in ("knowledge", "project"):
+            kp_name = g.get("knowledge_point") or g.get("matched_node_name") or ""
+            if g_type == "project":
+                kp_name = f"{g.get('project_name', '')} · {g.get('topic', '')}"
+            questions_text = " | ".join(g.get("questions", []))
+            embed_text = f"问题: {questions_text}\n回答: {user_answer}"
+            embedding = await get_embedding(embed_text)
+            score_val = None
+            sr = g.get("score_result")
+            if sr and sr.get("type") == "knowledge":
+                score_val = sr.get("total_score")
+            db.add(UserAnswerEmbedding(
+                knowledge_point_id=g.get("matched_node_id"),
+                source="interview",
+                knowledge_point_name=kp_name,
+                question_text=questions_text,
+                answer_text=user_answer,
+                embedding=embedding,
+                score=score_val,
+            ))
+
+    # 8. 项目问题落库（语义合并）
+    for g in scored_groups:
+        if g.get("type") != "project":
+            continue
+        proj_name = g.get("project_name", "").strip()
+        topic = g.get("topic", "").strip()
+        if not proj_name:
+            continue
+        # 查找已有记录（同 project_name + topic）
+        existing_stmt = select(ProjectQuestion).where(
+            ProjectQuestion.user_id == 1,
+            ProjectQuestion.project_name == proj_name,
+            ProjectQuestion.topic == topic,
+        )
+        existing = (await db.execute(existing_stmt)).scalar_one_or_none()
+        new_qs = g.get("questions", [])
+        suggested = g.get("score_result", {}).get("suggested_answer", []) if g.get("score_result") else []
+        if existing:
+            # 合并 questions 去重
+            old_qs = existing.questions or []
+            merged = list(dict.fromkeys(old_qs + new_qs))
+            existing.questions = merged
+            if suggested:
+                existing.suggested_answer = suggested
+            existing.interview_count = (existing.interview_count or 1) + 1
+        else:
+            db.add(ProjectQuestion(
+                project_name=proj_name,
+                topic=topic,
+                questions=new_qs,
+                suggested_answer=suggested,
+            ))
+
     await db.commit()
+
+    # 7. 整体分析（面试官视角系统性评价）
+    overall_analysis = await generate_overall_analysis(scored_groups, req.company, req.position)
 
     # 统计
     stats = {"knowledge": 0, "algorithm": 0, "hr": 0, "project": 0, "other": 0}
@@ -157,4 +228,37 @@ async def parse_interview(
         "stats": stats,
         "avg_score": avg_score,
         "pass_estimate": "较高" if avg_score >= 70 else "一般" if avg_score >= 50 else "较低",
+        "overall_analysis": overall_analysis,
     })
+
+
+@router.get("/project-questions", summary="获取所有累积的项目拷打问题")
+async def get_project_questions(
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    stmt = select(ProjectQuestion).where(ProjectQuestion.user_id == 1).order_by(ProjectQuestion.project_name)
+    result = await db.execute(stmt)
+    rows = result.scalars().all()
+    return ApiResponse.ok(data=[{
+        "id": r.id,
+        "project_name": r.project_name,
+        "topic": r.topic,
+        "questions": r.questions or [],
+        "suggested_answer": r.suggested_answer or [],
+        "interview_count": r.interview_count,
+    } for r in rows])
+
+
+@router.get("/other-questions", summary="获取所有累积的其他问题")
+async def get_other_questions(
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    algo_stmt = select(AlgorithmQuestion).order_by(AlgorithmQuestion.id)
+    algo_result = await db.execute(algo_stmt)
+    algos = [{"type": "algorithm", "title": r.title, "leetcode_id": r.leetcode_id} for r in algo_result.scalars().all()]
+
+    hr_stmt = select(HrQuestion).order_by(HrQuestion.id)
+    hr_result = await db.execute(hr_stmt)
+    hrs = [{"type": "hr", "question": r.question, "answer": r.answer} for r in hr_result.scalars().all()]
+
+    return ApiResponse.ok(data={"algorithm": algos, "hr": hrs})
