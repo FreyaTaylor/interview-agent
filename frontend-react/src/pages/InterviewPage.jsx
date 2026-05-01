@@ -75,6 +75,20 @@ export default function InterviewPage() {
         </div>
       </div>
 
+      {/* ---- 原始文本（可折叠） ---- */}
+      <div style={{ background: '#fff', borderRadius: 10, border: '1px solid #eee', marginBottom: 16, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 16px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, borderBottom: expanded['raw'] ? '1px solid #eee' : 'none' }}
+             onClick={() => toggle('raw')}>
+          <span style={{ color: '#aaa', fontSize: 12 }}>{expanded['raw'] ? '▾' : '▸'}</span>
+          <span style={{ fontSize: 13, color: '#888' }}>📄 查看原始文本（校验解析是否完整）</span>
+        </div>
+        {expanded['raw'] && (
+          <div style={{ padding: '12px 16px', fontSize: 13, color: '#555', whiteSpace: 'pre-wrap', lineHeight: 1.8, maxHeight: 400, overflow: 'auto', background: '#fafbfc' }}>
+            {text}
+          </div>
+        )}
+      </div>
+
       {/* ---- 知识点（可展开评分，不跳转） ---- */}
       {knowledgeGroups.length > 0 && <h3 style={{ margin: '16px 0 8px', fontSize: 15 }}>📖 技术知识点</h3>}
       {result.groups.map((g, i) => {
