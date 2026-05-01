@@ -55,16 +55,12 @@ export default function OtherQuestionsPage() {
   return (
     <div>
       {/* 子 Tab 栏 */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
+      <div className="tree-tabs" style={{ marginBottom: 16 }}>
         {allKeys.map(key => {
           const c = getConfig(key)
           return (
-            <button key={key} onClick={() => setActiveTab(key)} style={{
-              padding: '8px 16px', fontSize: 13, fontWeight: activeTab === key ? 600 : 400,
-              color: activeTab === key ? c.color : '#888', background: 'none', border: 'none',
-              borderBottom: activeTab === key ? `2px solid ${c.color}` : '2px solid transparent',
-              marginBottom: -2, cursor: 'pointer', transition: 'all .2s',
-            }}>
+            <button key={key} className={`tree-tab ${activeTab === key ? 'active' : ''}`}
+              onClick={() => setActiveTab(key)}>
               {c.label} ({data[key].length})
             </button>
           )
@@ -72,6 +68,7 @@ export default function OtherQuestionsPage() {
       </div>
 
       {/* 内容区 — 幕布风格 */}
+      <div className="tree-card">
       {items.map((g, i) => {
         const isOpen = expanded[`${activeTab}_${i}`]
         const hasDetail = g.description || g.example || g.suggested_approach || g.feedback || g.answer
@@ -100,6 +97,7 @@ export default function OtherQuestionsPage() {
           )}
         </div>
       )})}
+      </div>
     </div>
   )
 }

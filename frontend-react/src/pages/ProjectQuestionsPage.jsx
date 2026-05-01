@@ -30,7 +30,7 @@ export default function ProjectQuestionsPage() {
   )
 
   return (
-    <div>
+    <div className="tree-card">
       {(() => {
         const byProject = {}
         projects.forEach((g, i) => {

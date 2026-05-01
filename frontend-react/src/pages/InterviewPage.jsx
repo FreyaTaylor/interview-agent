@@ -139,10 +139,9 @@ export default function InterviewPage() {
 
   return (
     <div className="interview-result">
-      {/* ---- 整体分析（精简版） ---- */}
-      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '16px 20px', marginBottom: 16 }}>
+      {/* ---- 整体分析 ---- */}
+      <div className="tree-card" style={{ padding: '16px 20px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
-          <h2 style={{ margin: 0, flex: 1 }}>📋 面试复盘 {company && `· ${company}`} {position}</h2>
           <span style={{ fontSize: 15 }}>知识点 <b style={{ color: sc(result.avg_score), fontSize: 20 }}>{result.avg_score}</b>/100</span>
           {oa && <span style={{ fontSize: 14 }}>{'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b></span>}
         </div>
@@ -170,65 +169,49 @@ export default function InterviewPage() {
       )}
 
       {/* ---- Tab 栏 ---- */}
-      <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: 16 }}>
+      <div className="tree-tabs" style={{ marginBottom: 16 }}>
         {tabs.map(t => (
-          <button key={t.key} onClick={() => { setActiveTab(t.key); sessionStorage.setItem('iv_tab', t.key) }} style={{
-            padding: '10px 20px', fontSize: 14, fontWeight: activeTab === t.key ? 600 : 400,
-            color: activeTab === t.key ? '#1677ff' : '#888', background: 'none', border: 'none',
-            borderBottom: activeTab === t.key ? '2px solid #1677ff' : '2px solid transparent',
-            marginBottom: -2, cursor: 'pointer', transition: 'all .2s',
-          }}>
+          <button key={t.key} className={`tree-tab ${activeTab === t.key ? 'active' : ''}`}
+            onClick={() => { setActiveTab(t.key); sessionStorage.setItem('iv_tab', t.key) }}>
             {t.label}{t.count > 0 ? ` (${t.count})` : ''}
           </button>
         ))}
       </div>
 
-      {/* ---- Tab: 知识点 ---- */}
+      {/* ---- Tab: 知识点（幕布风格） ---- */}
       {activeTab === 'knowledge' && (knowledgeGroups.length === 0
         ? <div className="empty">暂无知识点问题</div>
-        : knowledgeGroups.map((g, i) => {
+        : <div className="tree-card">
+        {knowledgeGroups.map((g, i) => {
         const sr = g.score_result; const isOpen = expanded[`r${i}`]
         return (
-          <div className="result-group knowledge" key={`r${i}`}>
-            <div className="group-header" style={{ cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
-              <span style={{ color: '#aaa', fontSize: 12, marginRight: 4 }}>{isOpen ? '▾' : '▸'}</span>
-              <span className="group-type">📖</span>
-              <span className="group-title">
+          <div key={`r${i}`} className="tree-node">
+            <div className="node-row" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
+              <span className={`toggle ${isOpen ? 'open' : ''}`} />
+              <span className="node-name">
                 {g.knowledge_point}
                 {g.auto_created && <span style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>新增</span>}
               </span>
-              {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 15 }}>{sr.total_score}分</span>}
-              <button className="study-btn" onClick={e => { e.stopPropagation(); toggle(`r${i}`) }}>{isOpen ? '收起' : '展开'}</button>
+              {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 13 }}>{sr.total_score}分</span>}
             </div>
             {isOpen && (
-              <div style={{ marginTop: 8 }}>
-                {g.original_dialogue && (
-                  <div style={{ fontSize: 13, color: '#555', padding: '10px 14px', background: '#f9fafb', border: '1px dashed #e0e0e0', borderRadius: 6, marginBottom: 10, whiteSpace: 'pre-wrap', lineHeight: 1.7 }}>
-                    <div style={{ fontSize: 11, color: '#aaa', marginBottom: 4 }}>📝 原始对话</div>
-                    {g.original_dialogue}
-                  </div>
-                )}
+              <div style={{ paddingLeft: 38 }}>
                 {g.user_answer && (
-                  <div style={{ fontSize: 13, color: '#666', padding: '8px 14px', background: '#fff8e1', borderLeft: '3px solid #fa8c16', borderRadius: 6, marginBottom: 8 }}>
-                    💬 我的回答：{g.user_answer}
-                  </div>
+                  <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.user_answer}</span></div></div>
                 )}
                 {sr && (
-                  <div style={{ background: '#f6ffed', borderLeft: '3px solid #52c41a', borderRadius: 6, padding: '12px 14px' }}>
-                    <div style={{ marginBottom: 8 }}><b>得分: {sr.total_score}/100</b> — {sr.feedback}</div>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}><tbody>
-                      {(sr.rubric_result || []).map((item, k) => (
-                        <tr key={k} style={{ background: item.hit ? '#e8f5e9' : '#ffebee', borderBottom: '1px solid #e0e0e0' }}>
-                          <td style={{ padding: '4px 8px' }}>
-                            {item.hit ? '✅' : '❌'} <b>{item.key_point}</b>（{item.score}分）
-                            {item.matched_text && <span style={{ color: '#666', fontStyle: 'italic' }}> 「{item.matched_text}」</span>}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody></table>
-                    {sr.recommended_answer && Array.isArray(sr.recommended_answer) && sr.recommended_answer.length > 0 && (
-                      <div style={{ marginTop: 8, fontSize: 13 }}>
-                        📖 <b>推荐回答</b>: {sr.recommended_answer.map((p, j) => <div key={j}>{j + 1}. {p}</div>)}
+                  <div style={{ margin: '4px 16px 8px', padding: '8px 12px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
+                    <div style={{ marginBottom: 4 }}><b>{sr.total_score}/100</b> — {sr.feedback}</div>
+                    {(sr.rubric_result || []).map((item, k) => (
+                      <div key={k} style={{ padding: '2px 0', color: '#555' }}>
+                        {item.hit ? '✅' : '❌'} {item.key_point}（{item.score}分）
+                        {item.matched_text && <span style={{ color: '#999', fontStyle: 'italic' }}> {item.matched_text}</span>}
+                      </div>
+                    ))}
+                    {sr.recommended_answer?.length > 0 && (
+                      <div style={{ marginTop: 6, borderTop: '1px solid #e8f5e9', paddingTop: 6 }}>
+                        <b>📖 推荐回答</b>
+                        {sr.recommended_answer.map((p, j) => <div key={j} style={{ color: '#555' }}>{j + 1}. {p}</div>)}
                       </div>
                     )}
                   </div>
@@ -237,7 +220,8 @@ export default function InterviewPage() {
             )}
           </div>
         )
-      }))}
+      })}
+      </div>)}
 
       {/* ---- Tab: 项目拷打（幕布风格） ---- */}
       {activeTab === 'project' && (projectGroups.length === 0
