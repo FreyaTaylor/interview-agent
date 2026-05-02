@@ -103,13 +103,21 @@ export default function InterviewPage() {
   // ---- 输入页 ----
   if (!result) return (
     <div className="interview-upload">
-      <div style={{ marginBottom: 10, display: 'flex', justifyContent: 'flex-end' }}>
+      <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
+        placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
         <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}>
           {loading ? '🧠 解析中...' : '🔍 开始解析'}
         </button>
+        {loading && (
+          <div style={{ flex: 1, position: 'relative', height: 20, overflow: 'hidden' }}>
+            <div style={{ position: 'absolute', animation: 'catWalk 3s linear infinite', fontSize: 18, top: -2 }}>🐱</div>
+            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: '#f0f0f0', borderRadius: 1 }}>
+              <div style={{ height: '100%', background: '#1677ff', borderRadius: 1, animation: 'progressGrow 8s ease-in-out infinite' }} />
+            </div>
+          </div>
+        )}
       </div>
-      <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
-        placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
       {error && (
         <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
           ❌ {error}
@@ -118,6 +126,18 @@ export default function InterviewPage() {
           </button>
         </div>
       )}
+      <style>{`
+        @keyframes catWalk {
+          0% { left: 0; }
+          100% { left: calc(100% - 24px); }
+        }
+        @keyframes progressGrow {
+          0% { width: 0%; }
+          50% { width: 70%; }
+          90% { width: 95%; }
+          100% { width: 95%; }
+        }
+      `}</style>
     </div>
   )
 
@@ -143,12 +163,12 @@ export default function InterviewPage() {
       <div className="tree-card" style={{ padding: '16px 20px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <span style={{ fontSize: 15 }}>知识点 <b style={{ color: sc(result.avg_score), fontSize: 20 }}>{result.avg_score}</b>/100</span>
-          {oa && <span style={{ fontSize: 14 }}>{'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b></span>}
+          {oa && <span style={{ fontSize: 14 }}><b style={{ color: '#722ed1' }}>{oa.overall_label}</b></span>}
           {oa?.prediction && <span style={{ fontSize: 13, color: '#888' }}>🔮 {oa.prediction}</span>}
         </div>
         {oa && (
           <>
-            <div style={{ fontSize: 14, color: '#333', fontWeight: 600, marginBottom: 8 }}>{oa.comment}</div>
+            <div style={{ fontSize: 13, color: '#555', lineHeight: 1.8, marginBottom: 8 }}>{oa.comment}</div>
             {(oa.review_points || oa.top3_improvements)?.length > 0 && (
               <div style={{ fontSize: 13 }}>
                 <b style={{ color: '#ff4d4f' }}>📋 推荐复习</b>
