@@ -111,6 +111,11 @@ async def init_knowledge_tree(
     expand_tasks = []  # (category_name, subcategory_name, sub_db_node)
 
     for cat in categories:
+        cat_name = cat["name"]
+        # 跳过项目经验类（从面试复盘获取）
+        if "项目" in cat_name and ("经验" in cat_name or "实战" in cat_name):
+            logger.info(f"跳过项目经验分类: {cat_name}")
+            continue
         cat_node = KnowledgeNode(
             name=cat["name"],
             level=1,
