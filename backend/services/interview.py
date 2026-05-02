@@ -67,12 +67,24 @@ def _split_text(text: str) -> list[str]:
     return final if final else [text]
 
 
-async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int) -> dict | None:
+async def _parse_single_chunk(llm, chunk_text: str, chunk_idx: int, total: int, prev_groups: list[dict] | None = None) -> dict | None:
     """解析单段面试文本"""
+    extra = ""
     if total > 1:
         extra = f"\n\n注意：这是面试记录的第 {chunk_idx+1}/{total} 段，请只解析本段内容。"
-    else:
-        extra = ""
+        if prev_groups:
+            existing = []
+            for g in prev_groups:
+                t = g.get("type")
+                if t == "knowledge":
+                    existing.append(f"knowledge: {g.get('knowledge_point', '?')}")
+                elif t == "project":
+                    existing.append(f"project: {g.get('project_name', '?')} · {g.get('topic', '?')}")
+                elif t == "algorithm":
+                    existing.append(f"algorithm: {g.get('title', '?')}")
+            if existing:
+                extra += f"\n\n前面已提取的分组：\n" + "\n".join(f"- {e}" for e in existing)
+                extra += "\n如果本段的问题属于已有分组的追问，请归入同名分组（使用相同的 knowledge_point/project_name），不要创建新分组。"
     prompt = INTERVIEW_PARSE_PROMPT.format(raw_text=chunk_text) + extra
 
     for attempt in range(3):
@@ -217,11 +229,11 @@ async def parse_interview_text(raw_text: str) -> dict:
 
     logger.info(f"面试文本 {len(raw_text)} 字，分为 {len(chunks)} 段解析")
 
-    # 逐段解析
+    # 逐段解析（后续段传入已有分组上下文，避免重复提取）
     all_groups = []
     summaries = []
     for i, chunk in enumerate(chunks):
-        result = await _parse_single_chunk(llm, chunk, i, len(chunks))
+        result = await _parse_single_chunk(llm, chunk, i, len(chunks), prev_groups=all_groups if i > 0 else None)
         if result:
             all_groups.extend(result.get("groups", []))
             if result.get("summary"):
