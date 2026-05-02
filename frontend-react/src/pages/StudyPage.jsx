@@ -229,7 +229,7 @@ export default function StudyPage() {
         {kpList.map(kp => {
           const isActive = kp.id === activeKpId
           return (
-            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { setActiveKpId(kp.id); setKpName(kp.name); startStudy(kp.id) } }}
+            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { setActiveKpId(kp.id); setKpName(kp.name); setRounds([]); setCurrentRound([]); setCollapsedRounds({}); startStudy(kp.id) } }}
               style={{
                 padding: '8px 16px', borderRadius: 20, border: isActive ? '2px solid #1677ff' : '1px solid #e0e0e0',
                 background: isActive ? '#f0f7ff' : '#fff', fontWeight: isActive ? 600 : 400,
@@ -245,7 +245,9 @@ export default function StudyPage() {
 
       {/* ---- 题目栏（显示所有题目含当前） ---- */}
       {activeKpId && (rounds.length > 0 || currentRound.length > 0) && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '12px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: 13, color: '#999', marginRight: 4 }}>题目</span>
           {rounds.map((r, i) => {
             const firstQ = r.find(m => m.type === 'q')
             const title = firstQ?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').trim().slice(0, 20) || `第${i+1}题`
@@ -280,6 +282,7 @@ export default function StudyPage() {
               ＋ 下一题
             </button>
           )}
+          </div>
         </div>
       )}
 
