@@ -240,7 +240,7 @@ export default function InterviewPage() {
       })}
       </div>)}
 
-      {/* ---- Tab: 项目拷打（卡片风格） ---- */}
+      {/* ---- Tab: 项目拷打（卡片风格，同知识点） ---- */}
       {activeTab === 'project' && (projectGroups.length === 0
         ? <div className="empty">暂无项目拷打记录</div>
         : <div>{(() => {
@@ -261,7 +261,10 @@ export default function InterviewPage() {
                 const bg = cardIdx++ % 2 === 0 ? '#fff' : '#f7f8fa'
                 return (
                   <div key={`p${i}`} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
-                    <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.topic || '拷打'}</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.topic || '拷打'}</span>
+                      {sr && <span style={{ fontSize: 13, color: '#722ed1', fontWeight: 600 }}>{sr.rating_label} {'⭐'.repeat(sr.rating || 0)}</span>}
+                    </div>
                     {isOpen && (
                       <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
                         {g.questions?.length > 0 && (
@@ -275,15 +278,24 @@ export default function InterviewPage() {
                           </div>
                         )}
                         {sr && (
-                          <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{sr.rating_label} {'⭐'.repeat(sr.rating || 0)}</div>
+                          <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
                             <div style={{ color: '#555', lineHeight: 1.7 }}>{sr.impression}</div>
                             {sr.improvements?.length > 0 && <div style={{ marginTop: 6, color: '#fa8c16' }}>💡 {sr.improvements.join(' | ')}</div>}
                             {sr.suggested_answer?.length > 0 && (
-                              <div style={{ marginTop: 6 }}>
-                                <b style={{ color: '#722ed1' }}>📖 建议回答</b>
+                              <div style={{ marginTop: 8, borderTop: '1px solid #e8f5e9', paddingTop: 8 }}>
+                                <b>📖 建议回答</b>
                                 {sr.suggested_answer.map((p, j) => <div key={j} style={{ color: '#555' }}>{j + 1}. {p}</div>)}
                               </div>
+                            )}
+                          </div>
+                        )}
+                        {g.original_dialogue && (
+                          <div style={{ marginTop: 4 }}>
+                            <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`praw${i}`)}>
+                              {expanded[`praw${i}`] ? '▾' : '▸'} 原始对话
+                            </div>
+                            {expanded[`praw${i}`] && (
+                              <div style={{ marginTop: 4, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
                             )}
                           </div>
                         )}
@@ -311,18 +323,12 @@ export default function InterviewPage() {
                 const bg = i % 2 === 0 ? '#fff' : '#f7f8fa'
                 return (
                 <div key={i} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.title}</span>
                     {lcUrl ? <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{lcId ? ` #${lcId}` : ''}</a> : lcId ? <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode #{lcId}</span> : null}
                   </div>
                   {isOpen && (
                     <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
-                      {g.original_dialogue && (
-                        <div style={{ background: '#fff8e1', borderLeft: '4px solid #fa8c16', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
-                      )}
-                      {sr?.feedback && (
-                        <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>💬 {sr.feedback}</div>
-                      )}
                       {sr?.description && (
                         <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.7 }}>
                           📝 {sr.description}
@@ -330,7 +336,17 @@ export default function InterviewPage() {
                       )}
                       {sr?.example && <pre style={{ padding: '10px 14px', background: '#f5f5f5', borderLeft: '4px solid #d0d0d0', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 8 }}>{sr.example}</pre>}
                       {sr?.suggested_approach && (
-                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, fontSize: 13 }}>📖 {sr.suggested_approach}</div>
+                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>📖 {sr.suggested_approach}</div>
+                      )}
+                      {g.original_dialogue && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`araw${i}`)}>
+                            {expanded[`araw${i}`] ? '▾' : '▸'} 原始对话
+                          </div>
+                          {expanded[`araw${i}`] && (
+                            <div style={{ marginTop: 4, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
@@ -358,7 +374,17 @@ export default function InterviewPage() {
                         <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>📊 {sr.feedback}</div>
                       )}
                       {sr?.suggestion && (
-                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, fontSize: 13 }}>💡 {sr.suggestion}</div>
+                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>💡 {sr.suggestion}</div>
+                      )}
+                      {g.original_dialogue && (
+                        <div style={{ marginTop: 4 }}>
+                          <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`hraw${i}`)}>
+                            {expanded[`hraw${i}`] ? '▾' : '▸'} 原始对话
+                          </div>
+                          {expanded[`hraw${i}`] && (
+                            <div style={{ marginTop: 4, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
+                          )}
+                        </div>
                       )}
                     </div>
                   )}
