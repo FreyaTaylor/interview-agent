@@ -29,6 +29,7 @@ class StudyState(TypedDict):
 
     # 历史（已考过的题目 + 得分 + 遗漏点）
     question_history: list[dict]    # [{"question": "...", "score": 80, "missed": [...]}, ...]
+    global_asked_questions: list[str]  # 全局已问过的题目（跨知识点去重）
 
     # 当前题目
     question_content: str
@@ -58,6 +59,7 @@ async def generate_question_node(state: StudyState) -> dict:
     result = await generate_question(
         knowledge_point=state["knowledge_point_name"],
         history=state.get("question_history", []),
+        global_asked=state.get("global_asked_questions", []),
     )
 
     return {

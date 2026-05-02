@@ -41,16 +41,19 @@ async def expand_subcategory(
     profile_text: str,
     category_name: str,
     subcategory_name: str,
+    existing_leaves: list[str] = None,
 ) -> list[dict]:
     """
     Step 2: 将一个二级分类展开为三级叶子知识点。
     返回: [{"name": ..., "interview_weight": 5, "sort_order": 1}]
     """
     llm = get_llm(temperature=0.3, max_tokens=2048)
+    existing_text = "（暂无）" if not existing_leaves else "\n".join(f"- {l}" for l in existing_leaves)
     prompt = TREE_EXPAND_PROMPT.format(
         profile_text=profile_text,
         category_name=category_name,
         subcategory_name=subcategory_name,
+        existing_leaves=existing_text,
     )
 
     for attempt in range(3):
@@ -131,25 +134,33 @@ async def init_knowledge_tree(
 
     await db.commit()
 
-    # 4. 逐个展开二级为三级叶子（并发 3 个）
+    # 4. 逐个展开二级为三级叶子（并发 3 个，全局去重）
     semaphore = asyncio.Semaphore(3)
     completed = 0
     total_leaves = 0
+    all_leaf_names: list[str] = []  # 全局已有叶子名，用于去重
 
     async def expand_one(cat_name: str, sub_name: str, sub_node: KnowledgeNode):
         nonlocal completed, total_leaves
         async with semaphore:
-            leaves = await expand_subcategory(profile_text, cat_name, sub_name)
+            leaves = await expand_subcategory(profile_text, cat_name, sub_name, existing_leaves=list(all_leaf_names))
+            added = 0
             for leaf in leaves:
+                name = leaf["name"].strip()
+                # 跳过和已有叶子重名的
+                if name.lower() in [n.lower() for n in all_leaf_names]:
+                    continue
                 db.add(KnowledgeNode(
                     parent_id=sub_node.id,
-                    name=leaf["name"],
+                    name=name,
                     level=3,
                     node_type="leaf",
                     interview_weight=leaf.get("interview_weight", 3),
                     sort_order=leaf.get("sort_order", 0),
                 ))
-            total_leaves += len(leaves)
+                all_leaf_names.append(name)
+                added += 1
+            total_leaves += added
             completed += 1
 
     # 分批执行并 yield 进度
@@ -167,10 +178,27 @@ async def init_knowledge_tree(
             "total_leaves": total_leaves,
         }
 
+    # 5. 清理空的二级分类（展开失败或全部去重的）
+    empty_subs = await db.execute(
+        select(KnowledgeNode).where(
+            KnowledgeNode.level == 2,
+            ~KnowledgeNode.id.in_(
+                select(KnowledgeNode.parent_id).where(KnowledgeNode.parent_id.isnot(None))
+            )
+        )
+    )
+    empty_count = 0
+    for empty_node in empty_subs.scalars().all():
+        await db.delete(empty_node)
+        empty_count += 1
+    if empty_count:
+        await db.commit()
+        logger.info(f"清理 {empty_count} 个空二级分类")
+
     yield {
         "step": "done",
-        "message": f"知识树初始化完成：{len(categories)} 个一级分类，{len(expand_tasks)} 个二级分类，{total_leaves} 个知识点",
+        "message": f"知识树初始化完成：{len(categories)} 个一级分类，{total_leaves} 个知识点",
         "category_count": len(categories),
-        "subcategory_count": len(expand_tasks),
+        "subcategory_count": len(expand_tasks) - empty_count,
         "leaf_count": total_leaves,
     }
