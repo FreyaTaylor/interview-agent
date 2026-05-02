@@ -273,7 +273,7 @@ export default function InterviewPage() {
                   <div key={`p${i}`} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                       <span style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.topic || '拷打'}</span>
-                      {sr && <span style={{ fontSize: 13, color: '#722ed1', fontWeight: 600 }}>{sr.rating_label} {'⭐'.repeat(sr.rating || 0)}</span>}
+                      {sr && <span style={{ fontSize: 13, color: '#722ed1', fontWeight: 600 }}>{(sr.rating_label || '').replace(/⭐/g, '').trim()} {'⭐'.repeat(sr.rating || 0)}</span>}
                     </div>
                     {isOpen && (
                       <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
