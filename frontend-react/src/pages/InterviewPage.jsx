@@ -184,9 +184,9 @@ export default function InterviewPage() {
         : <div className="tree-card">
         {knowledgeGroups.map((g, i) => {
         const sr = g.score_result; const isOpen = expanded[`r${i}`]
-        const bg = i % 2 === 0 ? '#fff' : '#fafbfc'
+        const bg = i % 2 === 0 ? '#fff' : '#f7f8fa'
         return (
-          <div key={`r${i}`} className="tree-node" style={{ background: bg }}>
+          <div key={`r${i}`} className="tree-node" style={{ background: bg, borderRadius: 6 }}>
             <div className="node-row" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
               <span className={`toggle ${isOpen ? 'open' : ''}`} />
               <span className="node-name">
@@ -203,9 +203,6 @@ export default function InterviewPage() {
                 {g.user_answer && (
                   <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.user_answer}</span></div></div>
                 )}
-                {g.original_dialogue && (
-                  <div style={{ margin: '4px 16px 4px', padding: '6px 10px', background: '#f9fafb', borderRadius: 4, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
-                )}
                 {sr && (
                   <div style={{ margin: '4px 16px 8px', padding: '8px 12px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
                     <div style={{ marginBottom: 4 }}><b>{sr.total_score}/100</b> — {sr.feedback}</div>
@@ -220,6 +217,16 @@ export default function InterviewPage() {
                         <b>📖 推荐回答</b>
                         {sr.recommended_answer.map((p, j) => <div key={j} style={{ color: '#555' }}>{j + 1}. {p}</div>)}
                       </div>
+                    )}
+                  </div>
+                )}
+                {g.original_dialogue && (
+                  <div style={{ margin: '4px 16px 8px' }}>
+                    <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`raw${i}`)}>
+                      {expanded[`raw${i}`] ? '▾' : '▸'} 原始对话
+                    </div>
+                    {expanded[`raw${i}`] && (
+                      <div style={{ marginTop: 4, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
                     )}
                   </div>
                 )}
