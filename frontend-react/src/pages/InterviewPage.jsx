@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 const API = 'http://127.0.0.1:8000/api'
 
@@ -15,6 +15,24 @@ export default function InterviewPage() {
   const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('iv_tab') || 'knowledge')
 
   const [error, setError] = useState('')
+  const [catProgress, setCatProgress] = useState(0)
+  const catTimer = useRef(null)
+
+  // 小猫进度动画：loading 时缓慢前进到 90%，完成时跳到 100%
+  useEffect(() => {
+    if (loading) {
+      setCatProgress(0)
+      let p = 0
+      catTimer.current = setInterval(() => {
+        p += (90 - p) * 0.03  // 渐近 90%
+        setCatProgress(Math.min(p, 90))
+      }, 200)
+    } else {
+      if (catTimer.current) clearInterval(catTimer.current)
+      if (result) setCatProgress(100)
+    }
+    return () => { if (catTimer.current) clearInterval(catTimer.current) }
+  }, [loading])
 
   // 将新解析的 project/other 数据 merge 进 localStorage（跨会话持久化）
   function mergeToLocalStorage(data) {
@@ -105,26 +123,28 @@ export default function InterviewPage() {
     <div className="interview-upload">
       <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
         placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
-      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 12 }}>
-        <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}>
-          {loading ? '🧠 解析中...' : '🔍 开始解析'}
+      <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
+        <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}
+          style={{ padding: '8px 18px', fontSize: 13 }}>
+          {loading ? '解析中...' : '🔍 开始解析'}
         </button>
       </div>
       {/* 小橘猫进度条 */}
-      <div style={{ marginTop: 12, position: 'relative', height: 32 }}>
+      <div style={{ marginTop: 14, position: 'relative', height: 36, userSelect: 'none' }}>
         {/* 路线 */}
-        <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, height: 2, background: '#f0e6d3', borderRadius: 1 }} />
+        <div style={{ position: 'absolute', bottom: 6, left: 0, right: 0, height: 3, background: '#f5e6d0', borderRadius: 2 }} />
         {/* 猫爪印（走过的路） */}
-        {loading && <div style={{ position: 'absolute', bottom: 7, left: 0, height: 4, background: 'repeating-linear-gradient(90deg, #fdd 0px, #fdd 4px, transparent 4px, transparent 10px)', borderRadius: 2, animation: 'pawTrail 12s linear forwards' }} />}
+        <div style={{ position: 'absolute', bottom: 5, left: 0, height: 5, width: `${catProgress}%`, background: 'repeating-linear-gradient(90deg, #fcc 0px, #fcc 3px, transparent 3px, transparent 8px)', borderRadius: 2, transition: 'width 0.4s ease' }} />
         {/* 小鱼干（终点） */}
-        <div style={{ position: 'absolute', right: 4, bottom: 10, fontSize: 16 }}>🐟</div>
+        <div style={{ position: 'absolute', right: 2, bottom: 12, fontSize: 14, transform: 'scaleX(-1)' }}>🐟</div>
         {/* 小橘猫 */}
         <div style={{
-          position: 'absolute', bottom: 10, fontSize: 20, transition: 'left 0.3s',
-          left: loading ? undefined : 4,
-          animation: loading ? 'catWalkOnce 12s ease-in-out forwards' : 'none',
+          position: 'absolute', bottom: 8, fontSize: 22,
+          left: `calc(${catProgress}% - 12px)`,
+          transition: 'left 0.4s ease',
+          animation: loading ? 'catBounce 0.6s ease-in-out infinite' : 'none',
         }}>
-          {loading ? '🐈' : '😺'}
+          {catProgress >= 100 ? '😻' : loading ? '🐈' : '😺'}
         </div>
       </div>
       {error && (
@@ -136,15 +156,9 @@ export default function InterviewPage() {
         </div>
       )}
       <style>{`
-        @keyframes catWalkOnce {
-          0% { left: 4px; }
-          90% { left: calc(100% - 40px); }
-          100% { left: calc(100% - 40px); }
-        }
-        @keyframes pawTrail {
-          0% { width: 0%; }
-          90% { width: calc(100% - 40px); }
-          100% { width: calc(100% - 40px); }
+        @keyframes catBounce {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-4px); }
         }
       `}</style>
     </div>
