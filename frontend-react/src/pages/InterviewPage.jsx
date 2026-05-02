@@ -225,7 +225,7 @@ export default function InterviewPage() {
                 )}
                 {g.original_dialogue && (
                   <div style={{ marginTop: 4 }}>
-                    <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`raw${i}`)}>
+                    <div style={{ fontSize: 14, color: '#999', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }} onClick={() => toggle(`raw${i}`)}>
                       {expanded[`raw${i}`] ? '▾' : '▸'} 原始对话
                     </div>
                     {expanded[`raw${i}`] && (
@@ -291,7 +291,7 @@ export default function InterviewPage() {
                         )}
                         {g.original_dialogue && (
                           <div style={{ marginTop: 4 }}>
-                            <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`praw${i}`)}>
+                            <div style={{ fontSize: 14, color: '#999', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }} onClick={() => toggle(`praw${i}`)}>
                               {expanded[`praw${i}`] ? '▾' : '▸'} 原始对话
                             </div>
                             {expanded[`praw${i}`] && (
@@ -329,18 +329,18 @@ export default function InterviewPage() {
                   </div>
                   {isOpen && (
                     <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
-                      {sr?.description && (
+                      {(g.description || sr?.description) && (
                         <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.7 }}>
-                          📝 {sr.description}
+                          📝 {g.description || sr?.description}
                         </div>
                       )}
-                      {sr?.example && <pre style={{ padding: '10px 14px', background: '#f5f5f5', borderLeft: '4px solid #d0d0d0', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 8 }}>{sr.example}</pre>}
+                      {(g.example || sr?.example) && <pre style={{ padding: '10px 14px', background: '#f5f5f5', borderLeft: '4px solid #d0d0d0', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 8 }}>{g.example || sr?.example}</pre>}
                       {sr?.suggested_approach && (
                         <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>📖 {sr.suggested_approach}</div>
                       )}
                       {g.original_dialogue && (
                         <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`araw${i}`)}>
+                          <div style={{ fontSize: 14, color: '#999', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }} onClick={() => toggle(`araw${i}`)}>
                             {expanded[`araw${i}`] ? '▾' : '▸'} 原始对话
                           </div>
                           {expanded[`araw${i}`] && (
@@ -378,7 +378,7 @@ export default function InterviewPage() {
                       )}
                       {g.original_dialogue && (
                         <div style={{ marginTop: 4 }}>
-                          <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`hraw${i}`)}>
+                          <div style={{ fontSize: 14, color: '#999', cursor: 'pointer', userSelect: 'none', padding: '4px 0' }} onClick={() => toggle(`hraw${i}`)}>
                             {expanded[`hraw${i}`] ? '▾' : '▸'} 原始对话
                           </div>
                           {expanded[`hraw${i}`] && (
