@@ -223,26 +223,53 @@ export default function StudyPage() {
   }
 
   return (
-    <div className="study-sidebar">
-      <div className="sidebar">
+    <div>
+      {/* ---- 知识点横向选择栏 ---- */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
         {kpList.map(kp => {
-          const stars = '★'.repeat(kp.interview_weight) + '☆'.repeat(5 - kp.interview_weight)
           const isActive = kp.id === activeKpId
           return (
-          <button key={kp.id} className="kp-btn" onClick={() => startStudy(kp.id)}
-            style={isActive ? { borderColor: '#1677ff', background: '#f0f7ff', fontWeight: 600 } : {}}>
-            <span style={{ flex: 1 }}>{kp.name}</span>
-            <span className="stars" style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>{stars}</span>
-            {kp.mastery_level > 0 && <div className="kp-mastery">{kp.mastery_level}%</div>}
-          </button>
-        )})}
+            <button key={kp.id} onClick={() => { setActiveKpId(kp.id); setKpName(kp.name); setPhase('select_question'); setRounds([]); setCurrentRound([]); setCollapsedRounds({}) }}
+              style={{
+                padding: '8px 16px', borderRadius: 20, border: isActive ? '2px solid #1677ff' : '1px solid #e0e0e0',
+                background: isActive ? '#f0f7ff' : '#fff', fontWeight: isActive ? 600 : 400,
+                fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', color: '#333',
+                transition: 'all 0.15s',
+              }}>
+              {kp.name}
+              {kp.mastery_level > 0 && <span style={{ fontSize: 11, color: '#aaa', marginLeft: 4 }}>{kp.mastery_level}%</span>}
+            </button>
+          )
+        })}
       </div>
-      <div className="study-main">
+
+      {/* ---- 题目选择栏（选了知识点后显示） ---- */}
+      {activeKpId && phase === 'select_question' && (
+        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '16px 20px', marginBottom: 16 }}>
+          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>📖 {kpName}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            <button onClick={() => startStudy(activeKpId)}
+              style={{
+                padding: '8px 20px', borderRadius: 8, border: '1px dashed #1677ff',
+                background: '#fff', color: '#1677ff', fontSize: 13, cursor: 'pointer',
+                fontFamily: 'inherit', fontWeight: 500,
+              }}>
+              ＋ 新题
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ---- 对话区 ---- */}
+      <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '24px', minHeight: 200 }}>
         {phase === 'select' && !loading && (
-          <div className="empty">👈 从左侧选择知识点，或从知识树点击进入</div>
+          <div className="empty">👆 从上方选择知识点开始学习</div>
         )}
-        {loading && phase === 'select' && <div className="loading">🧠 正在出题...</div>}
-        {phase !== 'select' && (
+        {phase === 'select_question' && !loading && (
+          <div className="empty">选择一道题目，或点击「＋ 新题」开始</div>
+        )}
+        {loading && (phase === 'select' || phase === 'select_question') && <div className="loading">🧠 正在出题...</div>}
+        {phase !== 'select' && phase !== 'select_question' && (
           <>
             <h2 style={{ marginBottom: 12 }}>📖 {kpName}</h2>
             {rounds.map((r, i) => renderRound(r, i))}
