@@ -143,8 +143,8 @@ export default function StudyPage() {
       }
 
       if (d.follow_up) {
-        setRounds(r => [...r, [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }]])
-        setCurrentRound([{ type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
+        // 追问：追加到 currentRound（不创建新 round）
+        setCurrentRound(r => [...r, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }, { type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
         setPhase('answering')
       } else {
         // 追问结束 — 总结和扩展题放到独立 summary 消息

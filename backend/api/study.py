@@ -247,6 +247,11 @@ async def submit_answer(
 
     # 如果 LLM 决定追问，更新当前题目为追问题目
     follow_up = result.get("follow_up")
+    # 硬性限制：同一题最多追问 5 次
+    follow_up_count = len([s for s in summaries if s.get("round") == conv.question_round]) - 1
+    if follow_up and follow_up_count >= 5:
+        logger.info(f"追问已达 5 次上限，强制结束")
+        follow_up = None
     if follow_up:
         conv.current_question = follow_up
         conv.current_rubric = result.get("follow_up_rubric", [])
