@@ -42,15 +42,18 @@ def _build_question_history(conv: Conversation) -> list[dict]:
     return history
 
 
-@router.get("/knowledge-points", summary="获取所有叶子知识点列表")
+@router.get("/knowledge-points", summary="获取推荐学习的 Top 10 知识点")
 async def list_knowledge_points(
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
-    """获取所有叶子节点知识点（可学习的），含掌握度信息"""
+    """
+    推荐 Top 10 知识点，按优先级排序：
+    priority = interview_weight × (1.0 - mastery_level/100)
+    未学过的略优先于学过但掌握度低的
+    """
     stmt = (
         select(KnowledgeNode)
         .where(KnowledgeNode.node_type == "leaf")
-        .order_by(KnowledgeNode.interview_weight.desc(), KnowledgeNode.id)
     )
     result = await db.execute(stmt)
     nodes = result.scalars().all()
@@ -68,19 +71,35 @@ async def list_knowledge_points(
         parent_result = await db.execute(parent_stmt)
         parent_map = {p.id: p.name for p in parent_result.scalars().all()}
 
+    # 计算优先级并排序
     items = []
     for node in nodes:
         mastery = mastery_map.get(node.id)
-        items.append(KnowledgePointBrief(
-            id=node.id,
-            name=node.name,
-            parent_name=parent_map.get(node.parent_id),
-            interview_weight=node.interview_weight,
-            mastery_level=mastery.mastery_level if mastery else 0,
-            study_count=mastery.study_count if mastery else 0,
-        ))
+        mastery_level = mastery.mastery_level if mastery else 0
+        study_count = mastery.study_count if mastery else 0
+        # 未学过：priority = weight × 1.0
+        # 学过但低掌握度：priority = weight × (1 - mastery/100) × 0.8
+        if study_count == 0:
+            priority = node.interview_weight * 1.0
+        else:
+            priority = node.interview_weight * (1.0 - mastery_level / 100) * 0.8
+        items.append({
+            "brief": KnowledgePointBrief(
+                id=node.id,
+                name=node.name,
+                parent_name=parent_map.get(node.parent_id),
+                interview_weight=node.interview_weight,
+                mastery_level=mastery_level,
+                study_count=study_count,
+            ),
+            "priority": priority,
+        })
 
-    return ApiResponse.ok(data=items)
+    # 按优先级降序，取 Top 10
+    items.sort(key=lambda x: x["priority"], reverse=True)
+    top10 = [item["brief"] for item in items[:10]]
+
+    return ApiResponse.ok(data=top10)
 
 
 @router.post("/start", summary="开始学习一个知识点")
