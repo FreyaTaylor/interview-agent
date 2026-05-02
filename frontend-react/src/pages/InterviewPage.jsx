@@ -109,14 +109,23 @@ export default function InterviewPage() {
         <button className="parse-btn" onClick={handleParse} disabled={!text.trim() || loading}>
           {loading ? '🧠 解析中...' : '🔍 开始解析'}
         </button>
-        {loading && (
-          <div style={{ flex: 1, position: 'relative', height: 20, overflow: 'hidden' }}>
-            <div style={{ position: 'absolute', animation: 'catWalk 3s linear infinite', fontSize: 18, top: -2 }}>🐱</div>
-            <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: 2, background: '#f0f0f0', borderRadius: 1 }}>
-              <div style={{ height: '100%', background: '#1677ff', borderRadius: 1, animation: 'progressGrow 8s ease-in-out infinite' }} />
-            </div>
-          </div>
-        )}
+      </div>
+      {/* 小橘猫进度条 */}
+      <div style={{ marginTop: 12, position: 'relative', height: 32 }}>
+        {/* 路线 */}
+        <div style={{ position: 'absolute', bottom: 8, left: 0, right: 0, height: 2, background: '#f0e6d3', borderRadius: 1 }} />
+        {/* 猫爪印（走过的路） */}
+        {loading && <div style={{ position: 'absolute', bottom: 7, left: 0, height: 4, background: 'repeating-linear-gradient(90deg, #fdd 0px, #fdd 4px, transparent 4px, transparent 10px)', borderRadius: 2, animation: 'pawTrail 12s linear forwards' }} />}
+        {/* 小鱼干（终点） */}
+        <div style={{ position: 'absolute', right: 4, bottom: 10, fontSize: 16 }}>🐟</div>
+        {/* 小橘猫 */}
+        <div style={{
+          position: 'absolute', bottom: 10, fontSize: 20, transition: 'left 0.3s',
+          left: loading ? undefined : 4,
+          animation: loading ? 'catWalkOnce 12s ease-in-out forwards' : 'none',
+        }}>
+          {loading ? '🐈' : '😺'}
+        </div>
       </div>
       {error && (
         <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
@@ -127,15 +136,15 @@ export default function InterviewPage() {
         </div>
       )}
       <style>{`
-        @keyframes catWalk {
-          0% { left: 0; }
-          100% { left: calc(100% - 24px); }
+        @keyframes catWalkOnce {
+          0% { left: 4px; }
+          90% { left: calc(100% - 40px); }
+          100% { left: calc(100% - 40px); }
         }
-        @keyframes progressGrow {
+        @keyframes pawTrail {
           0% { width: 0%; }
-          50% { width: 70%; }
-          90% { width: 95%; }
-          100% { width: 95%; }
+          90% { width: calc(100% - 40px); }
+          100% { width: calc(100% - 40px); }
         }
       `}</style>
     </div>
