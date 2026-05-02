@@ -100,7 +100,14 @@ async def score_answer_with_rubric(
             result["summary"] = []
         # 强制校正 total = 所有命中项分值之和（防止 LLM 算错）
         items = result.get("items", [])
-        result["total"] = sum(item["score"] for item in items if item.get("hit", False))
+        rubric_total = sum(item["score"] for item in items)
+        hit_total = sum(item["score"] for item in items if item.get("hit", False))
+        # 如果 rubric 总分不是 100，按比例折算
+        if rubric_total > 0 and rubric_total != 100:
+            logger.warning(f"Rubric 总分 {rubric_total} ≠ 100，按比例折算")
+            result["total"] = round(hit_total * 100 / rubric_total)
+        else:
+            result["total"] = hit_total
         return result
     except (json.JSONDecodeError, IndexError) as e:
         logger.error(f"Rubric 评分 JSON 解析失败: {e}\nLLM 原始输出: {response.content}")
