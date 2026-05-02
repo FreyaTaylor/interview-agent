@@ -250,7 +250,7 @@ export default function StudyPage() {
             <span style={{ fontSize: 13, color: '#999', marginRight: 4 }}>题目</span>
           {rounds.map((r, i) => {
             const firstQ = r.find(m => m.type === 'q')
-            const title = firstQ?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').trim().slice(0, 20) || `第${i+1}题`
+            const title = firstQ?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').replace(/第\d+题/,'').trim() || `第${i+1}题`
             const isCurrent = !collapsedRounds[i]
             return (
               <button key={i} onClick={() => {
@@ -269,7 +269,7 @@ export default function StudyPage() {
           {/* 当前正在答的题 */}
           {currentRound.length > 0 && (
             <span style={{ padding: '6px 14px', borderRadius: 16, fontSize: 12, border: '2px solid #722ed1', background: '#f9f0ff', fontWeight: 600, color: '#722ed1' }}>
-              {currentRound.find(m => m.type === 'q')?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').trim().slice(0, 20) || '当前题'}
+              {currentRound.find(m => m.type === 'q')?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').replace(/第\d+题/,'').trim() || '当前题'}
             </span>
           )}
           {phase === 'scored' && (
