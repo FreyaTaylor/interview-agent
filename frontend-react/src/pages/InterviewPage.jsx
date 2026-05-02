@@ -144,19 +144,17 @@ export default function InterviewPage() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
           <span style={{ fontSize: 15 }}>知识点 <b style={{ color: sc(result.avg_score), fontSize: 20 }}>{result.avg_score}</b>/100</span>
           {oa && <span style={{ fontSize: 14 }}>{'⭐'.repeat(Math.min(oa.overall_rating || 3, 5))} <b style={{ color: '#722ed1' }}>{oa.overall_label}</b></span>}
+          {oa?.prediction && <span style={{ fontSize: 13, color: '#888' }}>🔮 {oa.prediction}</span>}
         </div>
         {oa && (
           <>
-            <div style={{ fontSize: 13, color: '#555', lineHeight: 1.8, marginBottom: 8 }}>{oa.comment}</div>
-            <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
-              {oa.top3_improvements?.length > 0 && (
-                <div style={{ flex: 1 }}>
-                  <b style={{ color: '#ff4d4f' }}>🎯 改进</b>
-                  {oa.top3_improvements.map((s, i) => <div key={i} style={{ color: '#666', paddingLeft: 12 }}>{i + 1}. {s}</div>)}
-                </div>
-              )}
-              {oa.prediction && <div style={{ color: '#888', alignSelf: 'flex-end' }}>🔮 {oa.prediction}</div>}
-            </div>
+            <div style={{ fontSize: 14, color: '#333', fontWeight: 600, marginBottom: 8 }}>{oa.comment}</div>
+            {(oa.review_points || oa.top3_improvements)?.length > 0 && (
+              <div style={{ fontSize: 13 }}>
+                <b style={{ color: '#ff4d4f' }}>📋 推荐复习</b>
+                {(oa.review_points || oa.top3_improvements).map((s, i) => <div key={i} style={{ color: '#666', paddingLeft: 12 }}>{i + 1}. {s}</div>)}
+              </div>
+            )}
           </>
         )}
         {!oa && <p style={{ color: '#666', margin: 0 }}>{result.summary}</p>}
