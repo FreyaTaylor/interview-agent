@@ -229,7 +229,7 @@ export default function StudyPage() {
         {kpList.map(kp => {
           const isActive = kp.id === activeKpId
           return (
-            <button key={kp.id} onClick={() => { setActiveKpId(kp.id); setKpName(kp.name); setPhase('select_question'); setRounds([]); setCurrentRound([]); setCollapsedRounds({}) }}
+            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { startStudy(kp.id) } }}
               style={{
                 padding: '8px 16px', borderRadius: 20, border: isActive ? '2px solid #1677ff' : '1px solid #e0e0e0',
                 background: isActive ? '#f0f7ff' : '#fff', fontWeight: isActive ? 600 : 400,
@@ -243,20 +243,37 @@ export default function StudyPage() {
         })}
       </div>
 
-      {/* ---- 题目选择栏（选了知识点后显示） ---- */}
-      {activeKpId && phase === 'select_question' && (
-        <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '16px 20px', marginBottom: 16 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>📖 {kpName}</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            <button onClick={() => startStudy(activeKpId)}
+      {/* ---- 题目栏（显示所有已出的题目） ---- */}
+      {activeKpId && rounds.length > 0 && (
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+          {rounds.map((r, i) => {
+            const firstQ = r.find(m => m.type === 'q')
+            const title = firstQ?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').trim().slice(0, 20) || `第${i+1}题`
+            const isCurrent = !collapsedRounds[i]
+            return (
+              <button key={i} onClick={() => {
+                const c = {}; rounds.forEach((_, j) => { c[j] = j !== i }); setCollapsedRounds(c)
+              }}
+                style={{
+                  padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
+                  border: isCurrent ? '2px solid #722ed1' : '1px solid #e0e0e0',
+                  background: isCurrent ? '#f9f0ff' : '#fafafa', fontWeight: isCurrent ? 600 : 400,
+                  fontFamily: 'inherit', color: '#333', transition: 'all 0.15s',
+                }}>
+                {title}
+              </button>
+            )
+          })}
+          {phase === 'scored' && (
+            <button onClick={nextQuestion}
               style={{
-                padding: '8px 20px', borderRadius: 8, border: '1px dashed #1677ff',
-                background: '#fff', color: '#1677ff', fontSize: 13, cursor: 'pointer',
+                padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
+                border: '1px dashed #1677ff', background: '#fff', color: '#1677ff',
                 fontFamily: 'inherit', fontWeight: 500,
               }}>
-              ＋ 新题
+              ＋ 下一题
             </button>
-          </div>
+          )}
         </div>
       )}
 
@@ -265,11 +282,8 @@ export default function StudyPage() {
         {phase === 'select' && !loading && (
           <div className="empty">👆 从上方选择知识点开始学习</div>
         )}
-        {phase === 'select_question' && !loading && (
-          <div className="empty">选择一道题目，或点击「＋ 新题」开始</div>
-        )}
-        {loading && (phase === 'select' || phase === 'select_question') && <div className="loading">🧠 正在出题...</div>}
-        {phase !== 'select' && phase !== 'select_question' && (
+        {loading && phase === 'select' && <div className="loading">🧠 正在出题...</div>}
+        {phase !== 'select' && (
           <>
             <h2 style={{ marginBottom: 12 }}>📖 {kpName}</h2>
             {rounds.map((r, i) => renderRound(r, i))}
