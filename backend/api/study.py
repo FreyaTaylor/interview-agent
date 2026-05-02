@@ -185,6 +185,7 @@ async def start_study(
         "global_asked_questions": global_asked,
         "question_content": "",
         "rubric_items": [],
+        "pending_questions": [],
         "score": 0,
         "rubric_result": {},
         "feedback": "",
@@ -200,6 +201,10 @@ async def start_study(
     conv.current_question = result["question_content"]
     conv.current_rubric = result["rubric_items"]
 
+    # 保存所有待答题目到 conversation（JSONB）
+    all_questions = [{"question": result["question_content"], "rubric": result["rubric_items"]}]
+    all_questions.extend(result.get("pending_questions", []))
+
     # 记录出题消息
     msg = ConversationMessage(
         conversation_id=conv.id,
@@ -211,13 +216,14 @@ async def start_study(
 
     await db.commit()
 
-    return ApiResponse.ok(data=QuestionResponse(
-        conversation_id=conv.id,
-        session_id=session.id,
-        knowledge_point_name=node.name,
-        question_content=result["question_content"],
-        question_round=1,
-    ))
+    return ApiResponse.ok(data={
+        "conversation_id": conv.id,
+        "session_id": session.id,
+        "knowledge_point_name": node.name,
+        "question_content": result["question_content"],
+        "question_round": 1,
+        "all_questions": [q["question"] for q in all_questions],
+    })
 
 
 @router.post("/answer", summary="提交回答并获取评分")
@@ -258,6 +264,7 @@ async def submit_answer(
         "global_asked_questions": [],
         "question_content": conv.current_question,
         "rubric_items": conv.current_rubric,
+        "pending_questions": [],
         "score": 0,
         "rubric_result": {},
         "feedback": "",
@@ -398,6 +405,7 @@ async def next_question(
         "global_asked_questions": global_asked,
         "question_content": "",
         "rubric_items": [],
+        "pending_questions": [],
         "score": 0,
         "rubric_result": {},
         "feedback": "",
@@ -519,6 +527,7 @@ async def start_with_answer(
             "global_asked_questions": [],
             "question_content": conv.current_question,
             "rubric_items": conv.current_rubric,
+            "pending_questions": [],
             "score": 0, "rubric_result": {}, "feedback": "",
             "follow_up": None, "follow_up_rubric": [], "summary": [],
             "agent_response": "", "phase": "",

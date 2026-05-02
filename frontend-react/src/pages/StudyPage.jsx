@@ -14,6 +14,8 @@ export default function StudyPage() {
   const [rounds, setRounds] = useState([])
   const [currentRound, setCurrentRound] = useState([])
   const [collapsedRounds, setCollapsedRounds] = useState({})
+  const [allQuestions, setAllQuestions] = useState([])  // 所有题目文本
+  const [activeQuestionIdx, setActiveQuestionIdx] = useState(0)
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -105,7 +107,9 @@ export default function StudyPage() {
       setPhase('answering')
       setRounds([])
       setCollapsedRounds({})
-      setCurrentRound([{ type: 'q', html: `📝 <b>第${d.question_round}题</b><br>${d.question_content}` }])
+      setAllQuestions(d.all_questions || [d.question_content])
+      setActiveQuestionIdx(0)
+      setCurrentRound([{ type: 'q', html: `📝 ${d.question_content}` }])
       navigate('/study', { replace: true })
     }
   }
@@ -229,7 +233,7 @@ export default function StudyPage() {
         {kpList.map(kp => {
           const isActive = kp.id === activeKpId
           return (
-            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { setActiveKpId(kp.id); setKpName(kp.name); setRounds([]); setCurrentRound([]); setCollapsedRounds({}); startStudy(kp.id) } }}
+            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { setActiveKpId(kp.id); setKpName(kp.name); setRounds([]); setCurrentRound([]); setCollapsedRounds({}); setAllQuestions([]); startStudy(kp.id) } }}
               style={{
                 padding: '8px 16px', borderRadius: 20, border: isActive ? '2px solid #1677ff' : '1px solid #e0e0e0',
                 background: isActive ? '#f0f7ff' : '#fff', fontWeight: isActive ? 600 : 400,
@@ -243,45 +247,32 @@ export default function StudyPage() {
         })}
       </div>
 
-      {/* ---- 题目栏（显示所有题目含当前） ---- */}
-      {activeKpId && (rounds.length > 0 || currentRound.length > 0) && (
+{/* ---- 题目栏（显示所有题目） ---- */}
+      {activeKpId && allQuestions.length > 0 && (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '12px 16px', marginBottom: 16 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
             <span style={{ fontSize: 13, color: '#999', marginRight: 4 }}>题目</span>
-          {rounds.map((r, i) => {
-            const firstQ = r.find(m => m.type === 'q')
-            const title = firstQ?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').replace(/第\d+题/,'').trim() || `第${i+1}题`
-            const isCurrent = !collapsedRounds[i]
-            return (
-              <button key={i} onClick={() => {
-                const c = {}; rounds.forEach((_, j) => { c[j] = j !== i }); setCollapsedRounds(c)
-              }}
-                style={{
-                  padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
-                  border: isCurrent ? '2px solid #722ed1' : '1px solid #e0e0e0',
-                  background: isCurrent ? '#f9f0ff' : '#fafafa', fontWeight: isCurrent ? 600 : 400,
-                  fontFamily: 'inherit', color: '#333', transition: 'all 0.15s',
-                }}>
-                {title}
-              </button>
-            )
-          })}
-          {/* 当前正在答的题 */}
-          {currentRound.length > 0 && (
-            <span style={{ padding: '6px 14px', borderRadius: 16, fontSize: 12, border: '2px solid #722ed1', background: '#f9f0ff', fontWeight: 600, color: '#722ed1' }}>
-              {currentRound.find(m => m.type === 'q')?.html?.replace(/<[^>]*>/g, '').replace(/📝|🤔/g, '').replace(/第\d+题/,'').trim() || '当前题'}
-            </span>
-          )}
-          {phase === 'scored' && (
-            <button onClick={nextQuestion}
-              style={{
-                padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
-                border: '1px dashed #1677ff', background: '#fff', color: '#1677ff',
-                fontFamily: 'inherit', fontWeight: 500,
-              }}>
-              ＋ 下一题
-            </button>
-          )}
+            {allQuestions.map((q, i) => {
+              const answered = i < rounds.length
+              const isCurrent = i === activeQuestionIdx
+              return (
+                <button key={i} onClick={() => {
+                  if (answered) {
+                    const c = {}; rounds.forEach((_, j) => { c[j] = j !== i }); setCollapsedRounds(c)
+                  }
+                  setActiveQuestionIdx(i)
+                }}
+                  style={{
+                    padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
+                    border: isCurrent ? '2px solid #722ed1' : answered ? '1px solid #52c41a' : '1px solid #e0e0e0',
+                    background: isCurrent ? '#f9f0ff' : answered ? '#f6ffed' : '#fafafa',
+                    fontWeight: isCurrent ? 600 : 400,
+                    fontFamily: 'inherit', color: '#333', transition: 'all 0.15s',
+                  }}>
+                  {q}
+                </button>
+              )
+            })}
           </div>
         </div>
       )}

@@ -15,21 +15,19 @@ async def generate_question(
     knowledge_point: str,
     history: list[dict],
     global_asked: list[str] = None,
-) -> dict:
+) -> list[dict]:
     """
-    动态生成面试题 + Rubric
+    一次性生成 3-5 道面试题 + Rubric
 
-    Args:
-        knowledge_point: 知识点名称
-        history: 已考过的题目历史 [{"question": "...", "score": 80, "missed": ["遗漏点1"]}, ...]
-        global_asked: 全局已出过的题目列表（跨知识点去重）
+    Returns:
+        [{"question": "...", "rubric": [{"key_point": "...", "score": 20}, ...]}, ...]
     """
-    history_text = "（无，这是第一题）"
+    history_text = "（无）"
     if history:
         lines = []
         for i, h in enumerate(history, 1):
             missed = "、".join(h.get("missed", [])) or "无"
-            lines.append(f"{i}. 题目：{h['question']}，得分：{h['score']}/100，遗漏：{missed}")
+            lines.append(f"{i}. {h['question']}（得分{h['score']}，遗漏：{missed}）")
         history_text = "\n".join(lines)
 
     global_text = ""
@@ -46,24 +44,28 @@ async def generate_question(
 
     try:
         result = parse_llm_json(response.content)
-        # 强制归一化 rubric 分值之和 = 100
-        rubric = result.get("rubric", [])
-        if rubric:
-            raw_total = sum(r["score"] for r in rubric)
-            if raw_total != 100 and raw_total > 0:
-                for r in rubric:
-                    r["score"] = round(r["score"] * 100 / raw_total)
-                # 修正舍入误差
-                diff = 100 - sum(r["score"] for r in rubric)
-                rubric[0]["score"] += diff
-            result["rubric"] = rubric
-        return result
+        questions = result.get("questions", [])
+        # 兼容旧格式（单题）
+        if not questions and result.get("question"):
+            questions = [{"question": result["question"], "rubric": result.get("rubric", [])}]
+        # 归一化每道题的 rubric
+        for q in questions:
+            rubric = q.get("rubric", [])
+            if rubric:
+                raw_total = sum(r["score"] for r in rubric)
+                if raw_total != 100 and raw_total > 0:
+                    for r in rubric:
+                        r["score"] = round(r["score"] * 100 / raw_total)
+                    diff = 100 - sum(r["score"] for r in rubric)
+                    rubric[0]["score"] += diff
+                q["rubric"] = rubric
+        return questions
     except (json.JSONDecodeError, IndexError) as e:
         logger.error(f"出题 JSON 解析失败: {e}\nLLM 原始输出: {response.content}")
-        return {
-            "question": f"请描述一下{knowledge_point}的核心概念和应用场景。",
+        return [{
+            "question": f"{knowledge_point}的核心原理？",
             "rubric": [{"key_point": "核心概念", "score": 50}, {"key_point": "应用场景", "score": 50}],
-        }
+        }]
 
 
 async def score_answer_with_rubric(

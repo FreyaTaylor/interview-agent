@@ -34,6 +34,7 @@ class StudyState(TypedDict):
     # 当前题目
     question_content: str
     rubric_items: list[dict]        # [{"key_point": "...", "score": 20}, ...]
+    pending_questions: list[dict]   # 待答的题目列表
 
     # 评分结果
     score: int
@@ -52,20 +53,24 @@ class StudyState(TypedDict):
 
 async def generate_question_node(state: StudyState) -> dict:
     """
-    出题节点 — 调用 LLM 动态生成题目 + Rubric
+    出题节点 — 一次性生成 3-5 道题
     """
     logger.info(f"动态出题: 知识点={state['knowledge_point_name']}, 历史题数={len(state.get('question_history', []))}")
 
-    result = await generate_question(
+    questions = await generate_question(
         knowledge_point=state["knowledge_point_name"],
         history=state.get("question_history", []),
         global_asked=state.get("global_asked_questions", []),
     )
 
+    # 取第一题作为当前题目，其余存到 pending
+    first = questions[0] if questions else {"question": "请描述该知识点", "rubric": []}
+
     return {
-        "question_content": result["question"],
-        "rubric_items": result.get("rubric", []),
-        "agent_response": result["question"],
+        "question_content": first["question"],
+        "rubric_items": first.get("rubric", []),
+        "pending_questions": questions[1:] if len(questions) > 1 else [],
+        "agent_response": first["question"],
         "phase": "questioning",
         "score": 0,
         "rubric_result": {},
