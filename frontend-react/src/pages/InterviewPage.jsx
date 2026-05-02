@@ -178,34 +178,37 @@ export default function InterviewPage() {
         ))}
       </div>
 
-      {/* ---- Tab: 知识点（幕布风格） ---- */}
+      {/* ---- Tab: 知识点（卡片风格） ---- */}
       {activeTab === 'knowledge' && (knowledgeGroups.length === 0
         ? <div className="empty">暂无知识点问题</div>
-        : <div className="tree-card">
+        : <div>
         {knowledgeGroups.map((g, i) => {
         const sr = g.score_result; const isOpen = expanded[`r${i}`]
         const bg = i % 2 === 0 ? '#fff' : '#f7f8fa'
         return (
-          <div key={`r${i}`} className="tree-node" style={{ background: bg, borderRadius: 6 }}>
-            <div className="node-row" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
-              <span className={`toggle ${isOpen ? 'open' : ''}`} />
-              <span className="node-name">
+          <div key={`r${i}`} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 15, fontWeight: 600, color: '#333' }}>
                 {g.knowledge_point}
                 {g.auto_created && <span style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>新增</span>}
               </span>
-              {sr && <span style={{ color: sc(sr.total_score), fontWeight: 600, fontSize: 13 }}>{sr.total_score}分</span>}
+              {sr && <span style={{ color: sc(sr.total_score), fontWeight: 700, fontSize: 15 }}>{sr.total_score}<span style={{ fontSize: 12, fontWeight: 400 }}>/100</span></span>}
             </div>
             {isOpen && (
-              <div style={{ paddingLeft: 38 }}>
-                {g.questions?.length > 0 && g.questions.map((q, j) => (
-                  <div key={j} className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>❓ {q}</span></div></div>
-                ))}
+              <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                {g.questions?.length > 0 && (
+                  <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.8 }}>
+                    {g.questions.map((q, j) => <div key={j}>❓ {q}</div>)}
+                  </div>
+                )}
                 {g.user_answer && (
-                  <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.user_answer}</span></div></div>
+                  <div style={{ background: '#fff8e1', borderLeft: '4px solid #fa8c16', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.7 }}>
+                    💬 {g.user_answer}
+                  </div>
                 )}
                 {sr && (
-                  <div style={{ margin: '4px 16px 8px', padding: '8px 12px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
-                    <div style={{ marginBottom: 4 }}><b>{sr.total_score}/100</b> — {sr.feedback}</div>
+                  <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ marginBottom: 6 }}><b>{sr.total_score}/100</b> — {sr.feedback}</div>
                     {(sr.rubric_result || []).map((item, k) => (
                       <div key={k} style={{ padding: '2px 0', color: '#555' }}>
                         {item.hit ? '✅' : '❌'} {item.key_point}（{item.score}分）
@@ -213,7 +216,7 @@ export default function InterviewPage() {
                       </div>
                     ))}
                     {sr.recommended_answer?.length > 0 && (
-                      <div style={{ marginTop: 6, borderTop: '1px solid #e8f5e9', paddingTop: 6 }}>
+                      <div style={{ marginTop: 8, borderTop: '1px solid #e8f5e9', paddingTop: 8 }}>
                         <b>📖 推荐回答</b>
                         {sr.recommended_answer.map((p, j) => <div key={j} style={{ color: '#555' }}>{j + 1}. {p}</div>)}
                       </div>
@@ -221,12 +224,12 @@ export default function InterviewPage() {
                   </div>
                 )}
                 {g.original_dialogue && (
-                  <div style={{ margin: '4px 16px 8px' }}>
+                  <div style={{ marginTop: 4 }}>
                     <div style={{ fontSize: 12, color: '#aaa', cursor: 'pointer', userSelect: 'none' }} onClick={() => toggle(`raw${i}`)}>
                       {expanded[`raw${i}`] ? '▾' : '▸'} 原始对话
                     </div>
                     {expanded[`raw${i}`] && (
-                      <div style={{ marginTop: 4, padding: '6px 10px', background: '#f9fafb', borderRadius: 4, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
+                      <div style={{ marginTop: 4, padding: '8px 12px', background: '#f5f5f5', borderRadius: 6, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
                     )}
                   </div>
                 )}
@@ -237,41 +240,42 @@ export default function InterviewPage() {
       })}
       </div>)}
 
-      {/* ---- Tab: 项目拷打（幕布风格） ---- */}
+      {/* ---- Tab: 项目拷打（卡片风格） ---- */}
       {activeTab === 'project' && (projectGroups.length === 0
         ? <div className="empty">暂无项目拷打记录</div>
-        : <div className="tree-card">{(() => {
+        : <div>{(() => {
           const byProject = {}
           projectGroups.forEach((g, i) => {
             const name = g.project_name || '未命名项目'
             if (!byProject[name]) byProject[name] = []
             byProject[name].push({ ...g, _idx: i })
           })
+          let cardIdx = 0
           return Object.entries(byProject).map(([projName, topics]) => (
-            <div key={projName} className="tree-node">
-              <div className="node-row cat" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`proj_${projName}`)}>
-                <span className={`toggle ${expanded[`proj_${projName}`] === false ? '' : 'open'}`} />
-                <span className="node-name">{projName}</span>
-                <span style={{ fontSize: 12, color: '#999', marginLeft: 8 }}>{topics.length} 个话题</span>
+            <div key={projName} style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#333', padding: '8px 0', borderBottom: '2px solid #eee', marginBottom: 8 }}>
+                🔨 {projName} <span style={{ fontSize: 12, color: '#999', fontWeight: 400 }}>{topics.length} 个话题</span>
               </div>
-              {expanded[`proj_${projName}`] !== false && topics.map((g) => {
+              {topics.map((g) => {
                 const i = g._idx; const sr = g.score_result; const isOpen = expanded[`p${i}`]
+                const bg = cardIdx++ % 2 === 0 ? '#fff' : '#f7f8fa'
                 return (
-                  <div key={`p${i}`} className="tree-node">
-                    <div className="node-row" style={{ paddingLeft: 38, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
-                      <span className={`toggle ${isOpen ? 'open' : ''}`} />
-                      <span className="node-name">{g.topic || '拷打'}</span>
-                    </div>
+                  <div key={`p${i}`} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.topic || '拷打'}</div>
                     {isOpen && (
-                      <div style={{ paddingLeft: 60 }}>
-                        {g.questions?.map((q, j) => (
-                          <div key={j} className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>{q}</span></div></div>
-                        ))}
+                      <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                        {g.questions?.length > 0 && (
+                          <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.8 }}>
+                            {g.questions.map((q, j) => <div key={j}>❓ {q}</div>)}
+                          </div>
+                        )}
                         {g.user_answer && (
-                          <div style={{ margin: '4px 0 4px 16px', padding: '6px 10px', background: '#f0e6ff', borderRadius: 4, fontSize: 13, color: '#666' }}>💬 {g.user_answer}</div>
+                          <div style={{ background: '#fff8e1', borderLeft: '4px solid #fa8c16', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.7 }}>
+                            💬 {g.user_answer}
+                          </div>
                         )}
                         {sr && (
-                          <div style={{ margin: '4px 0 8px 16px', padding: '8px 12px', background: '#f9f0ff', borderRadius: 6, fontSize: 13 }}>
+                          <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
                             <div style={{ fontWeight: 600, marginBottom: 4 }}>{sr.rating_label} {'⭐'.repeat(sr.rating || 0)}</div>
                             <div style={{ color: '#555', lineHeight: 1.7 }}>{sr.impression}</div>
                             {sr.improvements?.length > 0 && <div style={{ marginTop: 6, color: '#fa8c16' }}>💡 {sr.improvements.join(' | ')}</div>}
@@ -293,31 +297,41 @@ export default function InterviewPage() {
         })()}</div>
       )}
 
-      {/* ---- Tab: 其他问题（幕布风格） ---- */}
+      {/* ---- Tab: 其他问题（卡片风格） ---- */}
       {activeTab === 'other' && (otherCount === 0
         ? <div className="empty">暂无其他面试问题</div>
-        : <div className="tree-card">
+        : <div>
           {algorithmGroups.length > 0 && (
-            <div className="tree-node">
-              <div className="node-row cat" style={{ paddingLeft: 16 }}><span className="node-name">💻 算法题</span></div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#333', padding: '8px 0', borderBottom: '2px solid #eee', marginBottom: 8 }}>💻 算法题</div>
               {algorithmGroups.map((g, i) => {
                 const sr = g.score_result; const isOpen = expanded[`algo${i}`]
                 const lcUrl = sr?.leetcode_url || g.leetcode_url || null
                 const lcId = sr?.leetcode_id || g.leetcode_id
+                const bg = i % 2 === 0 ? '#fff' : '#f7f8fa'
                 return (
-                <div key={i} className="tree-node">
-                  <div className="node-row" style={{ paddingLeft: 38, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
-                    <span className={`toggle ${isOpen ? 'open' : ''}`} />
-                    <span className="node-name">{g.title}</span>
+                <div key={i} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.title}</span>
                     {lcUrl ? <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{lcId ? ` #${lcId}` : ''}</a> : lcId ? <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode #{lcId}</span> : null}
                   </div>
                   {isOpen && (
-                    <div style={{ paddingLeft: 60 }}>
-                      {g.original_dialogue && <div style={{ padding: '4px 10px', background: '#f9fafb', borderRadius: 4, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 4 }}>{g.original_dialogue}</div>}
-                      {sr?.feedback && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>💬 {sr.feedback}</span></div></div>}
-                      {sr?.description && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📝 {sr.description}</span></div></div>}
-                      {sr?.example && <pre style={{ marginLeft: 16, padding: '4px 10px', background: '#f5f5f5', borderRadius: 4, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{sr.example}</pre>}
-                      {sr?.suggested_approach && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📖 {sr.suggested_approach}</span></div></div>}
+                    <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                      {g.original_dialogue && (
+                        <div style={{ background: '#fff8e1', borderLeft: '4px solid #fa8c16', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
+                      )}
+                      {sr?.feedback && (
+                        <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>💬 {sr.feedback}</div>
+                      )}
+                      {sr?.description && (
+                        <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.7 }}>
+                          📝 {sr.description}
+                        </div>
+                      )}
+                      {sr?.example && <pre style={{ padding: '10px 14px', background: '#f5f5f5', borderLeft: '4px solid #d0d0d0', borderRadius: 6, fontSize: 12, fontFamily: 'monospace', whiteSpace: 'pre-wrap', lineHeight: 1.6, marginBottom: 8 }}>{sr.example}</pre>}
+                      {sr?.suggested_approach && (
+                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, fontSize: 13 }}>📖 {sr.suggested_approach}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -325,22 +339,27 @@ export default function InterviewPage() {
             </div>
           )}
           {hrGroups.length > 0 && (
-            <div className="tree-node">
-              <div className="node-row cat" style={{ paddingLeft: 16 }}><span className="node-name">💬 HR / 行为题</span></div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#333', padding: '8px 0', borderBottom: '2px solid #eee', marginBottom: 8 }}>💬 HR / 行为题</div>
               {hrGroups.map((g, i) => {
-                const sr = g.score_result; const isOpen = expanded[`hr${i}`]
+                const sr = g.score_result
                 const hasDetail = sr || g.user_answer
+                const isOpen = expanded[`hr${i}`]
+                const bg = i % 2 === 0 ? '#fff' : '#f7f8fa'
                 return (
-                <div key={i} className="tree-node">
-                  <div className="node-row" style={{ paddingLeft: 38, cursor: hasDetail ? 'pointer' : 'default' }} onClick={() => hasDetail && toggle(`hr${i}`)}>
-                    {hasDetail ? <span className={`toggle ${isOpen ? 'open' : ''}`} /> : <span className="bullet" />}
-                    <span className="node-name">{g.questions?.[0] || '—'}</span>
-                  </div>
+                <div key={i} style={{ background: bg, borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10, cursor: hasDetail ? 'pointer' : 'default' }} onClick={() => hasDetail && toggle(`hr${i}`)}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: '#333' }}>{g.questions?.[0] || '—'}</div>
                   {isOpen && (
-                    <div style={{ paddingLeft: 60 }}>
-                      {g.user_answer && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.user_answer}</span></div></div>}
-                      {sr?.feedback && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>📊 {sr.feedback}</span></div></div>}
-                      {sr?.suggestion && <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#fa8c16' }}>💡 {sr.suggestion}</span></div></div>}
+                    <div style={{ marginTop: 10 }} onClick={e => e.stopPropagation()}>
+                      {g.user_answer && (
+                        <div style={{ background: '#fff8e1', borderLeft: '4px solid #fa8c16', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>💬 {g.user_answer}</div>
+                      )}
+                      {sr?.feedback && (
+                        <div style={{ background: '#f6ffed', borderLeft: '4px solid #52c41a', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>📊 {sr.feedback}</div>
+                      )}
+                      {sr?.suggestion && (
+                        <div style={{ background: '#f9f0ff', borderLeft: '4px solid #722ed1', padding: '10px 14px', borderRadius: 6, fontSize: 13 }}>💡 {sr.suggestion}</div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -348,13 +367,11 @@ export default function InterviewPage() {
             </div>
           )}
           {otherGroups.length > 0 && (
-            <div className="tree-node">
-              <div className="node-row cat" style={{ paddingLeft: 16 }}><span className="node-name">❓ 其他</span></div>
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: '#333', padding: '8px 0', borderBottom: '2px solid #eee', marginBottom: 8 }}>❓ 其他</div>
               {otherGroups.map((g, i) => (
-                <div key={i} className="tree-node">
-                  {g.questions?.map((q, j) => (
-                    <div key={j} className="tree-node"><div className="node-row" style={{ paddingLeft: 38 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>{q}</span></div></div>
-                  ))}
+                <div key={i} style={{ background: i % 2 === 0 ? '#fff' : '#f7f8fa', borderRadius: 10, border: '1px solid #eee', padding: '14px 18px', marginBottom: 10 }}>
+                  {g.questions?.map((q, j) => <div key={j} style={{ fontSize: 13, color: '#555', padding: '2px 0' }}>{q}</div>)}
                 </div>
               ))}
             </div>
