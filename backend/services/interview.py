@@ -311,6 +311,7 @@ async def score_interview_group(group: dict) -> dict | None:
                 knowledge_point=group.get("knowledge_point", ""),
                 questions=questions_text,
                 user_answer=user_answer,
+                original_dialogue=group.get("original_dialogue", "") or "无",
             )
         elif g_type == "project":
             user_answer = group.get("user_answer", "").strip()
