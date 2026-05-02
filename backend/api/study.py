@@ -303,6 +303,7 @@ async def submit_answer(
     if isinstance(rec_answer, str):
         rec_answer = [rec_answer] if rec_answer else []
     ext_qs = result["rubric_result"].get("extension_questions", [])
+    overall_summary = result["rubric_result"].get("overall_summary", "")
     rubric_total = result["rubric_result"].get("rubric_total", 100)
     return ApiResponse.ok(data=ScoreResponse(
         conversation_id=conv.id,
@@ -311,7 +312,8 @@ async def submit_answer(
         rubric_result=rubric_items_result,
         feedback=result["feedback"],
         recommended_answer=rec_answer,
-        extension_questions=ext_qs,
+        extension_questions=ext_qs if not follow_up else [],
+        overall_summary=overall_summary if not follow_up else "",
         follow_up=follow_up,
         question_round=conv.question_round,
     ))

@@ -137,18 +137,24 @@ export default function StudyPage() {
         scoreHtml += '<br>📖 <b>推荐回答</b>:<br>'
         rec.forEach((p, i) => { scoreHtml += `${i + 1}. ${p}<br>` })
       }
-      const ext = d.extension_questions
-      if (ext && Array.isArray(ext) && ext.length > 0) {
-        scoreHtml += '<br>📚 <b>扩展题目</b>:<br>'
-        ext.forEach((eq, i) => { scoreHtml += `<div style="margin:4px 0;padding:6px 10px;background:#f0f7ff;border-radius:6px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;">${eq.answer}</span></div>` })
-      }
 
       if (d.follow_up) {
         setRounds(r => [...r, [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }]])
         setCurrentRound([{ type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
         setPhase('answering')
       } else {
-        setRounds(r => [...r, [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }]])
+        // 追问结束 — 加上整体总结 + 扩展题
+        let summaryHtml = ''
+        if (d.overall_summary) {
+          summaryHtml += `<div style="margin:8px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #1677ff;border-radius:6px;font-size:14px;line-height:1.8;">📝 <b>本轮总结</b><br>${d.overall_summary}</div>`
+        }
+        const ext = d.extension_questions
+        if (ext && Array.isArray(ext) && ext.length > 0) {
+          summaryHtml += '<div style="margin:8px 0;"><b style="font-size:14px;">📚 扩展题目</b></div>'
+          ext.forEach((eq, i) => { summaryHtml += `<div style="margin:4px 0;padding:8px 12px;background:#fafbfc;border:1px solid #eee;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
+        }
+        const endHtml = scoreHtml + summaryHtml
+        setRounds(r => [...r, [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: endHtml }]])
         setCurrentRound([])
         setPhase('scored')
       }

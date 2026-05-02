@@ -63,6 +63,7 @@ class ScoreResponse(BaseModel):
     feedback: str
     recommended_answer: list[str] = []
     extension_questions: list[ExtensionQuestion] = []
+    overall_summary: str = ""
     follow_up: str | None
     question_round: int
 
