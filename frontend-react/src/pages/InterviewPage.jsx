@@ -184,8 +184,9 @@ export default function InterviewPage() {
         : <div className="tree-card">
         {knowledgeGroups.map((g, i) => {
         const sr = g.score_result; const isOpen = expanded[`r${i}`]
+        const bg = i % 2 === 0 ? '#fff' : '#fafbfc'
         return (
-          <div key={`r${i}`} className="tree-node">
+          <div key={`r${i}`} className="tree-node" style={{ background: bg }}>
             <div className="node-row" style={{ paddingLeft: 16, cursor: 'pointer' }} onClick={() => toggle(`r${i}`)}>
               <span className={`toggle ${isOpen ? 'open' : ''}`} />
               <span className="node-name">
@@ -196,8 +197,14 @@ export default function InterviewPage() {
             </div>
             {isOpen && (
               <div style={{ paddingLeft: 38 }}>
+                {g.questions?.length > 0 && g.questions.map((q, j) => (
+                  <div key={j} className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#555' }}>❓ {q}</span></div></div>
+                ))}
                 {g.user_answer && (
                   <div className="tree-node"><div className="node-row" style={{ paddingLeft: 16 }}><span className="bullet" /><span style={{ fontSize: 13, color: '#666' }}>💬 {g.user_answer}</span></div></div>
+                )}
+                {g.original_dialogue && (
+                  <div style={{ margin: '4px 16px 4px', padding: '6px 10px', background: '#f9fafb', borderRadius: 4, fontSize: 12, color: '#888', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{g.original_dialogue}</div>
                 )}
                 {sr && (
                   <div style={{ margin: '4px 16px 8px', padding: '8px 12px', background: '#f6ffed', borderRadius: 6, fontSize: 13 }}>
