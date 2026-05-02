@@ -9,9 +9,11 @@ export default function StudyPage() {
   const [kpList, setKpList] = useState([])
   const [convId, setConvId] = useState(null)
   const [kpName, setKpName] = useState('')
+  const [activeKpId, setActiveKpId] = useState(null)
   const [phase, setPhase] = useState('select') // select | answering | scored
   const [rounds, setRounds] = useState([])
   const [currentRound, setCurrentRound] = useState([])
+  const [collapsedRounds, setCollapsedRounds] = useState({})
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
@@ -99,8 +101,10 @@ export default function StudyPage() {
       const d = resp.data
       setConvId(d.conversation_id)
       setKpName(d.knowledge_point_name)
+      setActiveKpId(id)
       setPhase('answering')
       setRounds([])
+      setCollapsedRounds({})
       setCurrentRound([{ type: 'q', html: `📝 <b>第${d.question_round}题</b><br>${d.question_content}` }])
       navigate('/study', { replace: true })
     }
@@ -143,18 +147,19 @@ export default function StudyPage() {
         setCurrentRound([{ type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
         setPhase('answering')
       } else {
-        // 追问结束 — 加上整体总结 + 扩展题
+        // 追问结束 — 总结和扩展题放到独立 summary 消息
         let summaryHtml = ''
         if (d.overall_summary) {
-          summaryHtml += `<div style="margin:8px 0;padding:12px 16px;background:#f0f7ff;border-left:4px solid #1677ff;border-radius:6px;font-size:14px;line-height:1.8;">📝 <b>本轮总结</b><br>${d.overall_summary}</div>`
+          summaryHtml += `📝 <b>本轮总结</b><br><span style="line-height:1.8">${d.overall_summary}</span>`
         }
         const ext = d.extension_questions
         if (ext && Array.isArray(ext) && ext.length > 0) {
-          summaryHtml += '<div style="margin:8px 0;"><b style="font-size:14px;">📚 扩展题目</b></div>'
-          ext.forEach((eq, i) => { summaryHtml += `<div style="margin:4px 0;padding:8px 12px;background:#fafbfc;border:1px solid #eee;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
+          summaryHtml += '<br><br><b>📚 扩展题目</b>'
+          ext.forEach((eq, i) => { summaryHtml += `<div style="margin:6px 0;padding:8px 12px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
         }
-        const endHtml = scoreHtml + summaryHtml
-        setRounds(r => [...r, [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: endHtml }]])
+        const roundMsgs = [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }]
+        if (summaryHtml) roundMsgs.push({ type: 'summary', html: summaryHtml })
+        setRounds(r => [...r, roundMsgs])
         setCurrentRound([])
         setPhase('scored')
       }
@@ -170,16 +175,47 @@ export default function StudyPage() {
     setLoading(false)
     if (resp.code === 0) {
       const d = resp.data
+      // 收起所有旧题
+      const collapsed = {}
+      rounds.forEach((_, i) => { collapsed[i] = true })
+      setCollapsedRounds(collapsed)
       setCurrentRound([{ type: 'q', html: `📝 <b>第${d.question_round}题</b><br>${d.question_content}` }])
       setPhase('answering')
     }
   }
 
   function renderRound(msgs, idx) {
+    const isCollapsed = collapsedRounds[idx]
+    // 从 msgs 中提取标题信息
+    const firstQ = msgs.find(m => m.type === 'q')
+    const titleMatch = firstQ?.html?.match(/<b>(.*?)<\/b>/)
+    const title = titleMatch ? titleMatch[1] : `第 ${idx + 1} 题`
+
+    if (isCollapsed) {
+      return (
+        <div key={idx} className="round-group" style={{ cursor: 'pointer', padding: '10px 16px', opacity: 0.7 }}
+          onClick={() => setCollapsedRounds(p => ({ ...p, [idx]: false }))}>
+          <span style={{ fontSize: 13, color: '#888' }}>▸ {title}</span>
+        </div>
+      )
+    }
+
+    // 分离出 summary 类型的消息（独立卡片展示）
+    const regularMsgs = msgs.filter(m => m.type !== 'summary')
+    const summaryMsgs = msgs.filter(m => m.type === 'summary')
+
     return (
-      <div className="round-group" key={idx}>
-        {msgs.map((m, i) => (
-          <div key={i} className={m.type === 'q' ? 'q-box' : m.type === 'a' ? 'a-box' : 's-box'}
+      <div key={idx}>
+        <div className="round-group"
+          style={typeof idx === 'number' && rounds.length > 1 ? { cursor: 'pointer' } : {}}
+          onClick={() => typeof idx === 'number' && setCollapsedRounds(p => ({ ...p, [idx]: true }))}>
+          {regularMsgs.map((m, i) => (
+            <div key={i} className={m.type === 'q' ? 'q-box' : m.type === 'a' ? 'a-box' : 's-box'}
+                 dangerouslySetInnerHTML={{ __html: m.html }} />
+          ))}
+        </div>
+        {summaryMsgs.map((m, i) => (
+          <div key={`sum${i}`} style={{ margin: '8px 0', padding: '16px 20px', background: '#f0f7ff', border: '1px solid #d6e4ff', borderRadius: 12 }}
                dangerouslySetInnerHTML={{ __html: m.html }} />
         ))}
       </div>
@@ -191,8 +227,10 @@ export default function StudyPage() {
       <div className="sidebar">
         {kpList.map(kp => {
           const stars = '★'.repeat(kp.interview_weight) + '☆'.repeat(5 - kp.interview_weight)
+          const isActive = kp.id === activeKpId
           return (
-          <button key={kp.id} className="kp-btn" onClick={() => startStudy(kp.id)}>
+          <button key={kp.id} className="kp-btn" onClick={() => startStudy(kp.id)}
+            style={isActive ? { borderColor: '#1677ff', background: '#f0f7ff', fontWeight: 600 } : {}}>
             <span style={{ flex: 1 }}>{kp.name}</span>
             <span className="stars" style={{ fontSize: 11, color: '#fa8c16', marginLeft: 6 }}>{stars}</span>
             {kp.mastery_level > 0 && <div className="kp-mastery">{kp.mastery_level}%</div>}

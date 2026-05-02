@@ -80,10 +80,22 @@ async def score_answer_node(state: StudyState) -> dict:
     """
     logger.info(f"正在评分: 知识点={state['knowledge_point_name']}")
 
+    # 构建本轮问答链（用于整体总结）
+    history_lines = []
+    for s in (state.get("question_history") or []):
+        if isinstance(s, dict):
+            history_lines.append(f"问: {s.get('question', '')}")
+            if s.get('score') is not None:
+                history_lines.append(f"答: (得分 {s['score']})")
+    history_lines.append(f"问: {state['question_content']}")
+    history_lines.append(f"答: {state['user_input']}")
+    conversation_history = "\n".join(history_lines)
+
     result = await score_answer_with_rubric(
         question=state["question_content"],
         rubric_items=state["rubric_items"],
         user_answer=state["user_input"],
+        conversation_history=conversation_history,
     )
 
     return {
