@@ -174,6 +174,115 @@ async def _merge_project_topics(groups: list[dict], llm) -> list[dict]:
     return non_project + merged_projects
 
 
+def _merge_knowledge_groups(groups: list[dict]) -> list[dict]:
+    """
+    后处理：合并同知识点分组、算法题去重、过滤低价值分组。
+    - knowledge: 名称互相包含或高度相似的合并（如 "Java垃圾回收算法" 和 "垃圾回收算法"）
+    - algorithm: 按 leetcode_id 或 title 去重
+    - 过滤: 跳过只有1个无实质内容的问题的分组（如 "MQ用的多吗"）
+    """
+    merged = []
+    knowledge_groups: list[dict] = []
+    algo_seen: dict[str, dict] = {}  # key → group
+
+    for g in groups:
+        g_type = g.get("type")
+
+        if g_type == "knowledge":
+            knowledge_groups.append(g)
+            continue
+
+        if g_type == "algorithm":
+            # 按 leetcode_id 或 title 去重
+            lc_id = g.get("leetcode_id")
+            title = (g.get("title") or "").strip().lower()
+            key = str(lc_id) if lc_id else title
+            if key in algo_seen:
+                # 合并 questions
+                existing = algo_seen[key]
+                eq = existing.get("questions", [])
+                for q in g.get("questions", []):
+                    if q not in eq:
+                        eq.append(q)
+                existing["questions"] = eq
+                # 保留更完整的字段
+                if g.get("user_answer") and not existing.get("user_answer"):
+                    existing["user_answer"] = g["user_answer"]
+                if g.get("original_dialogue") and not existing.get("original_dialogue"):
+                    existing["original_dialogue"] = g["original_dialogue"]
+            else:
+                algo_seen[key] = g
+            continue
+
+        if g_type == "other":
+            # 过滤反问环节
+            qs = g.get("questions", [])
+            if any(kw in q for q in qs for kw in ["你有什么问题", "想问我", "你还有什么问题", "什么想问"]):
+                continue
+
+        merged.append(g)
+
+    # 合并 knowledge 分组：名称互相包含的合并
+    kn_merged: list[dict] = []
+    for g in knowledge_groups:
+        name = (g.get("knowledge_point") or "").strip()
+        name_lower = name.lower().replace(" ", "")
+        # 过滤无实质内容的分组
+        qs = g.get("questions", [])
+        if len(qs) == 1 and not g.get("user_answer", "").strip():
+            q0 = qs[0]
+            # "MQ用的多吗" 这种纯摸底问题跳过
+            if any(w in q0 for w in ["用的多吗", "接触过吗", "了解吗", "用过吗"]):
+                continue
+
+        # 查找可合并的已有分组
+        found = False
+        for existing in kn_merged:
+            ename = (existing.get("knowledge_point") or "").strip()
+            ename_lower = ename.lower().replace(" ", "")
+            # 互相包含 或 关键词重叠（去掉"原理""实现""详解"等通用后缀后比较）
+            strip_suffixes = ["原理", "实现", "详解", "机制", "与误判率", "与", "的"]
+            name_core = name_lower
+            ename_core = ename_lower
+            for s in strip_suffixes:
+                name_core = name_core.replace(s, "")
+                ename_core = ename_core.replace(s, "")
+            if (ename_lower in name_lower or name_lower in ename_lower
+                    or ename_core in name_core or name_core in ename_core):
+                # 合并
+                eq = existing.get("questions", [])
+                for q in qs:
+                    if q not in eq:
+                        eq.append(q)
+                existing["questions"] = eq
+                # 合并 user_answer
+                ua = g.get("user_answer", "").strip()
+                eua = existing.get("user_answer", "").strip()
+                if ua and eua:
+                    existing["user_answer"] = eua + "\n" + ua
+                elif ua:
+                    existing["user_answer"] = ua
+                # 合并 original_dialogue
+                od = g.get("original_dialogue", "").strip()
+                eod = existing.get("original_dialogue", "").strip()
+                if od and eod:
+                    existing["original_dialogue"] = eod + "\n---\n" + od
+                elif od:
+                    existing["original_dialogue"] = od
+                # 保留更长的名称
+                if len(name) > len(ename):
+                    existing["knowledge_point"] = name
+                found = True
+                break
+
+        if not found:
+            kn_merged.append(g)
+
+    logger.info(f"知识点合并: {len(knowledge_groups)} → {len(kn_merged)}，算法题去重: {len([g for g in groups if g.get('type')=='algorithm'])} → {len(algo_seen)}")
+
+    return merged + kn_merged + list(algo_seen.values())
+
+
 async def parse_interview_text(raw_text: str) -> dict:
     """
     解析面试文本，返回聚类结果。
@@ -200,6 +309,9 @@ async def parse_interview_text(raw_text: str) -> dict:
 
     # 合并同项目的 topic（分段解析 + 语义去重）
     all_groups = await _merge_project_topics(all_groups, llm)
+
+    # 合并同知识点的分组 + 算法题去重 + 过滤低价值分组
+    all_groups = _merge_knowledge_groups(all_groups)
 
     # 合并 summary
     summary = summaries[0] if len(summaries) == 1 else "；".join(summaries) if summaries else ""

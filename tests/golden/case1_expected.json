@@ -1,0 +1,23 @@
+{
+  "source": "字节跳动 搜索团队 一面",
+  "expected_groups": [
+    {"type": "hr", "label": "自我介绍"},
+    {"type": "hr", "label": "在职状态/毕业时间"},
+    {"type": "project", "project_name": "滚动预测重构", "topic": "项目介绍与重构背景", "note": "包含：项目背景、效果(秒级→百毫秒)、开发周期、代码量"},
+    {"type": "knowledge", "knowledge_point": "Java GC算法", "note": "G1原理、其他GC算法(串行/并行/CMS)、并行GC流程"},
+    {"type": "knowledge", "knowledge_point": "ConcurrentHashMap 原理", "note": "1.7分段锁vs1.8桶锁、锁粒度、CAS+synchronized"},
+    {"type": "knowledge", "knowledge_point": "Redis 持久化", "note": "AOF/RDB/混合持久化/AOF重写"},
+    {"type": "knowledge", "knowledge_point": "Redis 缓存穿透", "note": "穿透/击穿/雪崩区分、布隆过滤器原理、假正例"},
+    {"type": "knowledge", "knowledge_point": "大数据SQL优化", "note": "Spark/Hive离线表、子视图、大表连小表、分区"},
+    {"type": "algorithm", "title": "跳跃游戏 II", "leetcode_id": 45},
+    {"type": "algorithm", "title": "反转链表", "leetcode_id": 206}
+  ],
+  "should_skip": [
+    "USB通道/你出去吧/你好 — 无价值",
+    "都是Java项目是吗 — 基础信息价值不大",
+    "MQ用的多吗/不是很多 — 无用",
+    "计算机软件研究生 — 无用",
+    "反问环节",
+    "最后寒暄/拜拜"
+  ]
+}
