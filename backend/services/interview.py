@@ -174,21 +174,16 @@ async def _merge_project_topics(groups: list[dict], llm) -> list[dict]:
     return non_project + merged_projects
 
 
-def _merge_knowledge_groups(groups: list[dict]) -> list[dict]:
+def _dedup_algorithm_groups(groups: list[dict]) -> list[dict]:
     """
-    后处理（仅确定性规则，不做语义合并）：
-    - algorithm: 按 leetcode_id 或 title 去重（多段解析可能重复提取）
-    - 过滤: 反问环节、纯摸底问题
-    知识点合并交给 LLM Prompt 处理，不在后处理做。
+    后处理：仅算法题去重（多段解析可能重复提取同一道题）。
+    其他过滤/合并全部交给 LLM Prompt。
     """
     result = []
-    algo_seen: dict[str, dict] = {}  # key → group
+    algo_seen: dict[str, dict] = {}
 
     for g in groups:
-        g_type = g.get("type")
-
-        if g_type == "algorithm":
-            # 按 leetcode_id 或 title 去重
+        if g.get("type") == "algorithm":
             lc_id = g.get("leetcode_id")
             title = (g.get("title") or "").strip().lower()
             key = str(lc_id) if lc_id else title
@@ -205,25 +200,8 @@ def _merge_knowledge_groups(groups: list[dict]) -> list[dict]:
                     existing["original_dialogue"] = g["original_dialogue"]
             else:
                 algo_seen[key] = g
-            continue
-
-        if g_type == "other":
-            qs = g.get("questions", [])
-            if any(kw in q for q in qs for kw in ["你有什么问题", "想问我", "你还有什么问题", "什么想问"]):
-                continue
-
-        if g_type == "knowledge":
-            qs = g.get("questions", [])
-            if len(qs) == 1 and not g.get("user_answer", "").strip():
-                q0 = qs[0]
-                if any(w in q0 for w in ["用的多吗", "接触过吗", "了解吗", "用过吗"]):
-                    continue
-
-        result.append(g)
-
-    algo_count_before = len([g for g in groups if g.get("type") == "algorithm"])
-    if algo_count_before != len(algo_seen):
-        logger.info(f"算法题去重: {algo_count_before} → {len(algo_seen)}")
+        else:
+            result.append(g)
 
     return result + list(algo_seen.values())
 
@@ -255,8 +233,8 @@ async def parse_interview_text(raw_text: str) -> dict:
     # 合并同项目的 topic（分段解析 + 语义去重）
     all_groups = await _merge_project_topics(all_groups, llm)
 
-    # 合并同知识点的分组 + 算法题去重 + 过滤低价值分组
-    all_groups = _merge_knowledge_groups(all_groups)
+    # 算法题去重（多段解析可能重复提取）
+    all_groups = _dedup_algorithm_groups(all_groups)
 
     # 合并 summary
     summary = summaries[0] if len(summaries) == 1 else "；".join(summaries) if summaries else ""
