@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 async def generate_question(
     knowledge_point: str,
     history: list[dict],
+    global_asked: list[str] = None,
 ) -> dict:
     """
     动态生成面试题 + Rubric
@@ -21,9 +22,7 @@ async def generate_question(
     Args:
         knowledge_point: 知识点名称
         history: 已考过的题目历史 [{"question": "...", "score": 80, "missed": ["遗漏点1"]}, ...]
-
-    Returns:
-        {"question": "题目内容", "rubric": [{"key_point": "...", "score": 20}, ...]}
+        global_asked: 全局已出过的题目列表（跨知识点去重）
     """
     history_text = "（无，这是第一题）"
     if history:
@@ -33,10 +32,14 @@ async def generate_question(
             lines.append(f"{i}. 题目：{h['question']}，得分：{h['score']}/100，遗漏：{missed}")
         history_text = "\n".join(lines)
 
+    global_text = ""
+    if global_asked:
+        global_text = "\n\n## 其他知识点已出过的题目（不要重复）\n" + "\n".join(f"- {q}" for q in global_asked)
+
     prompt = GENERATE_QUESTION_PROMPT.format(
         knowledge_point=knowledge_point,
         history=history_text,
-    )
+    ) + global_text
 
     llm = get_llm(temperature=0.3)
     response = await llm.ainvoke(prompt)

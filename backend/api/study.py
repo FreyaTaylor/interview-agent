@@ -143,12 +143,27 @@ async def start_study(
                 "missed": missed,
             })
 
+    # 查全局已出过的题目（跨知识点去重）
+    all_convs = await db.execute(
+        select(Conversation.learning_summaries).where(
+            Conversation.user_id == 1,
+            Conversation.learning_summaries.isnot(None),
+        )
+    )
+    global_asked = []
+    for (summaries,) in all_convs:
+        if summaries:
+            for s in summaries:
+                if s.get("question"):
+                    global_asked.append(s["question"])
+
     # 调用 Agent 动态出题（带历史上下文）
     agent_state = {
         "action": "start",
         "knowledge_point_name": node.name,
         "user_input": "",
         "question_history": question_history,
+        "global_asked_questions": global_asked,
         "question_content": "",
         "rubric_items": [],
         "score": 0,
@@ -221,6 +236,7 @@ async def submit_answer(
         "knowledge_point_name": node.name if node else "",
         "user_input": req.answer,
         "question_history": _build_question_history(conv),
+        "global_asked_questions": [],
         "question_content": conv.current_question,
         "rubric_items": conv.current_rubric,
         "score": 0,
@@ -340,12 +356,27 @@ async def next_question(
 
     node = await db.get(KnowledgeNode, conv.knowledge_point_id)
 
+    # 查全局已出过的题目
+    all_convs = await db.execute(
+        select(Conversation.learning_summaries).where(
+            Conversation.user_id == 1,
+            Conversation.learning_summaries.isnot(None),
+        )
+    )
+    global_asked = []
+    for (summaries,) in all_convs:
+        if summaries:
+            for s in summaries:
+                if s.get("question"):
+                    global_asked.append(s["question"])
+
     # 调用 Agent 出下一题
     agent_state = {
         "action": "next",
         "knowledge_point_name": node.name if node else "",
         "user_input": "",
         "question_history": _build_question_history(conv),
+        "global_asked_questions": global_asked,
         "question_content": "",
         "rubric_items": [],
         "score": 0,
@@ -466,6 +497,7 @@ async def start_with_answer(
             "action": "answer", "knowledge_point_name": node.name,
             "user_input": req.user_answer,
             "question_history": question_history,
+            "global_asked_questions": [],
             "question_content": conv.current_question,
             "rubric_items": conv.current_rubric,
             "score": 0, "rubric_result": {}, "feedback": "",
