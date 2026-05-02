@@ -121,7 +121,8 @@ export default function StudyPage() {
 
     if (resp.code === 0) {
       const d = resp.data
-      let scoreHtml = `<b>得分: ${d.total_score}/100</b> — ${d.feedback}<br>`
+      const rubricTotal = d.rubric_total || 100
+      let scoreHtml = `<b>得分: ${d.total_score}/${rubricTotal}</b> — ${d.feedback}<br>`
       scoreHtml += '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;">'
       for (const item of d.rubric_result) {
         const icon = item.hit ? '✅' : '❌'
@@ -135,6 +136,11 @@ export default function StudyPage() {
       if (rec && Array.isArray(rec) && rec.length > 0) {
         scoreHtml += '<br>📖 <b>推荐回答</b>:<br>'
         rec.forEach((p, i) => { scoreHtml += `${i + 1}. ${p}<br>` })
+      }
+      const ext = d.extension_questions
+      if (ext && Array.isArray(ext) && ext.length > 0) {
+        scoreHtml += '<br>📚 <b>扩展题目</b>:<br>'
+        ext.forEach((eq, i) => { scoreHtml += `<div style="margin:4px 0;padding:6px 10px;background:#f0f7ff;border-radius:6px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;">${eq.answer}</span></div>` })
       }
 
       if (d.follow_up) {

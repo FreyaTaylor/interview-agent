@@ -48,14 +48,22 @@ class QuestionResponse(BaseModel):
     question_round: int
 
 
+class ExtensionQuestion(BaseModel):
+    """扩展题"""
+    question: str
+    answer: str
+
+
 class ScoreResponse(BaseModel):
     """打分响应"""
     conversation_id: int
     total_score: int
+    rubric_total: int = 100  # rubric 满分
     rubric_result: list[RubricItemResult]
     feedback: str
-    recommended_answer: list[str] = []  # 推荐回答要点列表
-    follow_up: str | None           # LLM 决定的追问，None 表示不需要追问
+    recommended_answer: list[str] = []
+    extension_questions: list[ExtensionQuestion] = []
+    follow_up: str | None
     question_round: int
 
 
