@@ -73,15 +73,13 @@ export default function OtherQuestionsPage() {
         const isOpen = expanded[`${activeTab}_${i}`]
         const hasDetail = g.description || g.example || g.suggested_approach || g.feedback || g.answer
         const lcUrl = g.leetcode_url || null
-        const lcText = g.leetcode_id ? `#${g.leetcode_id}` : ''
         return (
         <div key={i} className="tree-node">
           <div className="node-row" style={{ paddingLeft: 16, cursor: hasDetail ? 'pointer' : 'default' }} onClick={() => hasDetail && toggle(`${activeTab}_${i}`)}>
             {hasDetail ? <span className={`toggle ${isOpen ? 'open' : ''}`} /> : <span className="bullet" />}
             <span className="node-name">{g.title || g.question || '—'}</span>
             {g.count > 1 && <span style={{ fontSize: 11, color: '#fff', background: cfg.color, borderRadius: 10, padding: '1px 6px', marginLeft: 6 }}>×{g.count}</span>}
-            {lcText && lcUrl && <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode {lcText}</a>}
-            {lcText && !lcUrl && <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode {lcText}</span>}
+            {lcUrl ? <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{g.leetcode_id ? ` #${g.leetcode_id}` : ''}</a> : g.leetcode_id ? <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode #{g.leetcode_id}</span> : null}
           </div>
           {isOpen && (
             <div style={{ paddingLeft: 38 }}>

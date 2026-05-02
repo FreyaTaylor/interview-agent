@@ -226,7 +226,7 @@ export default function InterviewPage() {
       {/* ---- Tab: 项目拷打（幕布风格） ---- */}
       {activeTab === 'project' && (projectGroups.length === 0
         ? <div className="empty">暂无项目拷打记录</div>
-        : (() => {
+        : <div className="tree-card">{(() => {
           const byProject = {}
           projectGroups.forEach((g, i) => {
             const name = g.project_name || '未命名项目'
@@ -242,13 +242,11 @@ export default function InterviewPage() {
               </div>
               {expanded[`proj_${projName}`] !== false && topics.map((g) => {
                 const i = g._idx; const sr = g.score_result; const isOpen = expanded[`p${i}`]
-                const stars = sr ? '⭐'.repeat(Math.min(sr.rating || 3, 5)) : ''
                 return (
                   <div key={`p${i}`} className="tree-node">
                     <div className="node-row" style={{ paddingLeft: 38, cursor: 'pointer' }} onClick={() => toggle(`p${i}`)}>
                       <span className={`toggle ${isOpen ? 'open' : ''}`} />
                       <span className="node-name">{g.topic || '拷打'}</span>
-                      {sr && <span style={{ fontSize: 13, marginLeft: 6 }}>{stars}</span>}
                     </div>
                     {isOpen && (
                       <div style={{ paddingLeft: 60 }}>
@@ -260,7 +258,7 @@ export default function InterviewPage() {
                         )}
                         {sr && (
                           <div style={{ margin: '4px 0 8px 16px', padding: '8px 12px', background: '#f9f0ff', borderRadius: 6, fontSize: 13 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{stars} {sr.rating_label}</div>
+                            <div style={{ fontWeight: 600, marginBottom: 4 }}>{sr.rating_label} {'⭐'.repeat(sr.rating || 0)}</div>
                             <div style={{ color: '#555', lineHeight: 1.7 }}>{sr.impression}</div>
                             {sr.improvements?.length > 0 && <div style={{ marginTop: 6, color: '#fa8c16' }}>💡 {sr.improvements.join(' | ')}</div>}
                             {sr.suggested_answer?.length > 0 && (
@@ -278,13 +276,13 @@ export default function InterviewPage() {
               })}
             </div>
           ))
-        })()
+        })()}</div>
       )}
 
       {/* ---- Tab: 其他问题（幕布风格） ---- */}
       {activeTab === 'other' && (otherCount === 0
         ? <div className="empty">暂无其他面试问题</div>
-        : <>
+        : <div className="tree-card">
           {algorithmGroups.length > 0 && (
             <div className="tree-node">
               <div className="node-row cat" style={{ paddingLeft: 16 }}><span className="node-name">💻 算法题</span></div>
@@ -297,8 +295,7 @@ export default function InterviewPage() {
                   <div className="node-row" style={{ paddingLeft: 38, cursor: 'pointer' }} onClick={() => toggle(`algo${i}`)}>
                     <span className={`toggle ${isOpen ? 'open' : ''}`} />
                     <span className="node-name">{g.title}</span>
-                    {lcId && <span style={{ fontSize: 11, color: '#888', marginLeft: 4 }}>#{lcId}</span>}
-                    {lcUrl && <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{lcId ? ` #${lcId}` : ''}</a>}
+                    {lcUrl ? <a href={lcUrl} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} className="lc-tag">LeetCode{lcId ? ` #${lcId}` : ''}</a> : lcId ? <span className="lc-tag" style={{ cursor: 'default' }}>LeetCode #{lcId}</span> : null}
                   </div>
                   {isOpen && (
                     <div style={{ paddingLeft: 60 }}>
@@ -348,7 +345,7 @@ export default function InterviewPage() {
               ))}
             </div>
           )}
-        </>
+        </div>
       )}
 
       <button className="parse-btn" onClick={() => { setResult(null); setText(''); sessionStorage.removeItem('iv_result') }} style={{ marginTop: 20 }}>📋 重新上传</button>
