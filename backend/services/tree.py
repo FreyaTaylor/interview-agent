@@ -15,7 +15,11 @@ from backend.models.knowledge import KnowledgeNode
 from backend.models.study import MasteryRecord, MasteryHistory, Conversation, ConversationMessage
 from backend.models.interview import UserAnswerEmbedding
 from backend.services.llm import get_llm, parse_llm_json
-from backend.prompts.tree_prompts import TREE_SKELETON_PROMPT, TREE_EXPAND_PROMPT
+from backend.prompts.tree_prompts import (
+    TREE_SKELETON_PROMPT, TREE_EXPAND_PROMPT,
+    TREE_FROM_IMAGE_PROMPT, TREE_EXPAND_FROM_OUTLINE_PROMPT,
+)
+from backend.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -206,4 +210,148 @@ async def init_knowledge_tree(
         "category_count": len(categories),
         "subcategory_count": len(expand_tasks) - empty_count,
         "leaf_count": total_leaves,
+    }
+
+
+async def extract_tree_from_image(image_base64: str) -> dict:
+    """
+    从用户上传的脑图图片中提取知识树结构。
+    使用 DashScope VL 模型（通义千问视觉）。
+    """
+    import httpx
+    url = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+    headers = {"Authorization": f"Bearer {settings.DASHSCOPE_API_KEY}", "Content-Type": "application/json"}
+    body = {
+        "model": "qwen-vl-max",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image_url", "image_url": {"url": f"data:image/png;base64,{image_base64}"}},
+                    {"type": "text", "text": TREE_FROM_IMAGE_PROMPT},
+                ],
+            }
+        ],
+        "max_tokens": 4096,
+    }
+    async with httpx.AsyncClient(timeout=120) as client:
+        resp = await client.post(url, headers=headers, json=body)
+        resp.raise_for_status()
+        content = resp.json()["choices"][0]["message"]["content"]
+    return parse_llm_json(content)
+
+
+async def expand_from_outline(profile_text: str, user_outline: str) -> dict:
+    """
+    基于用户的知识大纲做查漏补缺。
+    """
+    llm = get_llm(temperature=0.3, max_tokens=8192)
+    prompt = TREE_EXPAND_FROM_OUTLINE_PROMPT.format(
+        profile_text=profile_text,
+        user_outline=user_outline,
+    )
+    resp = await llm.ainvoke(prompt)
+    return parse_llm_json(resp.content)
+
+
+async def init_tree_from_image(
+    image_base64: str,
+    profile_text: str,
+    db: AsyncSession,
+) -> AsyncGenerator[dict, None]:
+    """
+    从图片初始化知识树：
+    1. 清空旧树
+    2. VL 模型提取图片中的知识树
+    3. LLM 查漏补缺
+    4. 写入 DB
+    """
+    # 1. 清空
+    await db.execute(delete(ConversationMessage))
+    await db.execute(delete(MasteryHistory))
+    await db.execute(delete(Conversation))
+    await db.execute(delete(MasteryRecord))
+    await db.execute(delete(UserAnswerEmbedding))
+    await db.execute(update(KnowledgeNode).values(parent_id=None))
+    await db.execute(delete(KnowledgeNode))
+    await db.commit()
+    yield {"step": "clear", "message": "已清空旧知识树"}
+
+    # 2. 提取图片
+    yield {"step": "extract", "message": "正在识别图片中的知识点..."}
+    try:
+        extracted = await extract_tree_from_image(image_base64)
+    except Exception as e:
+        logger.error(f"图片识别失败: {e}")
+        yield {"step": "error", "message": f"图片识别失败: {e}"}
+        return
+
+    # 转为文本大纲
+    outline_lines = []
+    for cat in extracted.get("categories", []):
+        outline_lines.append(cat["name"])
+        for sub in cat.get("children", []):
+            leaves = sub.get("leaves", [])
+            outline_lines.append(f"  {sub['name']}: {', '.join(leaves) if leaves else ''}")
+    user_outline = "\n".join(outline_lines)
+
+    cat_count = len(extracted.get("categories", []))
+    leaf_count = sum(len(l) for c in extracted.get("categories", []) for s in c.get("children", []) for l in [s.get("leaves", [])])
+    yield {"step": "extracted", "message": f"识别到 {cat_count} 个一级分类，{leaf_count} 个知识点", "outline": user_outline}
+
+    # 3. LLM 查漏补缺
+    yield {"step": "expanding", "message": "正在查漏补缺..."}
+    try:
+        expanded = await expand_from_outline(profile_text, user_outline)
+    except Exception as e:
+        logger.error(f"查漏补缺失败: {e}")
+        yield {"step": "error", "message": f"扩充失败: {e}"}
+        return
+
+    # 4. 写入 DB
+    categories = expanded.get("categories", [])
+    total_leaves = 0
+    for cat in categories:
+        cat_name = cat["name"]
+        if "项目" in cat_name and ("经验" in cat_name or "实战" in cat_name):
+            continue
+        cat_node = KnowledgeNode(
+            name=cat_name, level=1, node_type="category",
+            sort_order=cat.get("sort_order", 0),
+        )
+        db.add(cat_node)
+        await db.flush()
+
+        for sub in cat.get("children", []):
+            sub_node = KnowledgeNode(
+                parent_id=cat_node.id, name=sub["name"],
+                level=2, node_type="category",
+                sort_order=sub.get("sort_order", 0),
+            )
+            db.add(sub_node)
+            await db.flush()
+
+            for leaf in sub.get("leaves", []):
+                if isinstance(leaf, str):
+                    leaf = {"name": leaf, "interview_weight": 3, "is_new": False}
+                db.add(KnowledgeNode(
+                    parent_id=sub_node.id, name=leaf["name"],
+                    level=3, node_type="leaf",
+                    interview_weight=leaf.get("interview_weight", 3),
+                ))
+                total_leaves += 1
+
+    await db.commit()
+
+    new_count = sum(
+        1 for c in categories for s in c.get("children", []) for l in s.get("leaves", [])
+        if isinstance(l, dict) and l.get("is_new")
+    )
+
+    yield {
+        "step": "done",
+        "message": f"知识树初始化完成：{len(categories)} 个分类，{total_leaves} 个知识点（其中 {new_count} 个为补充）",
+        "category_count": len(categories),
+        "leaf_count": total_leaves,
+        "new_count": new_count,
     }

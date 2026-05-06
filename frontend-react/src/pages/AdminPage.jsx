@@ -115,6 +115,56 @@ export default function AdminPage() {
     setIniting(false)
   }
 
+  async function handleImageInit(file) {
+    if (!file || initing) return
+    if (stats?.initialized) {
+      if (!window.confirm('⚠️ 重新初始化会清空现有知识树和掌握度数据，确定继续？')) return
+    }
+
+    setIniting(true)
+    setLogs([])
+    setDone(false)
+
+    // 读取图片为 base64
+    const reader = new FileReader()
+    reader.onload = async () => {
+      const base64 = reader.result.split(',')[1]
+      try {
+        const resp = await fetch(`${API}/admin/init-tree-from-image`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ image_base64: base64, profile_text: profile }),
+        })
+
+        const streamReader = resp.body.getReader()
+        const decoder = new TextDecoder()
+        let buffer = ''
+
+        while (true) {
+          const { done: streamDone, value } = await streamReader.read()
+          if (streamDone) break
+          buffer += decoder.decode(value, { stream: true })
+          const lines = buffer.split('\n')
+          buffer = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const data = JSON.parse(line.slice(6))
+                setLogs(prev => [...prev, data])
+                if (data.step === 'done' || data.step === 'error') { setDone(true); fetchStats() }
+              } catch {}
+            }
+          }
+        }
+      } catch (e) {
+        setLogs(prev => [...prev, { step: 'error', message: `请求失败: ${e.message}` }])
+        setDone(true)
+      }
+      setIniting(false)
+    }
+    reader.readAsDataURL(file)
+  }
+
   const lastLog = logs[logs.length - 1]
   const progress = lastLog?.completed && lastLog?.total
     ? Math.round((lastLog.completed / lastLog.total) * 100)
@@ -150,13 +200,25 @@ export default function AdminPage() {
       <div className="tree-card" style={{ padding: '20px 24px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>🌳 知识树初始化</h3>
-          <button
-            className="parse-btn"
-            onClick={handleInit}
-            disabled={initing || !profile.trim()}
-          >
-            {initing ? '⏳ 初始化中...' : stats?.initialized ? '🔄 重新初始化' : '🚀 开始初始化'}
-          </button>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <label style={{
+              padding: '6px 16px', borderRadius: 8, border: '1px dashed #722ed1',
+              background: '#fff', color: '#722ed1', fontSize: 13, cursor: initing ? 'not-allowed' : 'pointer',
+              fontFamily: 'inherit', fontWeight: 500, opacity: initing ? 0.5 : 1,
+            }}>
+              📷 上传脑图
+              <input type="file" accept="image/*" style={{ display: 'none' }}
+                disabled={initing}
+                onChange={e => { if (e.target.files[0]) handleImageInit(e.target.files[0]); e.target.value = '' }} />
+            </label>
+            <button
+              className="parse-btn"
+              onClick={handleInit}
+              disabled={initing || !profile.trim()}
+            >
+              {initing ? '⏳ 初始化中...' : stats?.initialized ? '🔄 LLM生成' : '🚀 LLM生成'}
+            </button>
+          </div>
         </div>
 
         {/* 统计信息 */}

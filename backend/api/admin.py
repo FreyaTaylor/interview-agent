@@ -13,7 +13,7 @@ from backend.database import get_db
 from backend.models.user import User
 from backend.models.knowledge import KnowledgeNode
 from backend.schemas.common import ApiResponse
-from backend.services.tree import init_knowledge_tree
+from backend.services.tree import init_knowledge_tree, init_tree_from_image
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["管理"])
@@ -92,6 +92,46 @@ async def init_tree(
                 yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
         except Exception as e:
             logger.error(f"知识树初始化异常: {e}")
+            yield f"data: {json.dumps({'step': 'error', 'message': f'初始化异常: {e}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+class InitFromImageRequest(BaseModel):
+    image_base64: str  # base64 编码的图片
+    profile_text: str = ""
+
+
+@router.post("/init-tree-from-image", summary="从图片初始化知识树（SSE）")
+async def init_tree_from_image_api(
+    req: InitFromImageRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    上传知识点脑图图片初始化知识树：
+    1. VL 模型识别图片中的知识点
+    2. LLM 查漏补缺
+    3. 写入 DB
+    """
+    if not req.image_base64.strip():
+        raise HTTPException(status_code=400, detail="图片不能为空")
+
+    # 保存画像
+    user = await db.get(User, 1)
+    if user and req.profile_text.strip():
+        user.profile_text = req.profile_text.strip()
+        await db.commit()
+
+    async def event_stream():
+        try:
+            async for progress in init_tree_from_image(req.image_base64, req.profile_text.strip() or "Java后端开发", db):
+                yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"图片初始化异常: {e}")
             yield f"data: {json.dumps({'step': 'error', 'message': f'初始化异常: {e}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
