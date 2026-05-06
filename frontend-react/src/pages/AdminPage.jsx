@@ -32,18 +32,31 @@ export default function AdminPage() {
   const [logs, setLogs] = useState([])
   const [done, setDone] = useState(false)
   const logsEndRef = useRef(null)
+  // 知识树编辑
+  const [treeNodes, setTreeNodes] = useState([])
+  const [editingId, setEditingId] = useState(null)
+  const [editName, setEditName] = useState('')
+  const [addParentId, setAddParentId] = useState(null)
+  const [addName, setAddName] = useState('')
 
-  // 加载画像 + 统计
+  // 加载画像 + 统计 + 知识树
   useEffect(() => {
     fetch(`${API}/admin/profile`).then(r => r.json()).then(resp => {
       if (resp.code === 0) setProfile(resp.data.profile_text || '')
     }).catch(() => {})
     fetchStats()
+    fetchTree()
   }, [])
 
   function fetchStats() {
     fetch(`${API}/admin/tree-stats`).then(r => r.json()).then(resp => {
       if (resp.code === 0) setStats(resp.data)
+    }).catch(() => {})
+  }
+
+  function fetchTree() {
+    fetch(`${API}/admin/tree-nodes`).then(r => r.json()).then(resp => {
+      if (resp.code === 0) setTreeNodes(resp.data || [])
     }).catch(() => {})
   }
 
@@ -103,6 +116,7 @@ export default function AdminPage() {
               if (data.step === 'done' || data.step === 'error') {
                 setDone(true)
                 fetchStats()
+                fetchTree()
               }
             } catch {}
           }
@@ -115,54 +129,29 @@ export default function AdminPage() {
     setIniting(false)
   }
 
-  async function handleImageInit(file) {
-    if (!file || initing) return
-    if (stats?.initialized) {
-      if (!window.confirm('⚠️ 重新初始化会清空现有知识树和掌握度数据，确定继续？')) return
-    }
+  // ---- 知识树编辑 ----
+  async function handleAddNode(parentId) {
+    if (!addName.trim()) return
+    await fetch(`${API}/admin/tree-nodes`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ parent_id: parentId, name: addName.trim() }),
+    })
+    setAddName(''); setAddParentId(null); fetchTree(); fetchStats()
+  }
 
-    setIniting(true)
-    setLogs([])
-    setDone(false)
+  async function handleUpdateNode(nodeId) {
+    if (!editName.trim()) return
+    await fetch(`${API}/admin/tree-nodes/${nodeId}`, {
+      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: editName.trim() }),
+    })
+    setEditingId(null); setEditName(''); fetchTree()
+  }
 
-    // 读取图片为 base64
-    const reader = new FileReader()
-    reader.onload = async () => {
-      const base64 = reader.result.split(',')[1]
-      try {
-        const resp = await fetch(`${API}/admin/init-tree-from-image`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ image_base64: base64, profile_text: profile }),
-        })
-
-        const streamReader = resp.body.getReader()
-        const decoder = new TextDecoder()
-        let buffer = ''
-
-        while (true) {
-          const { done: streamDone, value } = await streamReader.read()
-          if (streamDone) break
-          buffer += decoder.decode(value, { stream: true })
-          const lines = buffer.split('\n')
-          buffer = lines.pop() || ''
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6))
-                setLogs(prev => [...prev, data])
-                if (data.step === 'done' || data.step === 'error') { setDone(true); fetchStats() }
-              } catch {}
-            }
-          }
-        }
-      } catch (e) {
-        setLogs(prev => [...prev, { step: 'error', message: `请求失败: ${e.message}` }])
-        setDone(true)
-      }
-      setIniting(false)
-    }
-    reader.readAsDataURL(file)
+  async function handleDeleteNode(nodeId, name) {
+    if (!window.confirm(`确定删除「${name}」及其所有子节点？`)) return
+    await fetch(`${API}/admin/tree-nodes/${nodeId}`, { method: 'DELETE' })
+    fetchTree(); fetchStats()
   }
 
   const lastLog = logs[logs.length - 1]
@@ -197,28 +186,12 @@ export default function AdminPage() {
       </div>
 
       {/* ---- 知识树初始化 ---- */}
-      <div className="tree-card" style={{ padding: '20px 24px' }}>
+      <div className="tree-card" style={{ padding: '20px 24px', marginBottom: 20 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
           <h3 style={{ margin: 0, fontSize: 16 }}>🌳 知识树初始化</h3>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <label style={{
-              padding: '6px 16px', borderRadius: 8, border: '1px dashed #722ed1',
-              background: '#fff', color: '#722ed1', fontSize: 13, cursor: initing ? 'not-allowed' : 'pointer',
-              fontFamily: 'inherit', fontWeight: 500, opacity: initing ? 0.5 : 1,
-            }}>
-              📷 上传脑图
-              <input type="file" accept="image/*" style={{ display: 'none' }}
-                disabled={initing}
-                onChange={e => { if (e.target.files[0]) handleImageInit(e.target.files[0]); e.target.value = '' }} />
-            </label>
-            <button
-              className="parse-btn"
-              onClick={handleInit}
-              disabled={initing || !profile.trim()}
-            >
-              {initing ? '⏳ 初始化中...' : stats?.initialized ? '🔄 LLM生成' : '🚀 LLM生成'}
-            </button>
-          </div>
+          <button className="parse-btn" onClick={handleInit} disabled={initing || !profile.trim()}>
+            {initing ? '⏳ 初始化中...' : stats?.initialized ? '🔄 重新生成' : '🚀 LLM生成'}
+          </button>
         </div>
 
         {/* 统计信息 */}
@@ -269,6 +242,117 @@ export default function AdminPage() {
           </div>
         )}
       </div>
+
+      {/* ---- 知识树编辑 ---- */}
+      {treeNodes.length > 0 && (
+        <div className="tree-card" style={{ padding: '20px 24px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>✏️ 知识树编辑</h3>
+            <button className="parse-btn" style={{ fontSize: 12, padding: '4px 12px' }}
+              onClick={() => { setAddParentId(null); setAddName('') }}>
+              ＋ 添加一级分类
+            </button>
+          </div>
+
+          {/* 添加一级分类 */}
+          {addParentId === null && addName !== null && (
+            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+              <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新一级分类名称"
+                style={{ flex: 1, padding: '6px 10px', border: '1px solid #ddd', borderRadius: 6, fontSize: 13, fontFamily: 'inherit' }}
+                onKeyDown={e => e.key === 'Enter' && handleAddNode(null)} />
+              <button onClick={() => handleAddNode(null)} style={{ padding: '6px 12px', borderRadius: 6, border: 'none', background: '#1677ff', color: '#fff', fontSize: 12, cursor: 'pointer' }}>添加</button>
+              <button onClick={() => setAddName(null)} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #ddd', background: '#fff', fontSize: 12, cursor: 'pointer' }}>取消</button>
+            </div>
+          )}
+
+          {/* 树结构 */}
+          {treeNodes.filter(n => n.level === 1).map(cat => (
+            <div key={cat.id} style={{ marginBottom: 12 }}>
+              {/* 一级 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee' }}>
+                {editingId === cat.id ? (
+                  <>
+                    <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
+                      style={{ flex: 1, padding: '4px 8px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 14, fontFamily: 'inherit' }}
+                      onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(cat.id); if (e.key === 'Escape') setEditingId(null) }} />
+                    <button onClick={() => handleUpdateNode(cat.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                    <button onClick={() => setEditingId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{cat.name}</span>
+                    <button onClick={() => { setEditingId(cat.id); setEditName(cat.name) }} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>改名</button>
+                    <button onClick={() => { setAddParentId(cat.id); setAddName('') }} style={{ fontSize: 11, color: '#52c41a', background: 'none', border: 'none', cursor: 'pointer' }}>+子</button>
+                    <button onClick={() => handleDeleteNode(cat.id, cat.name)} style={{ fontSize: 11, color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>删</button>
+                  </>
+                )}
+              </div>
+
+              {/* 二级 */}
+              {treeNodes.filter(n => n.parent_id === cat.id).map(sub => (
+                <div key={sub.id} style={{ marginLeft: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
+                    {editingId === sub.id ? (
+                      <>
+                        <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
+                          style={{ flex: 1, padding: '3px 6px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 13, fontFamily: 'inherit' }}
+                          onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(sub.id); if (e.key === 'Escape') setEditingId(null) }} />
+                        <button onClick={() => handleUpdateNode(sub.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                        <button onClick={() => setEditingId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ flex: 1, fontWeight: 600, fontSize: 13, color: '#555' }}>▸ {sub.name}</span>
+                        <button onClick={() => { setEditingId(sub.id); setEditName(sub.name) }} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>改</button>
+                        <button onClick={() => { setAddParentId(sub.id); setAddName('') }} style={{ fontSize: 11, color: '#52c41a', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
+                        <button onClick={() => handleDeleteNode(sub.id, sub.name)} style={{ fontSize: 11, color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>删</button>
+                      </>
+                    )}
+                  </div>
+
+                  {/* 添加子节点输入框 */}
+                  {addParentId === sub.id && (
+                    <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginBottom: 4 }}>
+                      <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新知识点" autoFocus
+                        style={{ flex: 1, padding: '3px 6px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleAddNode(sub.id); if (e.key === 'Escape') setAddParentId(null) }} />
+                      <button onClick={() => handleAddNode(sub.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                      <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                    </div>
+                  )}
+
+                  {/* 三级叶子 */}
+                  <div style={{ marginLeft: 20, display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0 6px' }}>
+                    {treeNodes.filter(n => n.parent_id === sub.id).map(leaf => (
+                      <span key={leaf.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', background: '#f5f5f5', borderRadius: 12, fontSize: 12 }}>
+                        {editingId === leaf.id ? (
+                          <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
+                            style={{ width: 80, padding: '1px 4px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
+                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(leaf.id); if (e.key === 'Escape') setEditingId(null) }} />
+                        ) : (
+                          <span onClick={() => { setEditingId(leaf.id); setEditName(leaf.name) }} style={{ cursor: 'pointer' }}>{leaf.name}</span>
+                        )}
+                        <span onClick={() => handleDeleteNode(leaf.id, leaf.name)} style={{ cursor: 'pointer', color: '#ccc', fontSize: 10 }}>✕</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+
+              {/* 添加二级输入框 */}
+              {addParentId === cat.id && (
+                <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginTop: 4 }}>
+                  <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新二级分类" autoFocus
+                    style={{ flex: 1, padding: '3px 6px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
+                    onKeyDown={e => { if (e.key === 'Enter') handleAddNode(cat.id); if (e.key === 'Escape') setAddParentId(null) }} />
+                  <button onClick={() => handleAddNode(cat.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+                  <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

@@ -13,7 +13,7 @@ from backend.database import get_db
 from backend.models.user import User
 from backend.models.knowledge import KnowledgeNode
 from backend.schemas.common import ApiResponse
-from backend.services.tree import init_knowledge_tree, init_tree_from_image
+from backend.services.tree import init_knowledge_tree
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["管理"])
@@ -101,41 +101,101 @@ async def init_tree(
     )
 
 
-class InitFromImageRequest(BaseModel):
-    image_base64: str  # base64 编码的图片
-    profile_text: str = ""
+# ---- 知识树编辑 API ----
+
+class NodeCreateRequest(BaseModel):
+    parent_id: int | None = None
+    name: str
+    interview_weight: int = 3
 
 
-@router.post("/init-tree-from-image", summary="从图片初始化知识树（SSE）")
-async def init_tree_from_image_api(
-    req: InitFromImageRequest,
+class NodeUpdateRequest(BaseModel):
+    name: str | None = None
+    interview_weight: int | None = None
+    parent_id: int | None = None
+
+
+@router.get("/tree-nodes", summary="获取完整知识树（编辑用）")
+async def get_tree_nodes(db: AsyncSession = Depends(get_db)) -> ApiResponse:
+    stmt = select(KnowledgeNode).order_by(KnowledgeNode.level, KnowledgeNode.sort_order, KnowledgeNode.id)
+    result = await db.execute(stmt)
+    nodes = result.scalars().all()
+    return ApiResponse.ok(data=[{
+        "id": n.id, "parent_id": n.parent_id, "name": n.name,
+        "level": n.level, "node_type": n.node_type,
+        "interview_weight": n.interview_weight,
+    } for n in nodes])
+
+
+@router.post("/tree-nodes", summary="新增知识点节点")
+async def create_tree_node(
+    req: NodeCreateRequest,
     db: AsyncSession = Depends(get_db),
-):
-    """
-    上传知识点脑图图片初始化知识树：
-    1. VL 模型识别图片中的知识点
-    2. LLM 查漏补缺
-    3. 写入 DB
-    """
-    if not req.image_base64.strip():
-        raise HTTPException(status_code=400, detail="图片不能为空")
+) -> ApiResponse:
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail="名称不能为空")
 
-    # 保存画像
-    user = await db.get(User, 1)
-    if user and req.profile_text.strip():
-        user.profile_text = req.profile_text.strip()
-        await db.commit()
+    # 确定层级
+    if req.parent_id:
+        parent = await db.get(KnowledgeNode, req.parent_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="父节点不存在")
+        level = parent.level + 1
+        node_type = "leaf" if level >= 3 else "category"
+    else:
+        level = 1
+        node_type = "category"
 
-    async def event_stream():
-        try:
-            async for progress in init_tree_from_image(req.image_base64, req.profile_text.strip() or "Java后端开发", db):
-                yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
-        except Exception as e:
-            logger.error(f"图片初始化异常: {e}")
-            yield f"data: {json.dumps({'step': 'error', 'message': f'初始化异常: {e}'}, ensure_ascii=False)}\n\n"
-
-    return StreamingResponse(
-        event_stream(),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    node = KnowledgeNode(
+        parent_id=req.parent_id,
+        name=req.name.strip(),
+        level=level,
+        node_type=node_type,
+        interview_weight=req.interview_weight,
     )
+    db.add(node)
+    await db.commit()
+    return ApiResponse.ok(data={"id": node.id, "name": node.name, "level": level})
+
+
+@router.put("/tree-nodes/{node_id}", summary="修改知识点节点")
+async def update_tree_node(
+    node_id: int,
+    req: NodeUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    node = await db.get(KnowledgeNode, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="节点不存在")
+    if req.name is not None:
+        node.name = req.name.strip()
+    if req.interview_weight is not None:
+        node.interview_weight = req.interview_weight
+    if req.parent_id is not None:
+        node.parent_id = req.parent_id
+    await db.commit()
+    return ApiResponse.ok(data={"id": node.id, "name": node.name})
+
+
+@router.delete("/tree-nodes/{node_id}", summary="删除知识点节点（含子节点）")
+async def delete_tree_node(
+    node_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    node = await db.get(KnowledgeNode, node_id)
+    if not node:
+        raise HTTPException(status_code=404, detail="节点不存在")
+
+    # 递归删除子节点
+    async def delete_children(parent_id: int):
+        children = await db.execute(
+            select(KnowledgeNode).where(KnowledgeNode.parent_id == parent_id)
+        )
+        for child in children.scalars().all():
+            await delete_children(child.id)
+            await db.delete(child)
+
+    await delete_children(node.id)
+    await db.delete(node)
+    await db.commit()
+    return ApiResponse.ok(data={"deleted": node_id})
