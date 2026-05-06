@@ -6,8 +6,6 @@ import { useState, useEffect, useRef } from 'react'
 
 const API = 'http://127.0.0.1:8000/api'
 
-const DEFAULT_PROFILE = `3年Java后端开发，目前在一家中型互联网公司做电商业务。
-
 // 递归编辑节点组件
 function EditNode({ node, allNodes, depth, editingId, editName, addParentId, addName,
   setEditingId, setEditName, setAddParentId, setAddName, onUpdate, onDelete, onAdd }) {
@@ -42,8 +40,6 @@ function EditNode({ node, allNodes, depth, editingId, editName, addParentId, add
           </>
         )}
       </div>
-
-      {/* 添加子节点输入框 */}
       {addParentId === node.id && (
         <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginBottom: 4, marginTop: 4 }}>
           <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新节点名称" autoFocus
@@ -53,8 +49,6 @@ function EditNode({ node, allNodes, depth, editingId, editName, addParentId, add
           <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
         </div>
       )}
-
-      {/* 递归渲染子节点 */}
       {children.map(child => (
         <EditNode key={child.id} node={child} allNodes={allNodes} depth={depth + 1}
           editingId={editingId} editName={editName} addParentId={addParentId} addName={addName}
@@ -64,7 +58,8 @@ function EditNode({ node, allNodes, depth, editingId, editName, addParentId, add
     </div>
   )
 }
-目标：大厂（字节/阿里/美团），Java后端或基础架构方向。
+
+const DEFAULT_PROFILE = `3年Java后端开发，目前在一家中型互联网公司做电商业务。
 
 技术栈：
 - 主力：Java/Spring Boot/MyBatis
