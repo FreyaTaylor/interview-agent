@@ -132,8 +132,7 @@ async def init_knowledge_tree(
 
     await db.commit()
 
-    # 4. 逐个展开二级为完整子树（并发 3 个，全局去重）
-    semaphore = asyncio.Semaphore(3)
+    # 4. 逐个展开二级为完整子树（顺序执行，避免 session 冲突）
     completed = 0
     total_leaves = 0
     all_leaf_names: list[str] = []  # 全局已有叶子名，用于去重
@@ -182,23 +181,19 @@ async def init_knowledge_tree(
 
     async def expand_one(cat_name: str, sub_name: str, sub_node: KnowledgeNode):
         nonlocal completed, total_leaves
-        async with semaphore:
-            node_path = f"{cat_name} → {sub_name}"
-            children = await expand_subcategory(profile_text, node_path, existing_leaves=list(all_leaf_names))
-            added = await _write_children(sub_node.id, sub_node.level, children)
-            total_leaves += added
-            completed += 1
+        node_path = f"{cat_name} → {sub_name}"
+        children = await expand_subcategory(profile_text, node_path, existing_leaves=list(all_leaf_names))
+        added = await _write_children(sub_node.id, sub_node.level, children)
+        total_leaves += added
+        completed += 1
 
-    # 分批执行并 yield 进度
-    batch_size = 3
-    for i in range(0, len(expand_tasks), batch_size):
-        batch = expand_tasks[i:i + batch_size]
-        await asyncio.gather(*(expand_one(*t) for t in batch))
+    # 逐个执行并 yield 进度
+    for i, (cat_name, sub_name, sub_node) in enumerate(expand_tasks):
+        await expand_one(cat_name, sub_name, sub_node)
         await db.commit()
-        names = [t[1] for t in batch]
         yield {
             "step": "expanding",
-            "message": f"已展开：{', '.join(names)}",
+            "message": f"已展开：{sub_name}",
             "completed": completed,
             "total": len(expand_tasks),
             "total_leaves": total_leaves,
