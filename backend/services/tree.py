@@ -43,20 +43,18 @@ async def generate_skeleton(profile_text: str) -> dict:
 
 async def expand_subcategory(
     profile_text: str,
-    category_name: str,
-    subcategory_name: str,
+    node_path: str,
     existing_leaves: list[str] = None,
 ) -> list[dict]:
     """
-    Step 2: 将一个二级分类展开为三级叶子知识点。
-    返回: [{"name": ..., "interview_weight": 5, "sort_order": 1}]
+    Step 2: 将一个分类展开为完整子树（一次 LLM 调用，返回嵌套结构）。
+    返回: [{"name": ..., "interview_weight": 5, "children": [...]} or {"name": ..., "interview_weight": 4}]
     """
-    llm = get_llm(temperature=0.3, max_tokens=2048)
+    llm = get_llm(temperature=0.3, max_tokens=4096)
     existing_text = "（暂无）" if not existing_leaves else "\n".join(f"- {l}" for l in existing_leaves)
     prompt = TREE_EXPAND_PROMPT.format(
         profile_text=profile_text,
-        category_name=category_name,
-        subcategory_name=subcategory_name,
+        node_path=node_path,
         existing_leaves=existing_text,
     )
 
@@ -64,10 +62,11 @@ async def expand_subcategory(
         try:
             resp = await llm.ainvoke(prompt)
             result = parse_llm_json(resp.content)
-            return result.get("leaves", [])
+            return result.get("children", [])
         except Exception as e:
-            logger.warning(f"展开「{subcategory_name}」第{attempt+1}次失败: {e}")
-    logger.error(f"展开「{subcategory_name}」彻底失败")
+            logger.warning(f"展开「{node_path}」第{attempt+1}次失败: {e}")
+    logger.error(f"展开「{node_path}」彻底失败")
+    return []
     return []
 
 
@@ -143,32 +142,60 @@ async def init_knowledge_tree(
 
     await db.commit()
 
-    # 4. 逐个展开二级为三级叶子（并发 3 个，全局去重）
+    # 4. 逐个展开二级为完整子树（并发 3 个，全局去重）
     semaphore = asyncio.Semaphore(3)
     completed = 0
     total_leaves = 0
     all_leaf_names: list[str] = []  # 全局已有叶子名，用于去重
 
+    def _collect_leaf_names(children: list[dict]) -> list[str]:
+        """从嵌套结构中收集所有叶子名"""
+        names = []
+        for c in children:
+            if c.get("children"):
+                names.extend(_collect_leaf_names(c["children"]))
+            else:
+                names.append(c["name"].strip())
+        return names
+
+    async def _write_children(parent_id: int, parent_level: int, children: list[dict]) -> int:
+        """递归写入嵌套子树到 DB，返回叶子数"""
+        leaf_count = 0
+        for i, child in enumerate(children):
+            name = child["name"].strip()
+            has_kids = bool(child.get("children"))
+            level = parent_level + 1
+            node_type = "category" if has_kids else "leaf"
+
+            # 叶子去重
+            if not has_kids:
+                if name.lower() in [n.lower() for n in all_leaf_names]:
+                    continue
+                all_leaf_names.append(name)
+
+            node = KnowledgeNode(
+                parent_id=parent_id,
+                name=name,
+                level=level,
+                node_type=node_type,
+                interview_weight=child.get("interview_weight", 3),
+                sort_order=i,
+            )
+            db.add(node)
+            await db.flush()
+
+            if has_kids:
+                leaf_count += await _write_children(node.id, level, child["children"])
+            else:
+                leaf_count += 1
+        return leaf_count
+
     async def expand_one(cat_name: str, sub_name: str, sub_node: KnowledgeNode):
         nonlocal completed, total_leaves
         async with semaphore:
-            leaves = await expand_subcategory(profile_text, cat_name, sub_name, existing_leaves=list(all_leaf_names))
-            added = 0
-            for leaf in leaves:
-                name = leaf["name"].strip()
-                # 跳过和已有叶子重名的
-                if name.lower() in [n.lower() for n in all_leaf_names]:
-                    continue
-                db.add(KnowledgeNode(
-                    parent_id=sub_node.id,
-                    name=name,
-                    level=3,
-                    node_type="leaf",
-                    interview_weight=leaf.get("interview_weight", 3),
-                    sort_order=leaf.get("sort_order", 0),
-                ))
-                all_leaf_names.append(name)
-                added += 1
+            node_path = f"{cat_name} → {sub_name}"
+            children = await expand_subcategory(profile_text, node_path, existing_leaves=list(all_leaf_names))
+            added = await _write_children(sub_node.id, sub_node.level, children)
             total_leaves += added
             completed += 1
 
