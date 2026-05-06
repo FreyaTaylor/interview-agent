@@ -7,6 +7,63 @@ import { useState, useEffect, useRef } from 'react'
 const API = 'http://127.0.0.1:8000/api'
 
 const DEFAULT_PROFILE = `3年Java后端开发，目前在一家中型互联网公司做电商业务。
+
+// 递归编辑节点组件
+function EditNode({ node, allNodes, depth, editingId, editName, addParentId, addName,
+  setEditingId, setEditName, setAddParentId, setAddName, onUpdate, onDelete, onAdd }) {
+  const children = allNodes.filter(n => n.parent_id === node.id)
+  const hasChildren = children.length > 0
+  const isLeaf = !hasChildren && depth >= 2
+  const indent = depth * 20
+  const fontSize = depth === 0 ? 14 : 13
+  const fontWeight = depth === 0 ? 700 : depth === 1 ? 600 : 400
+  const color = depth === 0 ? '#333' : depth === 1 ? '#555' : '#666'
+
+  return (
+    <div style={{ marginLeft: indent }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: depth === 0 ? '8px 0' : '4px 0',
+        borderBottom: depth === 0 ? '1px solid #eee' : 'none' }}>
+        {editingId === node.id ? (
+          <>
+            <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
+              style={{ flex: 1, padding: '3px 6px', border: '1px solid #1677ff', borderRadius: 4, fontSize, fontFamily: 'inherit' }}
+              onKeyDown={e => { if (e.key === 'Enter') onUpdate(node.id); if (e.key === 'Escape') setEditingId(null) }} />
+            <button onClick={() => onUpdate(node.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+            <button onClick={() => setEditingId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+          </>
+        ) : (
+          <>
+            <span style={{ flex: 1, fontWeight, fontSize, color, cursor: 'pointer' }}
+              onClick={() => { setEditingId(node.id); setEditName(node.name) }}>
+              {depth > 0 && !isLeaf ? '▸ ' : depth > 0 ? '• ' : ''}{node.name}
+            </span>
+            <button onClick={() => { setAddParentId(node.id); setAddName('') }} style={{ fontSize: 11, color: '#52c41a', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
+            <button onClick={() => onDelete(node.id, node.name)} style={{ fontSize: 11, color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>删</button>
+          </>
+        )}
+      </div>
+
+      {/* 添加子节点输入框 */}
+      {addParentId === node.id && (
+        <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginBottom: 4, marginTop: 4 }}>
+          <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新节点名称" autoFocus
+            style={{ flex: 1, padding: '3px 6px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
+            onKeyDown={e => { if (e.key === 'Enter') onAdd(node.id); if (e.key === 'Escape') setAddParentId(null) }} />
+          <button onClick={() => onAdd(node.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
+          <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
+        </div>
+      )}
+
+      {/* 递归渲染子节点 */}
+      {children.map(child => (
+        <EditNode key={child.id} node={child} allNodes={allNodes} depth={depth + 1}
+          editingId={editingId} editName={editName} addParentId={addParentId} addName={addName}
+          setEditingId={setEditingId} setEditName={setEditName} setAddParentId={setAddParentId} setAddName={setAddName}
+          onUpdate={onUpdate} onDelete={onDelete} onAdd={onAdd} />
+      ))}
+    </div>
+  )
+}
 目标：大厂（字节/阿里/美团），Java后端或基础架构方向。
 
 技术栈：
@@ -265,91 +322,12 @@ export default function AdminPage() {
             </div>
           )}
 
-          {/* 树结构 */}
-          {treeNodes.filter(n => n.level === 1).map(cat => (
-            <div key={cat.id} style={{ marginBottom: 12 }}>
-              {/* 一级 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #eee' }}>
-                {editingId === cat.id ? (
-                  <>
-                    <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
-                      style={{ flex: 1, padding: '4px 8px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 14, fontFamily: 'inherit' }}
-                      onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(cat.id); if (e.key === 'Escape') setEditingId(null) }} />
-                    <button onClick={() => handleUpdateNode(cat.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                    <button onClick={() => setEditingId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-                  </>
-                ) : (
-                  <>
-                    <span style={{ flex: 1, fontWeight: 700, fontSize: 14 }}>{cat.name}</span>
-                    <button onClick={() => { setEditingId(cat.id); setEditName(cat.name) }} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>改名</button>
-                    <button onClick={() => { setAddParentId(cat.id); setAddName('') }} style={{ fontSize: 11, color: '#52c41a', background: 'none', border: 'none', cursor: 'pointer' }}>+子</button>
-                    <button onClick={() => handleDeleteNode(cat.id, cat.name)} style={{ fontSize: 11, color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>删</button>
-                  </>
-                )}
-              </div>
-
-              {/* 二级 */}
-              {treeNodes.filter(n => n.parent_id === cat.id).map(sub => (
-                <div key={sub.id} style={{ marginLeft: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 0' }}>
-                    {editingId === sub.id ? (
-                      <>
-                        <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
-                          style={{ flex: 1, padding: '3px 6px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 13, fontFamily: 'inherit' }}
-                          onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(sub.id); if (e.key === 'Escape') setEditingId(null) }} />
-                        <button onClick={() => handleUpdateNode(sub.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                        <button onClick={() => setEditingId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-                      </>
-                    ) : (
-                      <>
-                        <span style={{ flex: 1, fontWeight: 600, fontSize: 13, color: '#555' }}>▸ {sub.name}</span>
-                        <button onClick={() => { setEditingId(sub.id); setEditName(sub.name) }} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>改</button>
-                        <button onClick={() => { setAddParentId(sub.id); setAddName('') }} style={{ fontSize: 11, color: '#52c41a', background: 'none', border: 'none', cursor: 'pointer' }}>+</button>
-                        <button onClick={() => handleDeleteNode(sub.id, sub.name)} style={{ fontSize: 11, color: '#ff4d4f', background: 'none', border: 'none', cursor: 'pointer' }}>删</button>
-                      </>
-                    )}
-                  </div>
-
-                  {/* 添加子节点输入框 */}
-                  {addParentId === sub.id && (
-                    <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginBottom: 4 }}>
-                      <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新知识点" autoFocus
-                        style={{ flex: 1, padding: '3px 6px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
-                        onKeyDown={e => { if (e.key === 'Enter') handleAddNode(sub.id); if (e.key === 'Escape') setAddParentId(null) }} />
-                      <button onClick={() => handleAddNode(sub.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                      <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-                    </div>
-                  )}
-
-                  {/* 三级叶子 */}
-                  <div style={{ marginLeft: 20, display: 'flex', flexWrap: 'wrap', gap: 6, padding: '2px 0 6px' }}>
-                    {treeNodes.filter(n => n.parent_id === sub.id).map(leaf => (
-                      <span key={leaf.id} style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', background: '#f5f5f5', borderRadius: 12, fontSize: 12 }}>
-                        {editingId === leaf.id ? (
-                          <input value={editName} onChange={e => setEditName(e.target.value)} autoFocus
-                            style={{ width: 80, padding: '1px 4px', border: '1px solid #1677ff', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
-                            onKeyDown={e => { if (e.key === 'Enter') handleUpdateNode(leaf.id); if (e.key === 'Escape') setEditingId(null) }} />
-                        ) : (
-                          <span onClick={() => { setEditingId(leaf.id); setEditName(leaf.name) }} style={{ cursor: 'pointer' }}>{leaf.name}</span>
-                        )}
-                        <span onClick={() => handleDeleteNode(leaf.id, leaf.name)} style={{ cursor: 'pointer', color: '#ccc', fontSize: 10 }}>✕</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-
-              {/* 添加二级输入框 */}
-              {addParentId === cat.id && (
-                <div style={{ display: 'flex', gap: 6, marginLeft: 20, marginTop: 4 }}>
-                  <input value={addName} onChange={e => setAddName(e.target.value)} placeholder="新二级分类" autoFocus
-                    style={{ flex: 1, padding: '3px 6px', border: '1px solid #ddd', borderRadius: 4, fontSize: 12, fontFamily: 'inherit' }}
-                    onKeyDown={e => { if (e.key === 'Enter') handleAddNode(cat.id); if (e.key === 'Escape') setAddParentId(null) }} />
-                  <button onClick={() => handleAddNode(cat.id)} style={{ fontSize: 11, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>✓</button>
-                  <button onClick={() => setAddParentId(null)} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>✕</button>
-                </div>
-              )}
-            </div>
+          {/* 树结构（递归渲染） */}
+          {treeNodes.filter(n => n.level === 1).map(node => (
+            <EditNode key={node.id} node={node} allNodes={treeNodes} depth={0}
+              editingId={editingId} editName={editName} addParentId={addParentId} addName={addName}
+              setEditingId={setEditingId} setEditName={setEditName} setAddParentId={setAddParentId} setAddName={setAddName}
+              onUpdate={handleUpdateNode} onDelete={handleDeleteNode} onAdd={handleAddNode} />
           ))}
         </div>
       )}
