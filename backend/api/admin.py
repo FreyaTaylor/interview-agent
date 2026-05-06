@@ -89,7 +89,8 @@ async def init_tree(
     async def event_stream():
         try:
             async for progress in init_knowledge_tree(req.profile_text.strip(), db):
-                yield f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+                data = f"data: {json.dumps(progress, ensure_ascii=False)}\n\n"
+                yield data
         except Exception as e:
             logger.error(f"知识树初始化异常: {e}")
             yield f"data: {json.dumps({'step': 'error', 'message': f'初始化异常: {e}'}, ensure_ascii=False)}\n\n"

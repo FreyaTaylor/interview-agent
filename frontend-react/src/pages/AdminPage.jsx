@@ -142,39 +142,58 @@ export default function AdminPage() {
     setDone(false)
 
     try {
+      // 用 POST 发起请求，手动读取 SSE 流
       const resp = await fetch(`${API}/admin/init-tree`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_text: text }),
       })
 
+      if (!resp.ok) {
+        setLogs([{ step: 'error', message: `请求失败: HTTP ${resp.status}` }])
+        setDone(true)
+        setIniting(false)
+        return
+      }
+
       const reader = resp.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
+
+      const processLine = (line) => {
+        if (!line.startsWith('data: ')) return
+        try {
+          const data = JSON.parse(line.slice(6))
+          console.log('SSE:', data)
+          setLogs(prev => [...prev, data])
+          if (data.step === 'done' || data.step === 'error') {
+            setDone(true)
+            fetchStats()
+            fetchTree()
+          }
+        } catch (parseErr) {
+          console.error('SSE parse error:', parseErr, line)
+        }
+      }
 
       while (true) {
         const { done: streamDone, value } = await reader.read()
         if (streamDone) break
         buffer += decoder.decode(value, { stream: true })
-
-        const lines = buffer.split('\n')
-        buffer = lines.pop() || ''
-
-        for (const line of lines) {
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6))
-              setLogs(prev => [...prev, data])
-              if (data.step === 'done' || data.step === 'error') {
-                setDone(true)
-                fetchStats()
-                fetchTree()
-              }
-            } catch {}
-          }
+        // SSE 消息以 \n\n 分隔
+        while (buffer.includes('\n\n')) {
+          const idx = buffer.indexOf('\n\n')
+          const chunk = buffer.slice(0, idx)
+          buffer = buffer.slice(idx + 2)
+          chunk.split('\n').forEach(processLine)
         }
       }
+      // 处理剩余 buffer
+      if (buffer.trim()) {
+        buffer.split('\n').forEach(processLine)
+      }
     } catch (e) {
+      console.error('SSE fetch error:', e)
       setLogs(prev => [...prev, { step: 'error', message: `请求失败: ${e.message}` }])
       setDone(true)
     }
@@ -254,6 +273,11 @@ export default function AdminPage() {
               : <span>⬜ 尚未初始化，请填写画像后点击「开始初始化」</span>
             }
           </div>
+        )}
+
+        {/* 加载中提示 */}
+        {initing && logs.length === 0 && (
+          <div style={{ fontSize: 13, color: '#888', padding: '12px 0' }}>⏳ 正在初始化，请稍候...</div>
         )}
 
         {/* 进度条 */}
