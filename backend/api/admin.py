@@ -12,8 +12,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.database import get_db
 from backend.models.user import User
 from backend.models.knowledge import KnowledgeNode
+from backend.models.study import MasteryRecord, MasteryHistory, Conversation, ConversationMessage
 from backend.schemas.common import ApiResponse
-from backend.services.tree import init_knowledge_tree
+from backend.services.tree import init_knowledge_tree, generate_skeleton
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/admin", tags=["管理"])
@@ -94,6 +95,80 @@ async def init_tree(
         except Exception as e:
             logger.error(f"知识树初始化异常: {e}")
             yield f"data: {json.dumps({'step': 'error', 'message': f'初始化异常: {e}'}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.post("/init-skeleton", summary="只生成骨架（一级+二级分类，不展开叶子）")
+async def init_skeleton(
+    req: InitRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    只生成分类骨架，不展开叶子知识点。
+    题目在学习时按需生成。
+    """
+    if not req.profile_text.strip():
+        raise HTTPException(status_code=400, detail="用户画像不能为空")
+
+    # 保存画像
+    user = await db.get(User, 1)
+    if not user:
+        user = User(id=1, username="admin", password="admin", role="admin")
+        db.add(user)
+    user.profile_text = req.profile_text.strip()
+    await db.commit()
+
+    async def event_stream():
+        try:
+            # 1. 清空旧数据
+            from sqlalchemy import delete, update
+            from backend.models.interview import UserAnswerEmbedding
+            await db.execute(delete(ConversationMessage))
+            await db.execute(delete(MasteryHistory))
+            await db.execute(delete(Conversation))
+            await db.execute(delete(MasteryRecord))
+            await db.execute(delete(UserAnswerEmbedding))
+            await db.execute(update(KnowledgeNode).values(parent_id=None))
+            await db.execute(delete(KnowledgeNode))
+            await db.commit()
+            yield f"data: {json.dumps({'step': 'clear', 'message': '已清空旧知识树'}, ensure_ascii=False)}\n\n"
+
+            # 2. 生成骨架
+            yield f"data: {json.dumps({'step': 'skeleton', 'message': '正在生成分类骨架...'}, ensure_ascii=False)}\n\n"
+            skeleton = await generate_skeleton(req.profile_text.strip())
+            categories = skeleton.get("categories", [])
+            if not categories:
+                yield f"data: {json.dumps({'step': 'error', 'message': '骨架生成失败'}, ensure_ascii=False)}\n\n"
+                return
+
+            # 3. 写入一级+二级
+            total_subcats = 0
+            for cat in categories:
+                cat_node = KnowledgeNode(
+                    name=cat["name"], level=1, node_type="category",
+                    sort_order=cat.get("sort_order", 0),
+                )
+                db.add(cat_node)
+                await db.flush()
+                for sub in cat.get("children", []):
+                    sub_node = KnowledgeNode(
+                        parent_id=cat_node.id, name=sub["name"],
+                        level=2, node_type="category",
+                        sort_order=sub.get("sort_order", 0),
+                    )
+                    db.add(sub_node)
+                    total_subcats += 1
+            await db.commit()
+
+            yield f"data: {json.dumps({'step': 'done', 'message': f'骨架生成完成：{len(categories)} 个一级分类，{total_subcats} 个二级分类', 'category_count': len(categories), 'subcategory_count': total_subcats, 'leaf_count': 0}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"骨架初始化异常: {e}")
+            yield f"data: {json.dumps({'step': 'error', 'message': f'异常: {e}'}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(),
