@@ -143,7 +143,7 @@ export default function AdminPage() {
 
     try {
       // 用 POST 发起请求，手动读取 SSE 流
-      const resp = await fetch(`${API}/admin/init-skeleton`, {
+      const resp = await fetch(`${API}/admin/init-tree`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_text: text }),
