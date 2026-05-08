@@ -189,6 +189,7 @@ class NodeUpdateRequest(BaseModel):
     name: str | None = None
     interview_weight: int | None = None
     parent_id: int | None = None
+    sort_order: int | None = None
 
 
 @router.get("/tree-nodes", summary="获取完整知识树（编辑用）")
@@ -200,6 +201,7 @@ async def get_tree_nodes(db: AsyncSession = Depends(get_db)) -> ApiResponse:
         "id": n.id, "parent_id": n.parent_id, "name": n.name,
         "level": n.level, "node_type": n.node_type,
         "interview_weight": n.interview_weight,
+        "sort_order": n.sort_order,
     } for n in nodes])
 
 
@@ -234,6 +236,28 @@ async def create_tree_node(
     return ApiResponse.ok(data={"id": node.id, "name": node.name, "level": level})
 
 
+class BatchSortItem(BaseModel):
+    id: int
+    sort_order: int
+
+
+class BatchSortRequest(BaseModel):
+    updates: list[BatchSortItem]
+
+
+@router.put("/tree-nodes/batch-sort", summary="批量更新排序")
+async def batch_sort(
+    req: BatchSortRequest,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    for item in req.updates:
+        node = await db.get(KnowledgeNode, item.id)
+        if node:
+            node.sort_order = item.sort_order
+    await db.commit()
+    return ApiResponse.ok(data={"updated": len(req.updates)})
+
+
 @router.put("/tree-nodes/{node_id}", summary="修改知识点节点")
 async def update_tree_node(
     node_id: int,
@@ -249,6 +273,16 @@ async def update_tree_node(
         node.interview_weight = req.interview_weight
     if req.parent_id is not None:
         node.parent_id = req.parent_id
+        # 重新计算层级
+        if req.parent_id:
+            parent = await db.get(KnowledgeNode, req.parent_id)
+            if parent:
+                node.level = parent.level + 1
+        else:
+            node.level = 1
+        node.node_type = "leaf" if node.level >= 3 else "category"
+    if req.sort_order is not None:
+        node.sort_order = req.sort_order
     await db.commit()
     return ApiResponse.ok(data={"id": node.id, "name": node.name})
 

@@ -290,3 +290,122 @@ body {
 .group-questions li::before {
   content: '•'; position: absolute; left: 6px; color: #ccc;
 }
+
+/* ============================================================
+   幕布风格大纲编辑器
+   ============================================================ */
+.outliner-container {
+  background: #fff; border-radius: 10px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+  min-height: 500px;
+}
+.outliner-header {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 20px 28px 0;
+}
+.outliner-title {
+  font-size: 18px; font-weight: 700; color: #1f1f1f; margin: 0;
+}
+.outliner-actions {
+  display: flex; align-items: center; gap: 12px;
+}
+.outliner-saving {
+  font-size: 12px; color: #999; animation: outliner-pulse 1s infinite;
+}
+@keyframes outliner-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+.outliner-add-root {
+  padding: 6px 16px; font-size: 13px; font-weight: 500;
+  color: #1677ff; background: #e6f4ff; border: 1px solid #91caff;
+  border-radius: 6px; cursor: pointer; font-family: inherit;
+  transition: all 0.15s;
+}
+.outliner-add-root:hover { background: #bae0ff; }
+.outliner-help {
+  display: flex; gap: 16px; padding: 10px 28px;
+  font-size: 12px; color: #bbb; user-select: none;
+  border-bottom: 1px solid #f0f0f0;
+}
+.outliner-help span {
+  padding: 2px 8px; background: #fafafa; border-radius: 4px;
+}
+.outliner-body {
+  padding: 8px 12px 20px;
+}
+.outliner-empty {
+  text-align: center; color: #ccc; padding: 60px 0; font-size: 14px;
+}
+
+/* ---- 每一行 ---- */
+.outliner-item {
+  display: flex; align-items: center; gap: 4px;
+  padding: 3px 8px; border-radius: 4px;
+  min-height: 34px;
+  transition: background 0.1s;
+  cursor: grab;
+}
+.outliner-item:hover { background: #fafafa; }
+.outliner-item:hover .outliner-delete { opacity: 1; }
+.outliner-item.dragging { opacity: 0.35; }
+.outliner-item.drag-over {
+  border-top: 2px solid #1677ff;
+  margin-top: -2px;
+}
+
+/* 折叠三角 */
+.outliner-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 18px; height: 18px; flex-shrink: 0;
+  cursor: pointer; font-size: 10px; color: #aaa;
+  border-radius: 3px; transition: background 0.1s;
+}
+.outliner-toggle::before { content: '▶'; }
+.outliner-toggle.open::before { content: '▼'; }
+.outliner-toggle:hover { background: #e8e8e8; color: #555; }
+
+/* 叶子圆点 */
+.outliner-bullet {
+  display: inline-block; width: 18px; height: 18px; flex-shrink: 0;
+  position: relative;
+}
+.outliner-bullet::after {
+  content: ''; display: block;
+  width: 6px; height: 6px; border-radius: 50%;
+  background: #ccc; position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+}
+
+/* 可编辑输入框 */
+.outliner-input {
+  flex: 1; border: none; outline: none;
+  font-family: inherit; font-size: 14px;
+  color: #333; background: transparent;
+  padding: 4px 6px; border-radius: 3px;
+  transition: background 0.15s;
+  min-width: 0;
+}
+.outliner-input:focus { background: #f0f5ff; }
+.outliner-input::placeholder { color: #d9d9d9; }
+.outliner-input.level-0 { font-size: 16px; font-weight: 700; color: #1f1f1f; }
+.outliner-input.level-1 { font-size: 14px; font-weight: 600; color: #444; }
+.outliner-input.level-2 { font-size: 13px; font-weight: 400; color: #555; }
+.outliner-input.level-3 { font-size: 13px; font-weight: 400; color: #666; }
+
+/* 权重星星 */
+.outliner-weight {
+  font-size: 11px; color: #faad14; flex-shrink: 0;
+  letter-spacing: 1px; margin-left: 4px;
+}
+
+/* 删除按钮 */
+.outliner-delete {
+  opacity: 0; border: none; background: none;
+  color: #ff4d4f; font-size: 16px; cursor: pointer;
+  width: 22px; height: 22px; line-height: 22px;
+  text-align: center; border-radius: 3px;
+  flex-shrink: 0; font-family: inherit;
+  transition: opacity 0.15s, background 0.15s;
+}
+.outliner-delete:hover { background: #fff1f0; }
