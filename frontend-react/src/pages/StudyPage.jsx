@@ -19,17 +19,58 @@ export default function StudyPage() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef(null)
+  const startingRef = useRef(false) // 防止并发启动
 
-  // 加载知识点列表
+  // 今日置顶的知识点（localStorage 持久化）
+  function getTodayPinned() {
+    try {
+      const today = new Date().toISOString().slice(0, 10)
+      const raw = localStorage.getItem('study_pinned_kps')
+      if (!raw) return []
+      const data = JSON.parse(raw)
+      if (data.date !== today) { localStorage.removeItem('study_pinned_kps'); return [] }
+      return data.items || []
+    } catch { return [] }
+  }
+  function saveTodayPinned(items) {
+    const today = new Date().toISOString().slice(0, 10)
+    localStorage.setItem('study_pinned_kps', JSON.stringify({ date: today, items }))
+  }
+  function addPinnedKp(id, name) {
+    const pinned = getTodayPinned()
+    if (pinned.find(p => p.id === id)) return
+    const updated = [{ id, name }, ...pinned]
+    saveTodayPinned(updated)
+  }
+
+  // 加载知识点列表，并合并今日置顶
   useEffect(() => {
     fetch(`${API}/knowledge-points`).then(r => r.json()).then(d => {
-      if (d.code === 0) setKpList(d.data)
+      if (d.code === 0) {
+        const apiList = d.data || []
+        const pinned = getTodayPinned()
+        // 将置顶的插入到列表前面（去重）
+        const pinnedIds = new Set(pinned.map(p => p.id))
+        const merged = [
+          ...pinned.map(p => apiList.find(k => k.id === p.id) || { id: p.id, name: p.name, mastery_level: 0 }),
+          ...apiList.filter(k => !pinnedIds.has(k.id)),
+        ]
+        setKpList(merged)
+      }
     })
   }, [])
 
   // 从知识树跳转 或 面试复盘跳转
   useEffect(() => {
     if (kpId && kpList.length > 0) {
+      const id = parseInt(kpId)
+      setActiveKpId(id)
+      const existing = kpList.find(k => k.id === id)
+      if (existing) {
+        setKpName(existing.name)
+        // 从知识树跳转，置顶保存到今天
+        addPinnedKp(id, existing.name)
+      }
       // 检查是否有面试复盘的评分结果
       const stored = sessionStorage.getItem('interview_study_result')
       if (stored) {
@@ -37,7 +78,7 @@ export default function StudyPage() {
         const data = JSON.parse(stored)
         loadInterviewResult(data)
       } else {
-        startStudy(parseInt(kpId))
+        startStudy(id)
       }
     }
   }, [kpId, kpList])
@@ -93,23 +134,38 @@ export default function StudyPage() {
   }
 
   async function startStudy(id) {
+    if (startingRef.current) return
+    startingRef.current = true
     setLoading(true)
+    setActiveKpId(id)
+    setPhase('select')
+    setRounds([])
+    setCurrentRound([])
+    setCollapsedRounds({})
+    setAllQuestions([])
     const resp = await fetch(`${API}/start`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ knowledge_point_id: id }),
     }).then(r => r.json())
     setLoading(false)
+    startingRef.current = false
     if (resp.code === 0) {
       const d = resp.data
       setConvId(d.conversation_id)
       setKpName(d.knowledge_point_name)
-      setActiveKpId(id)
       setPhase('answering')
-      setRounds([])
-      setCollapsedRounds({})
       setAllQuestions(d.all_questions || [d.question_content])
       setActiveQuestionIdx(0)
       setCurrentRound([{ type: 'q', html: `📝 ${d.question_content}` }])
+      // 更新 kpList：如果不在列表中则追加，如果在则更新名称
+      addPinnedKp(id, d.knowledge_point_name)
+      setKpList(prev => {
+        const exists = prev.find(k => k.id === id)
+        if (exists) {
+          return prev.map(k => k.id === id ? { ...k, name: d.knowledge_point_name } : k)
+        }
+        return [{ id, name: d.knowledge_point_name, mastery_level: 0 }, ...prev]
+      })
       navigate('/study', { replace: true })
     }
   }
@@ -147,8 +203,8 @@ export default function StudyPage() {
       }
 
       if (d.follow_up) {
-        // 追问：追加到 currentRound（不创建新 round）
-        setCurrentRound(r => [...r, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }, { type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
+        // 追问：追加评分和追问题（回答已在前面加过）
+        setCurrentRound(r => [...r, { type: 's', html: scoreHtml }, { type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
         setPhase('answering')
       } else {
         // 追问结束 — 总结和扩展题放到独立 summary 消息
@@ -161,7 +217,7 @@ export default function StudyPage() {
           summaryHtml += '<br><br><b>📚 扩展题目</b>'
           ext.forEach((eq, i) => { summaryHtml += `<div style="margin:6px 0;padding:8px 12px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
         }
-        const roundMsgs = [...currentRound, { type: 'a', html: `💬 ${answer}` }, { type: 's', html: scoreHtml }]
+        const roundMsgs = [...currentRound, { type: 's', html: scoreHtml }]
         if (summaryHtml) roundMsgs.push({ type: 'summary', html: summaryHtml })
         setRounds(r => [...r, roundMsgs])
         setCurrentRound([])
@@ -183,6 +239,14 @@ export default function StudyPage() {
       const collapsed = {}
       rounds.forEach((_, i) => { collapsed[i] = true })
       setCollapsedRounds(collapsed)
+      // 更新题目栏
+      const newQ = d.question_content || `第${d.question_round}题`
+      setAllQuestions(prev => {
+        const next = [...prev]
+        if (next.length < d.question_round) next.push(newQ)
+        return next
+      })
+      setActiveQuestionIdx(d.question_round - 1)
       setCurrentRound([{ type: 'q', html: `📝 <b>第${d.question_round}题</b><br>${d.question_content}` }])
       setPhase('answering')
     }
@@ -197,9 +261,9 @@ export default function StudyPage() {
 
     if (isCollapsed) {
       return (
-        <div key={idx} className="round-group" style={{ cursor: 'pointer', padding: '10px 16px', opacity: 0.7 }}
+        <div key={idx} data-round={idx} className="round-group" style={{ cursor: 'pointer', padding: '12px 16px', opacity: 0.7 }}
           onClick={() => setCollapsedRounds(p => ({ ...p, [idx]: false }))}>
-          <span style={{ fontSize: 13, color: '#888' }}>▸ {title}</span>
+          <span style={{ fontSize: 14, color: '#888' }}>▸ {title}</span>
         </div>
       )
     }
@@ -209,7 +273,7 @@ export default function StudyPage() {
     const summaryMsgs = msgs.filter(m => m.type === 'summary')
 
     return (
-      <div key={idx}>
+      <div key={idx} data-round={idx}>
         <div className="round-group"
           style={typeof idx === 'number' && rounds.length > 1 ? { cursor: 'pointer' } : {}}
           onClick={() => typeof idx === 'number' && setCollapsedRounds(p => ({ ...p, [idx]: true }))}>
@@ -233,7 +297,7 @@ export default function StudyPage() {
         {kpList.map(kp => {
           const isActive = kp.id === activeKpId
           return (
-            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId) { setActiveKpId(kp.id); setKpName(kp.name); setRounds([]); setCurrentRound([]); setCollapsedRounds({}); setAllQuestions([]); startStudy(kp.id) } }}
+            <button key={kp.id} onClick={() => { if (kp.id !== activeKpId && !startingRef.current) startStudy(kp.id) }}
               style={{
                 padding: '8px 16px', borderRadius: 20, border: isActive ? '2px solid #1677ff' : '1px solid #e0e0e0',
                 background: isActive ? '#f0f7ff' : '#fff', fontWeight: isActive ? 600 : 400,
@@ -251,16 +315,29 @@ export default function StudyPage() {
       {activeKpId && allQuestions.length > 0 && (
         <div style={{ background: '#fff', borderRadius: 12, border: '1px solid #eee', padding: '12px 16px', marginBottom: 16 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-            <span style={{ fontSize: 13, color: '#999', marginRight: 4 }}>题目</span>
             {allQuestions.map((q, i) => {
               const answered = i < rounds.length
               const isCurrent = i === activeQuestionIdx
+              const isCurrentAnswering = i === rounds.length // 正在答的题
               return (
-                <button key={i} onClick={() => {
-                  if (answered) {
-                    const c = {}; rounds.forEach((_, j) => { c[j] = j !== i }); setCollapsedRounds(c)
-                  }
+                <button key={i} onClick={(e) => {
+                  e.stopPropagation()
+                  const c = {}
+                  rounds.forEach((_, j) => { c[j] = j !== i })
+                  setCollapsedRounds(c)
                   setActiveQuestionIdx(i)
+                  if (answered) {
+                    // 已答题：滚动到该题位置
+                    setTimeout(() => {
+                      const el = document.querySelector(`[data-round="${i}"]`)
+                      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                    }, 100)
+                  } else {
+                    // 未答题或当前题：切换 currentRound 到该题
+                    setCurrentRound([{ type: 'q', html: `📝 ${q}` }])
+                    setPhase('answering')
+                    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
+                  }
                 }}
                   style={{
                     padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',

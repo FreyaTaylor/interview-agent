@@ -29,8 +29,11 @@ function TreeNode({ node, depth }) {
             <span className="stars">{stars}</span>
             <div className="bar"><div className="bar-fill" style={{ width: `${m}%`, background: color }} /></div>
             <span className="pct">{m > 0 ? `${m}%` : '—'}</span>
-            <Link to={`/study/${node.id}`} className="study-btn">
-              {node.study_count > 0 ? '复习' : '学习'}
+            <Link to={`/learn/${node.id}`} className="study-btn learn-btn-link">
+              📖 学习
+            </Link>
+            <Link to={`/exam/${node.id}`} className="study-btn exam-btn-link">
+              ✏️ 答题
             </Link>
           </div>
         )}

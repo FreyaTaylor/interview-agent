@@ -87,12 +87,14 @@ async def score_answer_node(state: StudyState) -> dict:
     """
     logger.info(f"正在评分: 知识点={state['knowledge_point_name']}")
 
-    # 构建本轮问答链（用于整体总结）
+    # 构建本轮完整问答链（含追问，用于整体总结）
     history_lines = []
     for s in (state.get("question_history") or []):
         if isinstance(s, dict):
             history_lines.append(f"问: {s.get('question', '')}")
-            if s.get('score') is not None:
+            if s.get('answer'):
+                history_lines.append(f"答: {s['answer']}")
+            elif s.get('score') is not None:
                 history_lines.append(f"答: (得分 {s['score']})")
     history_lines.append(f"问: {state['question_content']}")
     history_lines.append(f"答: {state['user_input']}")

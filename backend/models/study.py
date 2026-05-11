@@ -61,6 +61,8 @@ class Conversation(TimestampMixin, Base):
     question_round: Mapped[int] = mapped_column(SmallInteger, server_default="1")
     # 学习小结列表（每题评分后追加，JSONB）
     learning_summaries: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
+    # 待答题目列表（初始生成时保存，JSONB）
+    pending_questions: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     # 当前状态：'questioning' | 'answered' | 'finished'
     status: Mapped[str] = mapped_column(String(20), server_default="'questioning'")
 

@@ -10,6 +10,7 @@ from backend.models.study import (
     MasteryRecord, MasteryHistory,
 )
 from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion
+from backend.models.learn import KnowledgeContent, LearnChat
 
 __all__ = [
     "Base",
@@ -18,4 +19,5 @@ __all__ = [
     "StudySession", "Conversation", "ConversationMessage",
     "MasteryRecord", "MasteryHistory",
     "InterviewRecord", "AlgorithmQuestion", "HrQuestion",
+    "KnowledgeContent", "LearnChat",
 ]
