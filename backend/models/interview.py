@@ -7,7 +7,7 @@
 - user_answer_embedding: 用户回答向量（Agent 长期记忆）
 """
 from typing import Any
-from sqlalchemy import BigInteger, SmallInteger, Integer, String, Text, ForeignKey
+from sqlalchemy import BigInteger, SmallInteger, Integer, String, Text, ForeignKey, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from pgvector.sqlalchemy import Vector
@@ -24,6 +24,11 @@ class InterviewRecord(TimestampMixin, Base):
         BigInteger, ForeignKey("study_session.id"), nullable=False
     )
     raw_text: Mapped[str] = mapped_column(Text, nullable=False)
+    company: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    position: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    text_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    avg_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    pass_estimate: Mapped[str | None] = mapped_column(String(20), nullable=True)
     parsed_questions: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     cluster_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     summary_report: Mapped[str | None] = mapped_column(Text, nullable=True)

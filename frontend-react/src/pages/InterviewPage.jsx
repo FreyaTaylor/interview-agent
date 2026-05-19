@@ -1,139 +1,267 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 
 const API = 'http://127.0.0.1:8000/api'
 
+// SHA-256 hash（浏览器原生）
+async function sha256(text) {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(text.trim())
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export default function InterviewPage() {
   const [text, setText] = useState('')
-  const [company, setCompany] = useState(() => sessionStorage.getItem('iv_company') || '')
-  const [position, setPosition] = useState(() => sessionStorage.getItem('iv_position') || '')
+  const [company, setCompany] = useState('')
+  const [position, setPosition] = useState('')
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState(() => {
-    const s = sessionStorage.getItem('iv_result')
-    return s ? JSON.parse(s) : null
-  })
+  const [result, setResult] = useState(null)
   const [expanded, setExpanded] = useState({})
-  const [activeTab, setActiveTab] = useState(() => sessionStorage.getItem('iv_tab') || 'knowledge')
-
+  const [activeTab, setActiveTab] = useState('knowledge')
   const [error, setError] = useState('')
 
-  // 将新解析的 project/other 数据 merge 进 localStorage（跨会话持久化）
-  function mergeToLocalStorage(data) {
-    // ---- 项目拷打 merge ----
-    const newProjects = data.groups?.filter(g => g.type === 'project') || []
-    if (newProjects.length > 0) {
-      const stored = JSON.parse(localStorage.getItem('project_questions') || '[]')
-      const merged = [...stored]
-      for (const np of newProjects) {
-        const name = (np.project_name || '').toLowerCase().trim()
-        const topic = (np.topic || '').toLowerCase().trim()
-        // 按 project_name + topic 语义匹配（简单字符串匹配，LLM 合并已在后端做过）
-        const existing = merged.find(m =>
-          (m.project_name || '').toLowerCase().trim() === name &&
-          (m.topic || '').toLowerCase().trim() === topic
-        )
-        if (existing) {
-          // 合并 questions 去重
-          const qSet = new Set(existing.questions || [])
-          for (const q of (np.questions || [])) qSet.add(q)
-          existing.questions = [...qSet]
-          // 更新评分（用最新的）
-          if (np.score_result) existing.score_result = np.score_result
-          if (np.user_answer) existing.user_answer = np.user_answer
-          if (np.original_dialogue) existing.original_dialogue = np.original_dialogue
-        } else {
-          merged.push(np)
-        }
-      }
-      localStorage.setItem('project_questions', JSON.stringify(merged))
-    }
+  // 历史面试
+  const [history, setHistory] = useState([])
+  const [activeRecordId, setActiveRecordId] = useState(null)
 
-    // ---- 其他问题 merge ----
-    const newOthers = data.groups?.filter(g => ['algorithm', 'hr', 'other'].includes(g.type)) || []
-    if (newOthers.length > 0) {
-      const stored = JSON.parse(localStorage.getItem('other_questions') || '[]')
-      const merged = [...stored]
-      for (const no of newOthers) {
-        // 算法题按 title 去重，HR/other 按 questions 去重
-        if (no.type === 'algorithm') {
-          const t = (no.title || '').toLowerCase().trim()
-          if (!merged.some(m => m.type === 'algorithm' && (m.title || '').toLowerCase().trim() === t)) {
-            merged.push(no)
-          }
-        } else {
-          // HR/other: 合并 questions 到同类型的第一个组
-          const existing = merged.find(m => m.type === no.type)
-          if (existing) {
-            const qSet = new Set(existing.questions || [])
-            for (const q of (no.questions || [])) qSet.add(q)
-            existing.questions = [...qSet]
-          } else {
-            merged.push(no)
-          }
-        }
+  // 语音上传
+  const [audioLoading, setAudioLoading] = useState(false)
+  const [audioFile, setAudioFile] = useState(null)
+  const audioInputRef = useRef(null)
+
+  // 重复检测弹窗
+  const [duplicateInfo, setDuplicateInfo] = useState(null)
+
+  // 加载历史列表
+  const loadHistory = useCallback(async () => {
+    try {
+      const resp = await fetch(`${API}/interview/history`).then(r => r.json())
+      if (resp.code === 0) setHistory(resp.data || [])
+    } catch (e) { console.error('加载历史失败:', e) }
+  }, [])
+
+  useEffect(() => { loadHistory() }, [loadHistory])
+
+  // 查看历史详情
+  async function handleViewHistory(recordId) {
+    setActiveRecordId(recordId)
+    setLoading(true)
+    setResult(null)
+    setError('')
+    try {
+      const resp = await fetch(`${API}/interview/history/${recordId}`).then(r => r.json())
+      if (resp.code === 0) {
+        setResult(resp.data)
+        setCompany(resp.data.company || '')
+        setPosition(resp.data.position || '')
+        setActiveTab('knowledge')
+        setExpanded({})
+      } else {
+        setError(resp.message || '加载失败')
       }
-      localStorage.setItem('other_questions', JSON.stringify(merged))
-    }
+    } catch (e) { setError('加载失败: ' + e.message) }
+    setLoading(false)
   }
 
-  async function handleParse() {
+  // 新建面试
+  function handleNewInterview() {
+    setActiveRecordId(null)
+    setResult(null)
+    setText('')
+    setCompany('')
+    setPosition('')
+    setError('')
+    setExpanded({})
+    setAudioFile(null)
+  }
+
+  // 语音上传处理
+  async function handleAudioUpload(e) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setAudioFile(file)
+    setAudioLoading(true)
+    setError('')
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      const resp = await fetch(`${API}/interview/upload-audio`, {
+        method: 'POST',
+        body: formData,
+      }).then(r => r.json())
+      if (resp.code === 0) {
+        setText(resp.data.text)
+      } else {
+        setError(resp.message || resp.detail || '转写失败')
+      }
+    } catch (e) { setError('语音转写失败: ' + e.message) }
+    setAudioLoading(false)
+  }
+
+  // 开始解析（带重复检测）
+  async function handleParse(forceNew = false) {
     if (!text.trim() || loading) return
-    setLoading(true); setResult(null); setError('')
+
+    // 重复检测
+    if (!forceNew) {
+      try {
+        const hash = await sha256(text)
+        const checkResp = await fetch(`${API}/interview/check-duplicate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text_hash: hash }),
+        }).then(r => r.json())
+        if (checkResp.code === 0 && checkResp.data.duplicate) {
+          setDuplicateInfo(checkResp.data)
+          return
+        }
+      } catch (e) { /* 检测失败不阻塞，继续解析 */ }
+    }
+
+    setLoading(true)
+    setResult(null)
+    setError('')
+    setDuplicateInfo(null)
     try {
       const resp = await fetch(`${API}/interview/parse`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ text, company, position }),
       }).then(r => r.json())
       if (resp.code === 0) {
-        setResult(resp.data); setExpanded({}); setActiveTab('knowledge')
-        sessionStorage.setItem('iv_result', JSON.stringify(resp.data))
-        sessionStorage.setItem('iv_company', company)
-        sessionStorage.setItem('iv_position', position)
-        sessionStorage.setItem('iv_tab', 'knowledge')
-        sessionStorage.setItem('interview_result', JSON.stringify({ ...resp.data, company, position }))
-        mergeToLocalStorage(resp.data)
+        setResult(resp.data)
+        setActiveRecordId(resp.data.record_id)
+        setActiveTab('knowledge')
+        setExpanded({})
+        await loadHistory()
+      } else {
+        setError(resp.message || resp.detail || '解析失败')
       }
-      else setError(resp.message || resp.detail || '解析失败，请重试')
-    } catch (e) { setError(`请求失败: ${e.message || '网络错误'}`) }
+    } catch (e) { setError('请求失败: ' + (e.message || '网络错误')) }
     setLoading(false)
+  }
+
+  // 覆盖已有记录
+  async function handleOverwrite() {
+    if (!duplicateInfo) return
+    try {
+      await fetch(`${API}/interview/overwrite`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record_id: duplicateInfo.record_id }),
+      })
+    } catch (e) { /* 删除失败不阻塞 */ }
+    setDuplicateInfo(null)
+    handleParse(true)
   }
 
   const toggle = i => setExpanded(p => ({ ...p, [i]: !p[i] }))
   const sc = s => s >= 80 ? '#52c41a' : s >= 60 ? '#faad14' : '#ff4d4f'
 
-  // ---- 输入页 ----
-  if (!result) return (
-    <div className="interview-upload">
-      <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
-        placeholder={'粘贴面试记录...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。\n中间他接了个电话等了一会。'} />
-      <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
-        <button onClick={handleParse} disabled={!text.trim() || loading}
-          style={{
-            padding: '10px 28px', fontSize: 14, fontWeight: 600, border: 'none', borderRadius: 10,
-            background: loading ? '#d9d9d9' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-            color: '#fff', cursor: loading ? 'not-allowed' : 'pointer',
-            boxShadow: loading ? 'none' : '0 4px 14px rgba(102,126,234,0.4)',
-            transition: 'all 0.3s', fontFamily: 'inherit',
-          }}>
-          {loading ? '🧠 解析中...' : '🔍 开始解析'}
-        </button>
-      </div>
-      {error && (
-        <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
-          ❌ {error}
-          <button onClick={() => { setError(''); handleParse() }} style={{ marginLeft: 12, fontSize: 12, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-            重试
-          </button>
+  // ---- 整体布局：左侧历史 + 右侧内容 ----
+  return (
+    <div className="learn-layout">
+      {/* 左侧历史列表 */}
+      <div className="learn-sidebar">
+        <div className="learn-sidebar-header">
+          <span style={{ fontSize: 14, fontWeight: 600 }}>📋 面试记录</span>
+          <button onClick={handleNewInterview} style={{ fontSize: 12, color: '#1677ff', background: 'none', border: 'none', cursor: 'pointer' }}>+ 新建</button>
         </div>
-      )}
-    </div>
-  )
+        <div className="learn-sidebar-list">
+          {history.map(h => (
+            <div key={h.id}
+              className={`learn-sidebar-item ${activeRecordId === h.id ? 'active' : ''}`}
+              onClick={() => handleViewHistory(h.id)}>
+              <div style={{ fontSize: 13, fontWeight: 500, color: '#333', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {h.company || '未命名面试'}{h.position ? ` · ${h.position}` : ''}
+              </div>
+              <div style={{ fontSize: 11, color: '#999', marginTop: 2, display: 'flex', justifyContent: 'space-between' }}>
+                <span>{h.created_at?.slice(0, 10)}</span>
+                {h.avg_score != null && <span style={{ color: sc(h.avg_score), fontWeight: 600 }}>{h.avg_score}分</span>}
+              </div>
+            </div>
+          ))}
+          {history.length === 0 && <div style={{ padding: 16, color: '#ccc', fontSize: 13 }}>暂无面试记录</div>}
+        </div>
+      </div>
 
-  // ---- 结果页 ----
-  const knowledgeGroups = result.groups.filter(g => g.type === 'knowledge')
-  const projectGroups = result.groups.filter(g => g.type === 'project')
-  const algorithmGroups = result.groups.filter(g => g.type === 'algorithm')
-  const hrGroups = result.groups.filter(g => g.type === 'hr')
-  const otherGroups = result.groups.filter(g => g.type === 'other')
+      {/* 右侧内容区 */}
+      <div className="learn-main">
+        {/* 输入页 */}
+        {!result && !loading && (
+          <div className="interview-upload">
+            {/* 语音上传 */}
+            <div style={{ display: 'flex', gap: 12, marginBottom: 12, alignItems: 'center' }}>
+              <input type="file" ref={audioInputRef} accept=".mp3,.wav,.m4a,.flac,.ogg,.wma,.aac"
+                style={{ display: 'none' }} onChange={handleAudioUpload} />
+              <button onClick={() => audioInputRef.current?.click()} disabled={audioLoading}
+                style={{ padding: '8px 16px', fontSize: 13, border: '1px solid #d9d9d9', borderRadius: 8, background: '#fff', cursor: audioLoading ? 'not-allowed' : 'pointer', fontFamily: 'inherit' }}>
+                {audioLoading ? '🎤 转写中...' : '🎤 上传录音'}
+              </button>
+              {audioFile && <span style={{ fontSize: 12, color: '#999' }}>📎 {audioFile.name}</span>}
+              <div style={{ flex: 1 }} />
+              <input placeholder="公司" value={company} onChange={e => setCompany(e.target.value)}
+                style={{ width: 120, padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, fontFamily: 'inherit' }} />
+              <input placeholder="职位" value={position} onChange={e => setPosition(e.target.value)}
+                style={{ width: 120, padding: '6px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, fontFamily: 'inherit' }} />
+            </div>
+
+            <textarea className="form-textarea" rows={16} value={text} onChange={e => setText(e.target.value)}
+              placeholder={'粘贴面试记录 或 上传录音自动转写...\n\n示例：\n面试官问了分布式锁怎么实现，我说了SETNX加过期时间，追问看门狗我没答上来。\n然后聊了我的订单系统项目，问超时取消怎么做的。\n手撕了LRU。问了离职原因。'} />
+            <div style={{ marginTop: 12, display: 'flex', justifyContent: 'flex-end' }}>
+              <button onClick={() => handleParse(false)} disabled={!text.trim() || loading}
+                style={{
+                  padding: '10px 28px', fontSize: 14, fontWeight: 600, border: 'none', borderRadius: 10,
+                  background: loading ? '#d9d9d9' : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                  color: '#fff', cursor: loading ? 'not-allowed' : 'pointer',
+                  boxShadow: loading ? 'none' : '0 4px 14px rgba(102,126,234,0.4)',
+                  transition: 'all 0.3s', fontFamily: 'inherit',
+                }}>
+                🔍 开始解析
+              </button>
+            </div>
+            {error && (
+              <div style={{ marginTop: 12, padding: '10px 16px', background: '#fff2f0', border: '1px solid #ffccc7', borderRadius: 8, fontSize: 13, color: '#ff4d4f' }}>
+                ❌ {error}
+              </div>
+            )}
+          </div>
+        )}
+
+        {loading && <div className="learn-loading">🧠 正在解析面试记录...</div>}
+
+        {/* 重复检测弹窗 */}
+        {duplicateInfo && (
+          <div className="outliner-dialog-overlay" onClick={() => setDuplicateInfo(null)}>
+            <div className="outliner-dialog" style={{ width: 440 }} onClick={e => e.stopPropagation()}>
+              <div className="outliner-dialog-header">
+                <h3>检测到相同面试记录</h3>
+                <button className="outliner-dialog-close" onClick={() => setDuplicateInfo(null)}>×</button>
+              </div>
+              <div className="outliner-dialog-body" style={{ fontSize: 14, lineHeight: 1.8 }}>
+                <p>该面试文本已于 <b>{duplicateInfo.created_at?.slice(0, 10)}</b> 上传过：</p>
+                <p style={{ color: '#555' }}>
+                  {duplicateInfo.company || '未命名'}{duplicateInfo.position ? ` · ${duplicateInfo.position}` : ''}
+                  {duplicateInfo.avg_score != null && <span style={{ marginLeft: 8, color: sc(duplicateInfo.avg_score) }}>{duplicateInfo.avg_score}分</span>}
+                </p>
+              </div>
+              <div className="outliner-dialog-footer" style={{ display: 'flex', gap: 8 }}>
+                <button className="outliner-dialog-cancel" onClick={() => setDuplicateInfo(null)}>取消上传</button>
+                <button className="outliner-dialog-submit" style={{ background: '#ff4d4f' }} onClick={handleOverwrite}>覆盖旧记录</button>
+                <button className="outliner-dialog-submit" onClick={() => { setDuplicateInfo(null); handleParse(true) }}>上传为新面试</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 结果页 */}
+        {result && !loading && (() => {
+  const knowledgeGroups = result.groups?.filter(g => g.type === 'knowledge') || []
+  const projectGroups = result.groups?.filter(g => g.type === 'project') || []
+  const algorithmGroups = result.groups?.filter(g => g.type === 'algorithm') || []
+  const hrGroups = result.groups?.filter(g => g.type === 'hr') || []
+  const otherGroups = result.groups?.filter(g => g.type === 'other') || []
   const otherCount = algorithmGroups.length + hrGroups.length + otherGroups.length
 
   const tabs = [
@@ -145,7 +273,7 @@ export default function InterviewPage() {
   const oa = result.overall_analysis
 
   return (
-    <div className="interview-result">
+    <div className="interview-result" style={{ padding: '0 20px' }}>
       {/* ---- 整体分析 ---- */}
       <div className="tree-card" style={{ padding: '16px 20px', marginBottom: 16 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 8 }}>
@@ -415,7 +543,11 @@ export default function InterviewPage() {
         </div>
       )}
 
-      <button className="parse-btn" onClick={() => { setResult(null); setText(''); sessionStorage.removeItem('iv_result') }} style={{ marginTop: 20 }}>📋 重新上传</button>
+      <button className="parse-btn" onClick={handleNewInterview} style={{ marginTop: 20 }}>📋 新建面试</button>
+    </div>
+  )
+  })()}
+      </div>
     </div>
   )
 }

@@ -22,3 +22,4 @@ streamlit>=1.38.0
 # Dev
 httpx>=0.27.0
 pgvector==0.4.2
+dashscope
