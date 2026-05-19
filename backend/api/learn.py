@@ -2,6 +2,7 @@
 学习页面 API — 知识讲解 + 探索对话
 """
 import logging
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from backend.services.llm import get_llm, parse_llm_json
 from backend.skills.learn_content_skill import execute_content_skill
 from backend.prompts.learn_prompts import (
     LEARN_QUESTIONS_PROMPT, LEARN_CHAT_PROMPT, LEARN_MERGE_PROMPT,
+    LEARN_CHAT_MERGE_SUBTOPIC_PROMPT, LEARN_CHAT_NEW_SUBTOPIC_PROMPT,
 )
 
 logger = logging.getLogger(__name__)
@@ -84,7 +86,7 @@ async def get_content(
     llm = get_llm(temperature=0.3, max_tokens=4096)
     questions = []
     try:
-        q_prompt = LEARN_QUESTIONS_PROMPT.format(knowledge_point=node.name)
+        q_prompt = LEARN_QUESTIONS_PROMPT.format(knowledge_point=node.name, category_path=category_path)
         q_resp = await llm.ainvoke(q_prompt)
         q_data = parse_llm_json(q_resp.content)
         questions = q_data.get("questions", [])
@@ -128,10 +130,69 @@ async def get_content(
     })
 
 
+@router.delete("/content/{kp_id}", summary="删除知识点讲解内容")
+async def delete_content(
+    kp_id: int,
+    db: AsyncSession = Depends(get_db),
+) -> ApiResponse:
+    """删除已生成的知识点讲解内容，同时清空相关对话记录。"""
+    result = await db.execute(
+        select(KnowledgeContent).where(KnowledgeContent.knowledge_point_id == kp_id)
+    )
+    existing = result.scalar_one_or_none()
+    if not existing:
+        raise HTTPException(status_code=404, detail="该知识点暂无讲解内容")
+
+    await db.delete(existing)
+
+    # 同时清空对话记录
+    chat_result = await db.execute(
+        select(LearnChat).where(LearnChat.knowledge_point_id == kp_id)
+    )
+    for chat in chat_result.scalars().all():
+        await db.delete(chat)
+
+    await db.commit()
+    return ApiResponse.ok(data={"deleted": True})
+
+
 class ChatRequest(BaseModel):
     knowledge_point_id: int
     message: str
     quoted_text: str | None = None
+
+
+def _split_subtopics(content: str) -> list[dict]:
+    """将 Markdown 内容按 #### 分割出子话题列表，返回 [{title, text, start, end}]"""
+    parts = re.split(r'^(#### .+)$', content, flags=re.MULTILINE)
+    subtopics = []
+    for i in range(1, len(parts), 2):
+        title = parts[i].replace('#### ', '').strip()
+        body = parts[i + 1] if i + 1 < len(parts) else ''
+        full_text = parts[i] + body
+        subtopics.append({"title": title, "text": full_text.strip()})
+    return subtopics
+
+
+def _find_subtopic_by_quote(content: str, quoted_text: str) -> dict | None:
+    """根据引用文本匹配所属子话题（简单文本包含匹配）"""
+    subtopics = _split_subtopics(content)
+    if not subtopics:
+        return None
+    # 优先精确包含匹配
+    for st in subtopics:
+        if quoted_text in st["text"]:
+            return st
+    # 其次标题关键词匹配
+    for st in subtopics:
+        if any(kw in quoted_text for kw in st["title"].split() if len(kw) >= 2):
+            return st
+    return None
+
+
+def _replace_subtopic(content: str, old_text: str, new_text: str) -> str:
+    """在内容中替换指定子话题文本"""
+    return content.replace(old_text.strip(), new_text.strip(), 1)
 
 
 @router.post("/chat", summary="学习探索对话")
@@ -139,12 +200,12 @@ async def chat(
     req: ChatRequest,
     db: AsyncSession = Depends(get_db),
 ) -> ApiResponse:
-    """在知识点上下文中进行探索对话"""
+    """探索对话：回复用户 + 实时融合到讲解内容"""
     node = await db.get(KnowledgeNode, req.knowledge_point_id)
     if not node:
         raise HTTPException(status_code=404, detail="知识点不存在")
 
-    # 获取知识内容作为上下文
+    # 获取知识内容
     kc_result = await db.execute(
         select(KnowledgeContent).where(KnowledgeContent.knowledge_point_id == req.knowledge_point_id)
     )
@@ -159,15 +220,20 @@ async def chat(
     )
     history = chat_result.scalars().all()
     chat_history = "\n".join(
-        f"{'用户' if c.role == 'user' else 'AI'}: {c.content}" for c in history[-10:]  # 最近10条
+        f"{'用户' if c.role == 'user' else 'AI'}: {c.content}" for c in history[-10:]
     ) or "（暂无）"
 
-    # 处理引用
+    # 匹配引用所属子话题
+    matched_subtopic = None
+    if req.quoted_text:
+        matched_subtopic = _find_subtopic_by_quote(content_text, req.quoted_text)
+
+    # 构建用户输入
     user_input = req.message.strip()
     if req.quoted_text:
         user_input = f"【引用】{req.quoted_text}\n\n{user_input}"
 
-    # LLM 对话
+    # Step 1: LLM 对话回复
     llm = get_llm(temperature=0.3, max_tokens=4096)
     prompt = LEARN_CHAT_PROMPT.format(
         knowledge_point=node.name,
@@ -182,6 +248,86 @@ async def chat(
     except Exception as e:
         logger.error(f"对话失败: {e}")
         raise HTTPException(status_code=500, detail="对话失败，请重试")
+
+    # Step 2: 实时融合到讲解内容
+    updated_subtopic = None
+    updated_content = None
+    if kc:
+        try:
+            if matched_subtopic:
+                # 有引用 → 融合到匹配的子话题
+                merge_prompt = LEARN_CHAT_MERGE_SUBTOPIC_PROMPT.format(
+                    subtopic_text=matched_subtopic["text"],
+                    chat_reply=reply,
+                )
+                merge_resp = await llm.ainvoke(merge_prompt)
+                merged_text = merge_resp.content.strip()
+                # 去掉可能的前导语
+                if merged_text and '####' in merged_text:
+                    idx = merged_text.index('####')
+                    merged_text = merged_text[idx:].strip()
+                if merged_text and merged_text != matched_subtopic["text"]:
+                    updated_subtopic = merged_text
+                    kc.content = _replace_subtopic(kc.content, matched_subtopic["text"], merged_text)
+                    updated_content = kc.content
+                    await db.flush()
+            else:
+                # 无引用 → LLM 判断融入已有子话题 or 新建
+                existing_subtopics = _split_subtopics(content_text)
+                existing_desc = "\n\n".join(
+                    f"【{i+1}】{st['text']}" for i, st in enumerate(existing_subtopics)
+                ) or "（暂无）"
+                new_prompt = LEARN_CHAT_NEW_SUBTOPIC_PROMPT.format(
+                    knowledge_point=node.name,
+                    existing_subtopics=existing_desc,
+                    chat_reply=reply,
+                    user_question=req.message.strip(),
+                )
+                new_resp = await llm.ainvoke(new_prompt)
+                raw = new_resp.content.strip()
+
+                if raw.startswith("SKIP"):
+                    pass  # 无价值内容，不融合
+                elif raw.startswith("MERGE:"):
+                    # 融入已有子话题，可能附带删除冗余子话题
+                    lines = raw.split('\n', 1)
+                    directive = lines[0]  # e.g. "MERGE:2,DELETE:5"
+                    try:
+                        parts = directive.split(',')
+                        merge_idx = int(parts[0].replace("MERGE:", "").strip()) - 1
+                        delete_indices = []
+                        for p in parts[1:]:
+                            if p.strip().startswith("DELETE:"):
+                                delete_indices.append(int(p.strip().replace("DELETE:", "").strip()) - 1)
+
+                        merged_text = lines[1].strip() if len(lines) > 1 else ""
+                        if '####' in merged_text:
+                            merged_text = merged_text[merged_text.index('####'):].strip()
+                        if 0 <= merge_idx < len(existing_subtopics) and merged_text:
+                            updated_subtopic = merged_text
+                            # 先删除冗余子话题（从后往前删，避免索引偏移）
+                            for di in sorted(delete_indices, reverse=True):
+                                if 0 <= di < len(existing_subtopics) and di != merge_idx:
+                                    kc.content = kc.content.replace(existing_subtopics[di]["text"], "", 1).strip()
+                            # 再替换目标子话题
+                            kc.content = _replace_subtopic(kc.content, existing_subtopics[merge_idx]["text"], merged_text)
+                            # 清理多余空行
+                            kc.content = re.sub(r'\n{3,}', '\n\n', kc.content)
+                            updated_content = kc.content
+                            await db.flush()
+                    except (ValueError, IndexError) as e:
+                        logger.warning(f"解析 MERGE 指令失败: {e}")
+                elif raw.startswith("NEW"):
+                    new_text = raw.split('\n', 1)[1].strip() if '\n' in raw else ""
+                    if new_text and '####' in new_text:
+                        new_text = new_text[new_text.index('####'):].strip()
+                    if new_text and new_text.startswith('####'):
+                        updated_subtopic = new_text
+                        kc.content = kc.content.rstrip() + "\n\n" + new_text
+                        updated_content = kc.content
+                        await db.flush()
+        except Exception as e:
+            logger.warning(f"子话题融合失败（不影响对话）: {e}")
 
     # 保存对话记录
     user_msg = LearnChat(
@@ -199,7 +345,11 @@ async def chat(
     db.add(ai_msg)
     await db.commit()
 
-    return ApiResponse.ok(data={"reply": reply})
+    return ApiResponse.ok(data={
+        "reply": reply,
+        "updated_subtopic": updated_subtopic,
+        "updated_content": updated_content,
+    })
 
 
 @router.get("/chat-history/{kp_id}", summary="获取对话历史")
@@ -257,6 +407,11 @@ async def merge_chat(
             merged = merged[3:].strip()
         if merged.endswith("```"):
             merged = merged[:-3].strip()
+        # 去掉 LLM 前导语（如"好的，这是..."），只保留从 ### 开始的正文
+        lines = merged.split('\n')
+        first_section = next((i for i, l in enumerate(lines) if l.strip().startswith('### ')), 0)
+        if first_section > 0:
+            merged = '\n'.join(lines[first_section:]).strip()
     except Exception as e:
         logger.error(f"合并失败: {e}")
         raise HTTPException(status_code=500, detail="合并失败，请重试")

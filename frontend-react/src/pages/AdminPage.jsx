@@ -84,6 +84,9 @@ export default function AdminPage() {
   const [logs, setLogs] = useState([])
   const [done, setDone] = useState(false)
   const logsEndRef = useRef(null)
+  // 面板折叠状态（默认全部收起）
+  const [openSections, setOpenSections] = useState({})
+  const toggleSection = (key) => setOpenSections(prev => ({ ...prev, [key]: !prev[key] }))
   // 知识树编辑
   const [treeNodes, setTreeNodes] = useState([])
   const [editingId, setEditingId] = useState(null)
@@ -234,15 +237,17 @@ export default function AdminPage() {
     <div>
       {/* ---- 用户画像 ---- */}
       <div className="tree-card" style={{ padding: '20px 24px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>👤 用户画像</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          onClick={() => toggleSection('profile')}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>
+            <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: openSections.profile ? 'rotate(90deg)' : 'rotate(0deg)', marginRight: 6 }}>▸</span>
+            👤 用户画像
+          </h3>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {profileSaved && <span style={{ fontSize: 13, color: '#52c41a' }}>✓ 已保存</span>}
-            <button className="parse-btn" onClick={handleSaveProfile} disabled={!profile.trim()}>
-              保存
-            </button>
           </div>
         </div>
+        {openSections.profile && (<div style={{ marginTop: 12 }}>
         <p style={{ fontSize: 13, color: '#888', margin: '0 0 8px' }}>
           描述你的背景和目标（自由填写），Agent 会据此个性化生成知识树
         </p>
@@ -254,16 +259,30 @@ export default function AdminPage() {
           placeholder={DEFAULT_PROFILE}
           style={{ fontSize: 13 }}
         />
+        <div style={{ marginTop: 8, textAlign: 'right' }}>
+          <button className="parse-btn" onClick={handleSaveProfile} disabled={!profile.trim()}>保存</button>
+        </div>
+        </div>)}
       </div>
 
       {/* ---- 知识树初始化 ---- */}
       <div className="tree-card" style={{ padding: '20px 24px', marginBottom: 20 }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-          <h3 style={{ margin: 0, fontSize: 16 }}>🌳 知识树初始化</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+          onClick={() => toggleSection('init')}>
+          <h3 style={{ margin: 0, fontSize: 16 }}>
+            <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: openSections.init ? 'rotate(90deg)' : 'rotate(0deg)', marginRight: 6 }}>▸</span>
+            🌳 知识树初始化
+          </h3>
+          {stats?.initialized && !openSections.init && (
+            <span style={{ fontSize: 12, color: '#52c41a' }}>✅ {stats.leaf_count} 个知识点</span>
+          )}
+        </div>
+        {openSections.init && (<div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
           <button className="parse-btn" onClick={handleInit} disabled={initing || !profile.trim()}>
             {initing ? '⏳ 初始化中...' : stats?.initialized ? '🔄 重新生成' : '🚀 LLM生成'}
           </button>
-        </div>
+          </div>
 
         {/* 统计信息 */}
         {stats && (
@@ -317,13 +336,24 @@ export default function AdminPage() {
             <a href="/" style={{ marginLeft: 8, color: '#1677ff' }}>去知识树查看 →</a>
           </div>
         )}
+        </div>)}
       </div>
 
       {/* ---- 知识树编辑 ---- */}
       {treeNodes.length > 0 && (
         <div className="tree-card" style={{ padding: '20px 24px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h3 style={{ margin: 0, fontSize: 16 }}>✏️ 知识树编辑</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
+            onClick={() => toggleSection('edit')}>
+            <h3 style={{ margin: 0, fontSize: 16 }}>
+              <span style={{ display: 'inline-block', transition: 'transform 0.2s', transform: openSections.edit ? 'rotate(90deg)' : 'rotate(0deg)', marginRight: 6 }}>▸</span>
+              ✏️ 知识树编辑
+            </h3>
+            {!openSections.edit && (
+              <span style={{ fontSize: 12, color: '#888' }}>{treeNodes.length} 个节点</span>
+            )}
+          </div>
+          {openSections.edit && (<div style={{ marginTop: 12 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 8 }}>
             <button className="parse-btn" style={{ fontSize: 12, padding: '4px 12px' }}
               onClick={() => { setAddParentId(null); setAddName('') }}>
               ＋ 添加一级分类
@@ -348,6 +378,7 @@ export default function AdminPage() {
               setEditingId={setEditingId} setEditName={setEditName} setAddParentId={setAddParentId} setAddName={setAddName}
               onUpdate={handleUpdateNode} onDelete={handleDeleteNode} onAdd={handleAddNode} />
           ))}
+          </div>)}
         </div>
       )}
     </div>

@@ -15,7 +15,12 @@ export default function OutlinerPage() {
   // flatNodes: [{ id, parent_id, name, level, node_type, interview_weight, sort_order }]
   const [flatNodes, setFlatNodes] = useState([])
   const [loading, setLoading] = useState(true)
-  const [collapsed, setCollapsed] = useState(new Set()) // 折叠的节点 id
+  const [collapsed, setCollapsed] = useState(() => {
+    try {
+      const saved = localStorage.getItem('outliner_collapsed')
+      return saved ? new Set(JSON.parse(saved)) : new Set()
+    } catch { return new Set() }
+  }) // 折叠的节点 id
   const [focusId, setFocusId] = useState(null) // 当前聚焦的节点
   const [dragId, setDragId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
@@ -135,6 +140,7 @@ export default function OutlinerPage() {
       const next = new Set(prev)
       if (next.has(nodeId)) next.delete(nodeId)
       else next.add(nodeId)
+      localStorage.setItem('outliner_collapsed', JSON.stringify([...next]))
       return next
     })
   }
@@ -189,8 +195,8 @@ export default function OutlinerPage() {
           // 更新 sort_order: 把后续同级节点的 sort_order 都+1
           const updates = []
           for (const s of siblings) {
-            if (s.sort_order >= newSortOrder && s.id !== newId) {
-              updates.push({ id: s.id, sort_order: s.sort_order + 1 })
+            if ((s.sort_order ?? 0) >= newSortOrder && s.id !== newId) {
+              updates.push({ id: s.id, sort_order: (s.sort_order ?? 0) + 1 })
             }
           }
           updates.push({ id: newId, sort_order: newSortOrder })
@@ -253,6 +259,7 @@ export default function OutlinerPage() {
       setCollapsed(prev => {
         const next = new Set(prev)
         next.delete(newParent.id)
+        localStorage.setItem('outliner_collapsed', JSON.stringify([...next]))
         return next
       })
     } catch (e) {

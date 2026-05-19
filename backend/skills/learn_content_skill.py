@@ -21,12 +21,7 @@ logger = logging.getLogger(__name__)
 class SectionType(str, Enum):
     """内容模块类型"""
     OVERVIEW = "overview"           # 📌 一句话概述
-    MUST_KNOW = "must_know"         # 🔑 必须掌握
     CORE_PRINCIPLE = "core"         # 💡 核心原理
-    MISCONCEPTIONS = "misconception"  # ⚠️ 常见误区
-    CODE_EXAMPLE = "code"           # 💻 代码示例
-    KEY_DETAILS = "details"         # 🔍 关键细节
-    COMPARISON = "comparison"       # 📊 对比表格
 
 
 @dataclass
@@ -50,46 +45,28 @@ SECTION_REGISTRY: list[SectionSpec] = [
         max_length="1 句话",
     ),
     SectionSpec(
-        type=SectionType.MUST_KNOW,
-        emoji="🔑", title="必须掌握",
-        required=True,
-        format_rule="3-5 个要点，每个格式：`- ✅ **关键词**：一句话（≤20字）`",
-        max_length="3-5 条",
-    ),
-    SectionSpec(
         type=SectionType.CORE_PRINCIPLE,
         emoji="💡", title="核心原理",
         required=True,
-        format_rule="2-3 段。第1段：是什么/怎么工作。第2段：为什么这样设计。第3段（可选）：对比。每段≤3句",
-        max_length="2-3 段，每段≤3句",
-    ),
-    SectionSpec(
-        type=SectionType.MISCONCEPTIONS,
-        emoji="⚠️", title="常见误区",
-        required=True,
-        format_rule="2-3 对，每对格式：\n`- ❌ 错误理解：xxx`\n`- ✅ 正确理解：xxx`",
-        max_length="2-3 对",
-    ),
-    SectionSpec(
-        type=SectionType.CODE_EXAMPLE,
-        emoji="💻", title="代码示例",
-        required=False,
-        format_rule="≤15 行代码 + 1-2 句说明。仅在知识点涉及代码时输出",
-        max_length="15 行代码",
-    ),
-    SectionSpec(
-        type=SectionType.KEY_DETAILS,
-        emoji="🔍", title="关键细节",
-        required=False,
-        format_rule="3-5 个列表项，面试官常追问的细节。仅在高频追问点多时输出",
-        max_length="3-5 条",
-    ),
-    SectionSpec(
-        type=SectionType.COMPARISON,
-        emoji="📊", title="对比表格",
-        required=False,
-        format_rule="Markdown 表格对比。仅在有明确可比对象时输出（如 RDB vs AOF）",
-        max_length="3-5 行表格",
+        format_rule="""根据知识点（面试知识方向）自动列出 3-8 个面试必考的具体子话题，每个用 #### 标题。
+子话题 = 面试官会单独提问的最小知识单元。
+
+例如：
+- 锁机制 → #### synchronized原理、#### ReentrantLock与AQS、#### 锁升级过程、#### 读写锁、#### 死锁检测
+- 线程池 → #### 核心参数详解、#### 工作流程、#### 拒绝策略、#### 线程工厂与命名、#### 动态调参
+- 消息可靠性 → #### 发送确认机制、#### 事务消息、#### 持久化与刷盘、#### 消费确认与重投、#### 死信队列
+- 事务与MVCC → #### 四种隔离级别、#### MVCC实现原理、#### ReadView机制、#### undo log与版本链
+
+每个子话题的结构（严格遵守）：
+1. 2-4 句话讲解，简洁专业，关键词用 **加粗**
+2. 末尾必须附 1-2 个面试追问（用引用块格式），并给出简短答案：
+   > 🎙 面试追问：xxx？
+   > 答：一句话回答。
+
+可包含简短代码示例（≤10行）和对比表格。
+
+禁止生成「面试加分点」「加分项」模块，只用 `> 🎙 面试追问` 格式。""",
+        max_length="根据知识方向复杂度自动决定，通常 3-8 个子话题",
     ),
 ]
 
@@ -121,6 +98,14 @@ def build_skill_prompt(knowledge_point: str, category_path: str) -> str:
 ## 所属分类路径
 {category_path}
 
+## ❗❗ 领域约束
+**必须严格按照「所属分类路径」确定知识点的技术领域！**
+- 路径以 mysql 开头 → 讲 MySQL 相关内容，不要讲 Java
+- 路径以 redis 开头 → 讲 Redis 相关内容
+- 路径以 Java 开头 → 讲 Java 相关内容
+- 即使知识点名称和其他领域有同名概念（如"线程池"），也必须讲当前路径对应技术的版本
+- 例：mysql → 连接数与线程池 → 讲的是 MySQL 的线程池（thread_pool 插件、连接管理），不是 Java ThreadPoolExecutor
+
 ## ⚠️ 内容模板（严格遵守）
 
 **【必选模块】以下 {len(required_sections)} 个模块必须全部输出：**
@@ -132,7 +117,7 @@ def build_skill_prompt(knowledge_point: str, category_path: str) -> str:
 2. 全文不用 `#` 和 `##`
 3. 关键词用 `**加粗**`，要点用 ✅/❌ 标注
 4. 每段最多 3 句话，拒绝大段文字
-5. 总长度 500-800 字
+5. 总长度 800-1500 字
 6. 不要输出"总结""小结"等收尾内容
 7. 不要自创模块，只用上面定义的模块
 

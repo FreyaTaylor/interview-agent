@@ -250,3 +250,47 @@ cd frontend && streamlit run app.py
 | 完成模块 | 面试复盘全链路、代码重构、知识树初始化 |
 | 当前页面 | 知识树、学习、面试复盘、项目拷打、其他问题、管理（共 6 个） |
 | 当前 API | 8 个端点（study×3 + knowledge×1 + interview×3 + admin×4） |
+
+---
+
+## 2026-05-19 — 学习页 Prompt 优化 + 管理页交互修复
+
+### 变更概述
+
+优化学习页讲解生成和对话融合的 Prompt 质量，修复管理页（OutlinerPage）多个交互 bug，新增删除知识点时清理关联数据的能力。
+
+### Prompt 优化
+
+| 位置 | 问题 | 修复 |
+|------|------|------|
+| `LEARN_CHAT_MERGE_SUBTOPIC_PROMPT` | 融入内容过于冗长，语义相同也改写 | 新增规则：先判断是否有新知识，语义相同则原样返回；简洁优先，限制增幅 ≤50% |
+| `LEARN_MERGE_PROMPT` | 合并后出现「面试加分点」「加分项」等自创模块 | 明确禁止面试加分点，只允许 `> 🎙 面试追问` 格式 |
+| `LEARN_CHAT_PROMPT` | 用户问"xxx是什么"时 AI 自行展开为对比分析 | 第一条规则改为「严格按用户字面意思回答」 |
+| `learn_content_skill.py` | 核心原理模块偶现面试加分点 | format_rule 末尾追加禁止面试加分点的规则 |
+
+### 功能变更
+
+| 功能 | 说明 |
+|------|------|
+| 删除知识点清理关联数据 | 管理页删除知识点时，同步清理 `knowledge_content` + `learn_chat` 记录，避免外键约束报错 |
+| 知识讲解重新生成 | 学习页新增「🗑 重新生成」按钮，调用 DELETE 接口删除旧内容后自动重新生成 |
+| 管理页折叠状态持久化 | 通过 `localStorage` 保存展开/折叠状态，再次进入页面恢复上次状态 |
+| `####` 标题解析兼容 | 前端正则兼容 `####标题`（无空格）和 `#### 标题`（有空格）两种 LLM 输出 |
+| 新增兄弟节点修复 | 修复最后一个节点按 Enter 新增同级节点失败的 bug（`sort_order` 为 null 时比较异常） |
+
+### 新增 API
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| DELETE | `/api/learn/content/{kp_id}` | 删除知识点讲解内容 + 对话记录 |
+
+### 修改文件
+
+| 文件 | 说明 |
+|------|------|
+| `backend/api/admin.py` | 删除节点时清理 KnowledgeContent、LearnChat |
+| `backend/api/learn.py` | 新增 DELETE 接口 |
+| `backend/prompts/learn_prompts.py` | 优化融合/对话/合并 Prompt |
+| `backend/skills/learn_content_skill.py` | 禁止面试加分点 |
+| `frontend-react/src/pages/LearnPage.jsx` | 新增重新生成按钮，修复 #### 解析 |
+| `frontend-react/src/pages/OutlinerPage.jsx` | 折叠状态持久化，修复 sort_order null bug |

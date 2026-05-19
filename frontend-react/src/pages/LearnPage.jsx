@@ -18,6 +18,72 @@ function MarkdownContent({ content }) {
   return <Markdown remarkPlugins={[remarkGfm]}>{content}</Markdown>
 }
 
+// 将讲解内容按 ### 模块分块，每个 h4 子话题渲染为卡片
+function LearnContentCards({ content }) {
+  if (!content) return null
+  // 按 ### 分割出顶级模块
+  const sections = content.split(/^(?=### )/m).filter(s => s.trim())
+
+  return sections.map((section, si) => {
+    // 提取 ### 标题行
+    const lines = section.split('\n')
+    const titleLine = lines[0]?.replace(/^###\s*/, '') || ''
+    const body = lines.slice(1).join('\n').trim()
+
+    // 判断是否包含 #### 子话题（兼容 #### 后有无空格）
+    const hasSubTopics = /^####\s?\S/m.test(body)
+
+    if (!hasSubTopics) {
+      // 没有 #### 的模块（如一句话概述）：整块渲染为卡片
+      return (
+        <div key={si} className="learn-section-card">
+          <div className="learn-section-title">{titleLine}</div>
+          <div className="learn-section-body">
+            <MarkdownContent content={body} />
+          </div>
+        </div>
+      )
+    }
+
+    // 有 #### 的模块（如核心原理）：每个 #### 渲染为子卡片
+    const subSections = body.split(/^(?=####\s?\S)/m).filter(s => s.trim())
+    // 可能 #### 前还有一段引导文字
+    const leadParts = []
+    const subCards = []
+    for (const sub of subSections) {
+      if (/^####\s?\S/.test(sub)) {
+        const subLines = sub.split('\n')
+        const subTitle = subLines[0].replace(/^####\s*/, '')
+        const subBody = subLines.slice(1).join('\n').trim()
+        subCards.push({ title: subTitle, body: subBody })
+      } else {
+        leadParts.push(sub)
+      }
+    }
+
+    return (
+      <div key={si} className="learn-section-card">
+        <div className="learn-section-title">{titleLine}</div>
+        {leadParts.map((lp, li) => (
+          <div key={li} className="learn-section-body">
+            <MarkdownContent content={lp} />
+          </div>
+        ))}
+        <div className="learn-sub-cards">
+          {subCards.map((sc, ci) => (
+            <div key={ci} className="learn-sub-card">
+              <div className="learn-sub-card-title">{sc.title}</div>
+              <div className="learn-sub-card-body">
+                <MarkdownContent content={sc.body} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  })
+}
+
 // 查找节点的祖先 ID 列表
 function findAncestorIds(tree, targetId) {
   const ancestors = new Set()
@@ -189,7 +255,16 @@ export default function LearnPage() {
         body: JSON.stringify({ knowledge_point_id: activeKpId, message: msg, quoted_text: quote }),
       }).then(r => r.json())
       if (resp.code === 0) {
-        setChatHistory(prev => [...prev, { role: 'assistant', content: resp.data.reply }])
+        const { reply, updated_subtopic, updated_content } = resp.data
+        setChatHistory(prev => [...prev, {
+          role: 'assistant',
+          content: reply,
+          updated_subtopic: updated_subtopic || null,
+        }])
+        // 实时更新讲解内容
+        if (updated_content) {
+          setContent(prev => ({ ...prev, content: updated_content }))
+        }
       }
     } catch (e) {
       console.error('对话失败:', e)
@@ -260,6 +335,19 @@ export default function LearnPage() {
                 <span className="learn-mastery">
                   掌握度 <span style={{ color: mColor, fontWeight: 600 }}>{m}%</span>
                 </span>
+                <button className="learn-switch-btn" style={{ color: '#ff4d4f', borderColor: '#ff4d4f' }}
+                  onClick={async () => {
+                    if (!confirm('确定删除当前讲解内容？删除后重新进入将重新生成。')) return
+                    try {
+                      const resp = await fetch(`${API_LEARN}/content/${activeKpId}`, { method: 'DELETE' }).then(r => r.json())
+                      if (resp.code === 0) {
+                        setContent(null)
+                        setChatHistory([])
+                        loadContent(activeKpId)
+                        loadChatHistory(activeKpId)
+                      }
+                    } catch (e) { console.error('删除失败:', e) }
+                  }}>🗑 重新生成</button>
                 <Link to={`/exam/${activeKpId}`} className="learn-switch-btn exam">✈️ 去答题</Link>
               </div>
             </div>
@@ -269,7 +357,7 @@ export default function LearnPage() {
               {/* 知识内容 */}
               <div className="learn-content-area">
                 <div className="learn-content" ref={contentRef}>
-                  <MarkdownContent content={content.content} />
+                  <LearnContentCards content={content.content} />
                 </div>
 
                 {/* 高频面试题 */}
@@ -309,6 +397,14 @@ export default function LearnPage() {
                         <div className="learn-chat-quote">📎 {msg.quoted_text}</div>
                       )}
                       <div><MarkdownContent content={msg.content} /></div>
+                      {msg.updated_subtopic && (
+                        <div className="learn-chat-subtopic-update">
+                          <div className="learn-chat-subtopic-label">📝 已融合到讲解</div>
+                          <div className="learn-chat-subtopic-preview">
+                            <MarkdownContent content={msg.updated_subtopic} />
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                   {chatLoading && <div className="learn-chat-msg assistant">🤔 思考中...</div>}

@@ -14,6 +14,7 @@ from backend.database import get_db
 from backend.models.user import User
 from backend.models.knowledge import KnowledgeNode
 from backend.models.study import MasteryRecord, MasteryHistory, Conversation, ConversationMessage
+from backend.models.learn import KnowledgeContent, LearnChat
 from backend.schemas.common import ApiResponse
 from backend.services.tree import (
     init_knowledge_tree, generate_skeleton,
@@ -298,16 +299,26 @@ async def delete_tree_node(
     if not node:
         raise HTTPException(status_code=404, detail="节点不存在")
 
+    # 收集要删除的所有节点 id（含自身和所有子孙）
+    all_ids = [node.id]
+
     # 递归删除子节点
     async def delete_children(parent_id: int):
         children = await db.execute(
             select(KnowledgeNode).where(KnowledgeNode.parent_id == parent_id)
         )
         for child in children.scalars().all():
+            all_ids.append(child.id)
             await delete_children(child.id)
             await db.delete(child)
 
     await delete_children(node.id)
+
+    # 清理关联数据（讲解内容、对话记录）
+    from sqlalchemy import delete as sql_delete
+    await db.execute(sql_delete(LearnChat).where(LearnChat.knowledge_point_id.in_(all_ids)))
+    await db.execute(sql_delete(KnowledgeContent).where(KnowledgeContent.knowledge_point_id.in_(all_ids)))
+
     # 删除前记录父节点 ID
     parent_id = node.parent_id
     await db.delete(node)

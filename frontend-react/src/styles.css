@@ -631,6 +631,12 @@ body {
   background: linear-gradient(90deg, #e6f4ff 0%, transparent 100%);
   padding: 6px 12px; border-radius: 6px; border-left: 3px solid #1677ff;
 }
+.learn-content h4 {
+  font-size: 14px; margin: 18px 0 8px; color: #444;
+  background: linear-gradient(90deg, #f0f5ff 0%, transparent 100%);
+  padding: 5px 10px; border-radius: 4px; border-left: 2px solid #91caff;
+  font-weight: 600;
+}
 /* 行内代码 */
 .learn-content code {
   background: #fff0f6; padding: 2px 7px; border-radius: 4px;
@@ -649,7 +655,7 @@ body {
 .learn-content li { margin: 5px 0; }
 .learn-content li::marker { color: #1677ff; }
 /* 加粗 */
-.learn-content strong { color: #1f1f1f; background: linear-gradient(transparent 60%, #bae0ff 60%); }
+.learn-content strong { color: #1f1f1f; font-weight: 700; }
 /* 表格 */
 .learn-content table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
 .learn-content th { background: #f0f5ff; padding: 8px 12px; border: 1px solid #d6e4ff; text-align: left; font-weight: 600; }
@@ -665,6 +671,44 @@ body {
 .learn-content hr { border: none; border-top: 1px dashed #d9d9d9; margin: 20px 0; }
 /* 段落间距 */
 .learn-content p { margin: 8px 0; }
+
+/* ---- 讲解内容分块卡片 ---- */
+.learn-section-card {
+  background: linear-gradient(135deg, #f0f7ff 0%, #fff 100%);
+  border: 1px solid #d6e4ff; border-radius: 12px;
+  padding: 20px 24px; margin-bottom: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+.learn-section-title {
+  font-size: 16px; font-weight: 700; color: #1677ff; margin-bottom: 12px;
+}
+.learn-section-body { font-size: 14px; color: #444; line-height: 1.8; }
+.learn-section-body blockquote {
+  border-left: 4px solid #faad14; background: #fffbe6;
+  padding: 10px 16px; margin: 10px 0; border-radius: 0 8px 8px 0;
+  color: #614700; font-size: 13.5px;
+}
+
+/* 子话题卡片 */
+.learn-sub-cards { display: flex; flex-direction: column; gap: 10px; }
+.learn-sub-card {
+  border: 1px solid #e6f4ff; border-radius: 10px; padding: 14px 18px;
+  background: #fafcff; transition: box-shadow 0.15s;
+}
+.learn-sub-card:hover { box-shadow: 0 2px 8px rgba(22,119,255,0.1); }
+.learn-sub-card-title {
+  font-size: 14px; font-weight: 600; color: #333; margin-bottom: 8px;
+  background: linear-gradient(90deg, #e6f4ff 0%, transparent 100%);
+  padding: 6px 12px; border-radius: 6px; border-left: 3px solid #1677ff;
+}
+.learn-sub-card-body { font-size: 13.5px; color: #555; line-height: 1.8; }
+.learn-sub-card-body p { margin: 4px 0; }
+.learn-sub-card-body strong { color: #1f1f1f; font-weight: 700; }
+.learn-sub-card-body blockquote {
+  border-left: 3px solid #91caff; background: #f0f7ff;
+  padding: 8px 14px; margin: 8px 0; border-radius: 0 6px 6px 0;
+  color: #444; font-size: 13px;
+}
 
 /* 面试题 */
 .learn-questions {
@@ -684,7 +728,7 @@ body {
 .learn-q-answer p { margin: 4px 0; }
 .learn-q-answer ul, .learn-q-answer ol { padding-left: 18px; margin: 6px 0; }
 .learn-q-answer li { margin: 3px 0; }
-.learn-q-answer strong { color: #333; }
+.learn-q-answer strong { color: #1f1f1f; text-decoration: underline; text-decoration-color: #1677ff; text-underline-offset: 3px; font-weight: 700; }
 
 /* ---- 右侧对话面板 ---- */
 .learn-chat-panel {
@@ -743,6 +787,18 @@ body {
   font-size: 12px; color: #8c8c8c; font-style: italic;
   margin-bottom: 6px; padding-bottom: 4px; border-bottom: 1px dashed #e8e8e8;
 }
+.learn-chat-subtopic-update {
+  margin-top: 8px; border-top: 1px dashed #d6e4ff; padding-top: 8px;
+}
+.learn-chat-subtopic-label {
+  font-size: 11px; color: #1677ff; font-weight: 600; margin-bottom: 4px;
+}
+.learn-chat-subtopic-preview {
+  font-size: 12px; color: #555; background: #f0f7ff; border-radius: 6px;
+  padding: 8px 10px; line-height: 1.6;
+}
+.learn-chat-subtopic-preview p { margin: 2px 0; }
+.learn-chat-subtopic-preview strong { color: #1f1f1f; font-weight: 700; }
 .learn-chat-input-wrap {
   display: flex; gap: 6px; padding: 10px 14px;
   border-top: 1px solid #f5f5f5; flex-shrink: 0;
