@@ -8,14 +8,14 @@ Core concept: "以考代学" (learn by testing) — the system quizzes users on 
 ## Must-Read Before Coding
 
 1. `CONVENTIONS.md` — coding standards, naming rules, business rules
-2. `docs/TECH_DESIGN.md` — data model (13 tables), page interaction flow, tech stack
-3. `docs/DESIGN_v2.md` — product design, feature scope, why Agent
+2. `docs/TECH_DESIGN.md` — 唯一技术设计与实现文档（产品理念 / 架构 / 数据模型 / API / Agent / 流程）
+3. `docs/modules/` — 单模块深入说明（如需）
 
 ## Tech Stack
 
 - Python 3.11+, FastAPI (async), LangGraph, SQLAlchemy 2.0 (async + asyncpg)
 - PostgreSQL 16 + pgvector, DeepSeek Chat API, DashScope Embedding
-- Frontend: Streamlit (Phase 0)
+- Frontend: React 19 + Vite + react-router-dom 7
 
 ## Key Rules
 

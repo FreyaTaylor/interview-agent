@@ -15,7 +15,10 @@ from backend.models.base import Base, TimestampMixin
 
 
 class KnowledgeContent(TimestampMixin, Base):
-    """知识点讲解内容 — LLM 生成后落库，再次访问直接读取"""
+    """知识点讲解内容 — LLM 生成后落库，再次访问直接读取
+
+    题目不在此表；统一由 `study_question` 承载（与答题页同源）。
+    """
     __tablename__ = "knowledge_content"
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -25,8 +28,6 @@ class KnowledgeContent(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(BigInteger, server_default="1")
     # Markdown 格式的知识讲解长文
     content: Mapped[str] = mapped_column(Text, nullable=False)
-    # 高频面试题列表 [{"question": "...", "answer": "..."}]
-    questions: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     # 用户对话补充的内容（追加到 content 中的记录）
     user_additions: Mapped[list[dict] | None] = mapped_column(JSONB, nullable=True)
     updated_at: Mapped[datetime] = mapped_column(

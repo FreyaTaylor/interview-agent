@@ -3,11 +3,13 @@
 - knowledge_node: 知识树节点（三层：一级分类/二级分类/三级叶子）
 """
 from datetime import datetime
+from typing import Any
 from sqlalchemy import (
     BigInteger, SmallInteger, Integer, String, Boolean,
     ForeignKey, DateTime, func,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from pgvector.sqlalchemy import Vector
 
 from backend.models.base import Base, TimestampMixin
 
@@ -32,6 +34,8 @@ class KnowledgeNode(TimestampMixin, Base):
     sort_order: Mapped[int] = mapped_column(Integer, server_default="0")
     # 是否用户手动创建
     is_user_created: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    # 叶子节点的 embedding 向量（用于面试问题匹配）
+    embedding: Mapped[Any | None] = mapped_column(Vector(1024), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), onupdate=func.now()
     )

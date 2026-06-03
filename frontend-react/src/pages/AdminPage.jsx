@@ -3,8 +3,7 @@
  * SSE 流式接收初始化进度
  */
 import { useState, useEffect, useRef } from 'react'
-
-const API = 'http://127.0.0.1:8000/api'
+import { API_ADMIN } from '../config'
 
 // 递归编辑节点组件
 function EditNode({ node, allNodes, depth, editingId, editName, addParentId, addName,
@@ -96,7 +95,7 @@ export default function AdminPage() {
 
   // 加载画像 + 统计 + 知识树
   useEffect(() => {
-    fetch(`${API}/admin/profile`).then(r => r.json()).then(resp => {
+    fetch(`${API_ADMIN}/profile`).then(r => r.json()).then(resp => {
       if (resp.code === 0) setProfile(resp.data.profile_text || '')
     }).catch(() => {})
     fetchStats()
@@ -104,13 +103,13 @@ export default function AdminPage() {
   }, [])
 
   function fetchStats() {
-    fetch(`${API}/admin/tree-stats`).then(r => r.json()).then(resp => {
+    fetch(`${API_ADMIN}/tree-stats`).then(r => r.json()).then(resp => {
       if (resp.code === 0) setStats(resp.data)
     }).catch(() => {})
   }
 
   function fetchTree() {
-    fetch(`${API}/admin/tree-nodes`).then(r => r.json()).then(resp => {
+    fetch(`${API_ADMIN}/tree-nodes`).then(r => r.json()).then(resp => {
       if (resp.code === 0) setTreeNodes(resp.data || [])
     }).catch(() => {})
   }
@@ -121,7 +120,7 @@ export default function AdminPage() {
   }, [logs])
 
   async function handleSaveProfile() {
-    const resp = await fetch(`${API}/admin/profile`, {
+    const resp = await fetch(`${API_ADMIN}/profile`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ profile_text: profile }),
@@ -146,7 +145,7 @@ export default function AdminPage() {
 
     try {
       // 用 POST 发起请求，手动读取 SSE 流
-      const resp = await fetch(`${API}/admin/init-tree`, {
+      const resp = await fetch(`${API_ADMIN}/init-tree`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ profile_text: text }),
@@ -206,7 +205,7 @@ export default function AdminPage() {
   // ---- 知识树编辑 ----
   async function handleAddNode(parentId) {
     if (!addName.trim()) return
-    await fetch(`${API}/admin/tree-nodes`, {
+    await fetch(`${API_ADMIN}/tree-nodes`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parent_id: parentId, name: addName.trim() }),
     })
@@ -215,7 +214,7 @@ export default function AdminPage() {
 
   async function handleUpdateNode(nodeId) {
     if (!editName.trim()) return
-    await fetch(`${API}/admin/tree-nodes/${nodeId}`, {
+    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}`, {
       method: 'PUT', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: editName.trim() }),
     })
@@ -224,7 +223,7 @@ export default function AdminPage() {
 
   async function handleDeleteNode(nodeId, name) {
     if (!window.confirm(`确定删除「${name}」及其所有子节点？`)) return
-    await fetch(`${API}/admin/tree-nodes/${nodeId}`, { method: 'DELETE' })
+    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}`, { method: 'DELETE' })
     fetchTree(); fetchStats()
   }
 

@@ -5,19 +5,26 @@ SQLAlchemy 模型汇总导入
 from backend.models.base import Base
 from backend.models.user import User
 from backend.models.knowledge import KnowledgeNode
-from backend.models.study import (
-    StudySession, Conversation, ConversationMessage,
-    MasteryRecord, MasteryHistory,
+from backend.models.qa import StudyQuestion, QuestionAttempt
+from backend.models.interview import (
+    InterviewRecord,
+    InterviewKnowledgeQuestion, InterviewProjectQuestion, InterviewOtherQuestion,
+    UserAnswerEmbedding,
 )
-from backend.models.interview import InterviewRecord, AlgorithmQuestion, HrQuestion
 from backend.models.learn import KnowledgeContent, LearnChat
+from backend.models.project import Project, ProjectUserProfile
+from backend.models.project_node import ProjectNode
 
 __all__ = [
     "Base",
     "User",
     "KnowledgeNode",
-    "StudySession", "Conversation", "ConversationMessage",
-    "MasteryRecord", "MasteryHistory",
-    "InterviewRecord", "AlgorithmQuestion", "HrQuestion",
+    "ProjectNode",
+    "StudyQuestion", "QuestionAttempt",
+    "InterviewRecord",
+    "InterviewKnowledgeQuestion", "InterviewProjectQuestion", "InterviewOtherQuestion",
+    "ProjectUserProfile",
+    "UserAnswerEmbedding",
     "KnowledgeContent", "LearnChat",
+    "Project",
 ]

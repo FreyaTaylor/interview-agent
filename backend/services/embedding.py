@@ -12,7 +12,7 @@ DASHSCOPE_EMBEDDING_URL = "https://dashscope.aliyuncs.com/api/v1/services/embedd
 
 
 async def get_embedding(text: str) -> list[float] | None:
-    """调用 DashScope text-embedding-v3 获取 1536 维向量"""
+    """调用 DashScope text-embedding-v3 获取 1024 维向量"""
     if not settings.DASHSCOPE_API_KEY:
         logger.warning("DASHSCOPE_API_KEY 未配置，跳过 embedding")
         return None
@@ -28,7 +28,7 @@ async def get_embedding(text: str) -> list[float] | None:
                 json={
                     "model": "text-embedding-v3",
                     "input": {"texts": [text[:2000]]},  # 截断防超限
-                    "parameters": {"dimension": 1536},
+                    "parameters": {"dimension": 1024},
                 },
             )
             data = resp.json()

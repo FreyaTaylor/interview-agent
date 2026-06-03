@@ -1,450 +1,342 @@
 /**
- * 答题页面 — 左侧知识树目录 + 右侧答题区
- * 答题区复用 StudyPage 的出题/答题/评分逻辑
- * 不需要选知识点（从 URL 参数获取），不需要探索对话
+ * ExamPage — 按题作答 v2
+ *
+ * 三栏布局：
+ *   左 : 知识树目录（与 LearnPage 同款 SidebarNode）
+ *   中 : 当前知识点下的题目列表（带分数徽章）
+ *   右 : 当前作答会话（ConversationView + AnswerInput）
+ *
+ * 流程：
+ *   选知识点 → 拉题目列表 → 点击题目 → start attempt
+ *   每轮 answer → 后端返追问 or 结束
+ *   后端不再返追问 时（follow_up_question === null）→ 自动 finish 触发综合评分
+ *   也可手动「结束并打分」按钮立即收尾
  */
-import { useState, useEffect, useRef, useCallback } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
-
-const API_STUDY = 'http://127.0.0.1:8000/api/study'
-const API_LEARN = 'http://127.0.0.1:8000/api/learn'
-const API_TREE = 'http://127.0.0.1:8000/api/knowledge'
-
-// 查找节点的祖先 ID 列表
-function findAncestorIds(tree, targetId) {
-  const ancestors = new Set()
-  function dfs(node, path) {
-    if (node.id === targetId) {
-      path.forEach(id => ancestors.add(id))
-      return true
-    }
-    for (const child of (node.children || [])) {
-      if (dfs(child, [...path, node.id])) return true
-    }
-    return false
-  }
-  for (const root of tree) {
-    if (dfs(root, [])) break
-  }
-  return ancestors
-}
-
-// 左侧目录树节点
-function SidebarNode({ node, activeId, expandedIds, onSelect, depth = 0 }) {
-  const children = node.children || []
-  const hasKids = children.length > 0
-  const isLeaf = node.node_type === 'leaf'
-  const isActive = node.id === activeId
-  const shouldExpand = expandedIds.has(node.id)
-  const [collapsed, setCollapsed] = useState(!shouldExpand)
-
-  useEffect(() => {
-    if (shouldExpand) setCollapsed(false)
-    else if (expandedIds.size > 0) setCollapsed(true)
-  }, [shouldExpand, expandedIds])
-
-  return (
-    <div>
-      <div
-        className={`learn-sidebar-item ${isActive ? 'active' : ''} ${isLeaf ? 'leaf' : ''}`}
-        style={{ paddingLeft: 12 + depth * 16 }}
-        onClick={() => {
-          if (isLeaf) onSelect(node.id)
-          else setCollapsed(c => !c)
-        }}
-      >
-        {hasKids && <span className={`learn-sidebar-toggle ${collapsed ? '' : 'open'}`} />}
-        {isLeaf && <span className="learn-sidebar-bullet" />}
-        <span className="learn-sidebar-name">{node.name}</span>
-      </div>
-      {hasKids && !collapsed && children.map(ch => (
-        <SidebarNode key={ch.id} node={ch} activeId={activeId} expandedIds={expandedIds} onSelect={onSelect} depth={depth + 1} />
-      ))}
-    </div>
-  )
-}
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { API_STUDY } from '../config'
+import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/KnowledgeSidebar'
+import AnswerInput from '../components/AnswerInput'
+import PageHeader from '../components/PageHeader'
+import ConversationView from '../components/ConversationView'
+import AttemptHistoryPanel from '../components/AttemptHistoryPanel'
+import QuestionList from '../components/QuestionList'
+import { TypingDots, StagePulse, Skeleton } from '../components/Loading'
+import useQAFlow from '../hooks/useQAFlow'
 
 export default function ExamPage() {
   const { kpId } = useParams()
   const navigate = useNavigate()
-  const [tree, setTree] = useState([])
+  const [searchParams, setSearchParams] = useSearchParams()
+  const desiredQidFromUrl = searchParams.get('qid')
+
+  const tree = useKnowledgeTree()
   const [expandedIds, setExpandedIds] = useState(new Set())
-  const [activeKpId, setActiveKpId] = useState(null)
+  const [activeKpId, setActiveKpId] = useState(kpId ? Number(kpId) : null)
   const [kpName, setKpName] = useState('')
-  const [convId, setConvId] = useState(null)
-  const [phase, setPhase] = useState('idle') // idle | loading | answering | scored
-  const [rounds, setRounds] = useState([])
-  const [currentRound, setCurrentRound] = useState([])
-  const [collapsedRounds, setCollapsedRounds] = useState({})
-  const [allQuestions, setAllQuestions] = useState([])
-  const [activeQuestionIdx, setActiveQuestionIdx] = useState(0)
-  const [input, setInput] = useState('')
-  const [loadingType, setLoadingType] = useState('') // 'exam' | 'score' | 'next'
+  const [questions, setQuestions] = useState([])
+  const [activeQuestionId, setActiveQuestionId] = useState(null)
+  const [listLoading, setListLoading] = useState(false)
+  const [listError, setListError] = useState(null)
+  // 当前题的历史作答记录（含未完成/已评分）
+  const [history, setHistory] = useState([])
+  const [historyLoading, setHistoryLoading] = useState(false)
+  // 历史面板默认是否折叠：未开始时展开，完成本轮后折叠
+  const [historyCollapsed, setHistoryCollapsed] = useState(false)
+
+  const qa = useQAFlow(API_STUDY)
   const bottomRef = useRef(null)
-  const startingRef = useRef(false)
-  const lastStartedRef = useRef(null) // 防止重复启动同一知识点
-  const [progress, setProgress] = useState(null)
-  const [isFollowUp, setIsFollowUp] = useState(false)
-  const [totalQuestionCount, setTotalQuestionCount] = useState(0)
-  const [questionHistory, setQuestionHistory] = useState({}) // question -> { score, answer }
-  const [expandedHistory, setExpandedHistory] = useState({}) // question index -> bool // 总题目数
 
-  // 加载知识树
+  // ---- 知识树到位后计算展开路径 ----
   useEffect(() => {
-    fetch(`${API_TREE}/tree`).then(r => r.json()).then(d => {
-      if (d.code === 0) {
-        setTree(d.data)
-        if (kpId) setExpandedIds(findAncestorIds(d.data, parseInt(kpId)))
-      }
-    })
-  }, [])
-
-  // URL 驱动
-  useEffect(() => {
-    if (kpId && tree.length > 0) {
-      const id = parseInt(kpId)
-      setActiveKpId(id)
-      setExpandedIds(findAncestorIds(tree, id))
-      // 先加载历史进度
-      fetch(`${API_STUDY}/exam-progress/${id}`).then(r => r.json()).then(d => {
-        if (d.code === 0) setProgress(d.data)
-      }).catch(() => {})
-      startExam(id)
+    if (tree.length > 0 && activeKpId) {
+      setExpandedIds(findAncestorIds(tree, activeKpId))
     }
-  }, [kpId, tree.length])
+  }, [tree, activeKpId])
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [rounds, currentRound])
+  // ---- URL → 状态 ----
+  useEffect(() => {
+    if (kpId && Number(kpId) !== activeKpId) {
+      setActiveKpId(Number(kpId))
+    }
+    // 学习/答题共用一个 lastKpId，供顶部导航直接跳回
+    if (kpId) {
+      try { localStorage.setItem('lastKpId', String(kpId)) } catch (_) { /* ignore */ }
+    }
+  }, [kpId])
 
-  function handleSelectKp(id) {
-    setActiveKpId(id)
-    setExpandedIds(findAncestorIds(tree, id))
-    navigate(`/exam/${id}`, { replace: true })
-    fetch(`${API_STUDY}/exam-progress/${id}`).then(r => r.json()).then(d => {
-      if (d.code === 0) setProgress(d.data)
-    }).catch(() => {})
-    startExam(id)
-  }
+  // ---- 选中知识点 → 拉题目列表 ----
+  useEffect(() => {
+    if (!activeKpId) return
+    loadQuestions(activeKpId)
+  }, [activeKpId])
 
-  async function startExam(id) {
-    if (startingRef.current) return
-    if (lastStartedRef.current === id && convId) return // 同一知识点不重复创建
-    startingRef.current = true
-    lastStartedRef.current = id
-    setLoadingType('exam')
-    setPhase('idle')
-    setRounds([])
-    setCurrentRound([])
-    setCollapsedRounds({})
-    setAllQuestions([])
-    setInput('')
+  // ---- URL ?qid=… → 选中题目（等题目列表加载后生效）----
+  useEffect(() => {
+    if (!desiredQidFromUrl) return
+    const target = questions.find(q => String(q.id) === String(desiredQidFromUrl))
+    if (target && target.id !== activeQuestionId) {
+      selectQuestion(target)
+      // 消费后清掉参数，避免重复触发
+      setSearchParams({}, { replace: true })
+    }
+  }, [desiredQidFromUrl, questions])
 
+  // ---- 题目列表加载完后默认选中：优先第一道"未作答"，否则按顺序第一道 ----
+  useEffect(() => {
+    if (desiredQidFromUrl) return            // 让 URL ?qid 优先
+    if (activeQuestionId) return             // 已有选中
+    if (!questions.length) return
+    const firstUnfinished = questions.find(q => !q.attempt_count)
+    const target = firstUnfinished || questions[0]
+    if (target) selectQuestion(target)
+  }, [questions, desiredQidFromUrl, activeQuestionId])
+
+  async function loadQuestions(id) {
+    setListLoading(true)
+    setListError(null)
+    setQuestions([])
+    setActiveQuestionId(null)
+    setHistory([])
+    setHistoryCollapsed(false)
+    setKpName('')   // 立即清空，避免切换时标题仍显示上一个知识点名字
+    qa.reset()
     try {
-      // 先确保知识内容和题目已生成
-      const contentResp = await fetch(`${API_LEARN}/content/${id}`).then(r => r.json()).catch(() => null)
-
-      const resp = await fetch(`${API_STUDY}/exam-start`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledge_point_id: id }),
-      }).then(r => r.json())
-
-      if (resp.code === 0) {
-        const d = resp.data
-        setConvId(d.conversation_id)
-        setKpName(d.knowledge_point_name)
-        setAllQuestions(d.all_questions || [d.question_content])
-        setTotalQuestionCount((d.all_questions || [d.question_content]).length)
-        setQuestionHistory(d.question_history || {})
-        setExpandedHistory({})
-        setActiveQuestionIdx(0)
-        setCurrentRound([{ type: 'q', html: `📝 ${d.question_content}` }])
-        setPhase('answering')
-      } else {
-        setPhase('error')
-        setKpName(resp.message || '出题失败')
-      }
+      const resp = await fetch(`${API_STUDY}/knowledge-points/${id}/questions`)
+      const data = await resp.json()
+      if (data.code !== 0) throw new Error(data.message || '加载失败')
+      setKpName(data.data.knowledge_point_name || '')
+      setQuestions(data.data.questions || [])
     } catch (e) {
-      console.error('出题失败:', e)
+      setListError(e.message || '加载题目失败')
     } finally {
-      setLoadingType('')
-      startingRef.current = false
+      setListLoading(false)
     }
   }
 
-  async function submitAnswer() {
-    if (!input.trim() || loadingType) return
-    const answer = input.trim()
-    setInput('')
-    setCurrentRound(r => [...r, { type: 'a', html: `💬 ${answer}` }])
-    setLoadingType('score')
-
-    const resp = await fetch(`${API_STUDY}/answer`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: convId, answer }),
-    }).then(r => r.json())
-    setLoadingType('')
-
-    if (resp.code === 0) {
-      const d = resp.data
-      const rubricTotal = d.rubric_total || 100
-      let scoreHtml = `<b>得分: ${d.total_score}/${rubricTotal}</b> — ${d.feedback}<br>`
-      scoreHtml += '<table style="width:100%;border-collapse:collapse;margin:8px 0;font-size:14px;">'
-      for (const item of d.rubric_result) {
-        const icon = item.hit ? '✅' : '❌'
-        const matched = item.matched_text || ''
-        const bg = item.hit ? '#e8f5e9' : '#ffebee'
-        const md = matched ? `<span style="color:#666;font-style:italic;">「${matched}」</span>` : '<span style="color:#999;">未提及</span>'
-        scoreHtml += `<tr style="background:${bg};border-bottom:1px solid #e0e0e0;"><td style="padding:4px 8px;">${icon} <b>${item.key_point}</b>（${item.score}分）<br>${md}</td></tr>`
-      }
-      scoreHtml += '</table>'
-      const rec = d.recommended_answer
-      if (rec && Array.isArray(rec) && rec.length > 0) {
-        scoreHtml += '<br>📖 <b>推荐回答</b>:<br>'
-        rec.forEach((p, i) => { scoreHtml += `${i + 1}. ${p}<br>` })
-      }
-
-      // 每次评分后都刷新掌握度
-      fetch(`${API_STUDY}/exam-progress/${activeKpId}`).then(r => r.json()).then(pd => {
-        if (pd.code === 0) setProgress(pd.data)
-      }).catch(() => {})
-
-      if (d.follow_up) {
-        setCurrentRound(r => [...r, { type: 's', html: scoreHtml }, { type: 'q', html: `🤔 <b>追问</b><br>${d.follow_up}` }])
-        setPhase('answering')
-        setIsFollowUp(true)
-      } else {
-        let summaryHtml = ''
-        if (d.overall_summary) {
-          summaryHtml += `📝 <b>本轮总结</b><br><span style="line-height:1.8">${d.overall_summary}</span>`
-        }
-        const ext = d.extension_questions
-        if (ext && Array.isArray(ext) && ext.length > 0) {
-          summaryHtml += '<br><br><b>📚 扩展题目</b>'
-          ext.forEach((eq, i) => { summaryHtml += `<div style="margin:6px 0;padding:8px 12px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
-        }
-        const roundMsgs = [...currentRound, { type: 's', html: scoreHtml }]
-        if (summaryHtml) roundMsgs.push({ type: 'summary', html: summaryHtml })
-        setRounds(r => [...r, roundMsgs])
-        setCurrentRound([])
-        setPhase('scored')
-        setIsFollowUp(false)
-      }
-    }
+  function selectKp(id) {
+    if (id === activeKpId) return
+    setActiveKpId(id)
+    navigate(`/exam/${id}`, { replace: true })
   }
 
-  async function stopFollowUp() {
-    if (!convId || loadingType) return
-    setLoadingType('score')
+  async function selectQuestion(q) {
+    if (q.id === activeQuestionId) return
+    setActiveQuestionId(q.id)
+    qa.reset()
+    setHistory([])
+    setHistoryCollapsed(false)
+    // 先拉历史作答
+    setHistoryLoading(true)
+    let prior = []
     try {
-      const resp = await fetch(`${API_STUDY}/stop-followup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ conversation_id: convId }),
-      }).then(r => r.json())
-      setLoadingType('')
-      if (resp.code === 0) {
-        const d = resp.data
-        let summaryHtml = ''
-        if (d.overall_summary) {
-          summaryHtml += `📝 <b>本轮总结</b><br><span style="line-height:1.8">${d.overall_summary}</span>`
-        }
-        const ext = d.extension_questions
-        if (ext && Array.isArray(ext) && ext.length > 0) {
-          summaryHtml += '<br><br><b>📚 扩展题目</b>'
-          ext.forEach((eq, i) => { summaryHtml += `<div style="margin:6px 0;padding:8px 12px;background:#fff;border:1px solid #e8e8e8;border-radius:8px;"><b>${i + 1}. ${eq.question}</b><br><span style="color:#666;font-size:13px;">${eq.answer}</span></div>` })
-        }
-        const roundMsgs = [...currentRound]
-        if (summaryHtml) roundMsgs.push({ type: 'summary', html: summaryHtml })
-        setRounds(r => [...r, roundMsgs])
-        setCurrentRound([])
-        setPhase('scored')
-        setIsFollowUp(false)
+      const resp = await fetch(`${API_STUDY}/questions/${q.id}/attempts`)
+      const data = await resp.json()
+      if (data.code === 0) prior = data.data || []
+      setHistory(prior)
+    } catch (_) { /* 忽略，留空数组 */ }
+    finally { setHistoryLoading(false) }
+
+    // 存在进行中的作答 → 加载它继续，不另开新
+    const inProgress = prior.find(a => a.status === 'in_progress')
+    if (inProgress) {
+      try { await qa.load(inProgress.attempt_id) } catch (_) {}
+      return
+    }
+    // 无历史 → 直接开始新一轮；有历史 → 等用户点“再来一轮”
+    if (prior.length === 0) {
+      try { await qa.start(q.id) } catch (_) {}
+    }
+  }
+
+  async function startNewAttempt() {
+    if (!activeQuestionId) return
+    setHistoryCollapsed(true)
+    try { await qa.start(activeQuestionId) } catch (_) {}
+  }
+
+  async function handleAnswer(text) {
+    try {
+      const data = await qa.answer(text)
+      // 后端判定本题结束 → 自动收尾打分
+      if (data && data.follow_up_question == null) {
+        await qa.finish()
+        // 刷新题目分数
+        loadQuestionsScores()
+        // 本轮已评分 → 历史折叠起来 + 刷新历史列表
+        setHistoryCollapsed(true)
+        refreshHistory()
       }
-    } catch (e) {
-      setLoadingType('')
-      console.error('停止追问失败:', e)
-    }
+    } catch (_) {}
   }
 
-  async function nextQuestion() {
-    setLoadingType('next')
-    const resp = await fetch(`${API_STUDY}/next`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversation_id: convId }),
-    }).then(r => r.json())
-    setLoadingType('')
-    if (resp.code === 0) {
-      const d = resp.data
-      if (d.finished) {
-        // 全部完成
-        setPhase('finished')
-        return
-      }
-      const collapsed = {}
-      rounds.forEach((_, i) => { collapsed[i] = true })
-      setCollapsedRounds(collapsed)
-      const newQ = d.question_content || `第${d.question_round}题`
-      setAllQuestions(prev => {
-        const next = [...prev]
-        if (next.length < d.question_round) next.push(newQ)
-        return next
-      })
-      setActiveQuestionIdx(d.question_round - 1)
-      setCurrentRound([{ type: 'q', html: `📝 <b>第${d.question_round}题</b><br>${d.question_content}` }])
-      setPhase('answering')
-    }
+  async function handleManualFinish() {
+    try {
+      await qa.finish()
+      loadQuestionsScores()
+      setHistoryCollapsed(true)
+      refreshHistory()
+    } catch (_) {}
   }
 
-  function renderRound(msgs, idx) {
-    const isCollapsed = collapsedRounds[idx]
-    const firstQ = msgs.find(m => m.type === 'q')
-    const titleMatch = firstQ?.html?.match(/<b>(.*?)<\/b>/)
-    const title = titleMatch ? titleMatch[1] : `第 ${idx + 1} 题`
-
-    if (isCollapsed) {
-      return (
-        <div key={idx} data-round={idx} className="round-group" style={{ cursor: 'pointer', padding: '12px 16px', opacity: 0.7 }}
-          onClick={() => setCollapsedRounds(p => ({ ...p, [idx]: false }))}>
-          <span style={{ fontSize: 14, color: '#888' }}>▸ {title}</span>
-        </div>
-      )
-    }
-    const regularMsgs = msgs.filter(m => m.type !== 'summary')
-    const summaryMsgs = msgs.filter(m => m.type === 'summary')
-    return (
-      <div key={idx} data-round={idx}>
-        <div className="round-group"
-          style={typeof idx === 'number' && rounds.length > 1 ? { cursor: 'pointer' } : {}}
-          onClick={() => typeof idx === 'number' && setCollapsedRounds(p => ({ ...p, [idx]: true }))}>
-          {regularMsgs.map((m, i) => (
-            <div key={i} className={m.type === 'q' ? 'q-box' : m.type === 'a' ? 'a-box' : 's-box'}
-                 dangerouslySetInnerHTML={{ __html: m.html }} />
-          ))}
-        </div>
-        {summaryMsgs.map((m, i) => (
-          <div key={`sum${i}`} style={{ margin: '8px 0', padding: '16px 20px', background: '#f0f7ff', border: '1px solid #d6e4ff', borderRadius: 12 }}
-               dangerouslySetInnerHTML={{ __html: m.html }} />
-        ))}
-      </div>
-    )
+  async function refreshHistory() {
+    if (!activeQuestionId) return
+    try {
+      const resp = await fetch(`${API_STUDY}/questions/${activeQuestionId}/attempts`)
+      const data = await resp.json()
+      if (data.code === 0) setHistory(data.data || [])
+    } catch (_) {}
   }
+
+  /** 收尾后单独刷新题目分数（不重置当前作答）。 */
+  async function loadQuestionsScores() {
+    if (!activeKpId) return
+    try {
+      const resp = await fetch(`${API_STUDY}/knowledge-points/${activeKpId}/questions`)
+      const data = await resp.json()
+      if (data.code === 0) setQuestions(data.data.questions || [])
+    } catch (_) {}
+  }
+
+  // 滚动到底部
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
+  }, [qa.attempt?.dialog?.length, qa.attempt?.status])
+
+  const stepInfo = useMemo(() => {
+    if (!qa.attempt) return ''
+    const cur = qa.attempt.current_step ?? qa.attempt.follow_up_count ?? 0
+    const max = qa.attempt.max_steps ?? 4
+    return `第 ${cur} / ${max} 轮追问`
+  }, [qa.attempt])
 
   return (
-    <div className="learn-container">
-      {/* 左侧目录 */}
-      <div className="learn-sidebar">
-        <div className="learn-sidebar-header">📚 知识目录</div>
-        <div className="learn-sidebar-tree">
+    <div className="qa-page">
+      {/* 左：知识树 */}
+      <aside className="qa-side-left">
+        <div className="qa-side-header">📚 知识目录</div>
+        <div className="qa-side-body">
           {tree.map(root => (
-            <SidebarNode key={root.id} node={root} activeId={activeKpId} expandedIds={expandedIds} onSelect={handleSelectKp} />
+            <SidebarNode
+              key={root.id} node={root}
+              activeId={activeKpId} expandedIds={expandedIds}
+              onSelect={selectKp}
+            />
           ))}
         </div>
-      </div>
+      </aside>
 
-      {/* 右侧答题区 */}
-      <div className="learn-main" style={{ padding: 0 }}>
-        {!activeKpId && !loadingType && (
-          <div className="learn-empty">👈 从左侧目录选择知识点开始答题</div>
-        )}
-        {loadingType === 'exam' && (
-          <div className="learn-loading">🧠 正在准备题目...</div>
-        )}
+      {/* 中：题目列表 */}
+      <section className="qa-side-middle">
+        <div className="qa-side-header">
+          <span>{kpName ? `「${kpName}」题目` : '题目'}</span>
+          {questions.length > 0 && (
+            <span style={{ fontSize: 12, color: '#999', fontWeight: 400 }}>
+              {questions.length} 题
+            </span>
+          )}
+        </div>
+        <div className="qa-side-body">
+          {!activeKpId && <div className="qa-empty">👈 选择一个知识点</div>}
+          {listLoading && <div className="qa-loading-wrap"><Skeleton lines={3} hasTitle={false} hasBlock={false} /></div>}
+          {listError && <div className="qa-error">{listError}</div>}
+          {!listLoading && !listError && activeKpId && (
+            <QuestionList
+              items={questions}
+              activeId={activeQuestionId}
+              onSelect={selectQuestion}
+              emptyText="该知识点还没有题目"
+            />
+          )}
+        </div>
+      </section>
 
-        {phase === 'error' && (
-          <div className="learn-empty" style={{ flexDirection: 'column', color: '#ff4d4f' }}>
-            <span>❌ {kpName}</span>
-            <button onClick={() => startExam(activeKpId)} style={{ marginTop: 12, padding: '6px 16px', cursor: 'pointer' }}>重试</button>
+      {/* 右：作答区 */}
+      <section className="qa-main">
+        {!qa.attempt && history.length === 0 && (
+          <div className="qa-empty">
+            {activeKpId ? (historyLoading ? '加载历史中…' : '👈 选择一道题目开始作答') : '请先选择知识点'}
           </div>
         )}
-
-        {phase !== 'idle' && phase !== 'error' && kpName && (
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
-            {/* 信息栏 */}
-            <div className="learn-info-bar">
-              <h2 className="learn-title">{kpName}</h2>
-              <div className="learn-meta">
-                <span className="learn-mastery">
-                  掌握度 <span style={{ color: (progress?.mastery_level || 0) >= 80 ? '#52c41a' : (progress?.mastery_level || 0) >= 40 ? '#faad14' : (progress?.mastery_level || 0) > 0 ? '#ff4d4f' : '#e0e0e0', fontWeight: 600 }}>
-                    {progress?.mastery_level || 0}%
-                  </span>
-                </span>
-                <Link to={`/learn/${activeKpId}`} className="learn-switch-btn learn">📖 去学习</Link>
-              </div>
+        {/* 有历史但当前无作答（用户刚选中带历史的题目）→ 只显示历史 + 开始按钮 */}
+        {!qa.attempt && history.length > 0 && (
+          <>
+            <div className="qa-main-header">
+              <PageHeader
+                title={kpName || '历史作答'}
+                subtitle={`共 ${history.length} 次作答记录`}
+                right={
+                  <button
+                    type="button"
+                    className="ai-stop-btn"
+                    onClick={startNewAttempt}
+                  >
+                    再来一轮
+                  </button>
+                }
+              />
             </div>
-
-            {/* 题目栏 */}
-            {allQuestions.length > 0 && (
-              <div style={{ padding: '12px 20px', borderBottom: '1px solid #f0f0f0', background: '#fff', flexShrink: 0 }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-                {allQuestions.map((q, i) => {
-                  const answered = i < rounds.length
-                  const isCurrent = i === activeQuestionIdx
-                  return (
-                    <button key={i} onClick={(e) => {
-                      e.stopPropagation()
-                      const c = {}
-                      rounds.forEach((_, j) => { c[j] = j !== i })
-                      setCollapsedRounds(c)
-                      setActiveQuestionIdx(i)
-                      if (answered) {
-                        setTimeout(() => {
-                          const el = document.querySelector(`[data-round="${i}"]`)
-                          if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                        }, 100)
-                      } else {
-                        setCurrentRound([{ type: 'q', html: `📝 ${q}` }])
-                        setPhase('answering')
-                        setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: 'smooth' }), 100)
-                      }
-                    }}
-                      style={{
-                        padding: '6px 14px', borderRadius: 16, fontSize: 12, cursor: 'pointer',
-                        border: isCurrent ? '2px solid #722ed1' : answered ? '1px solid #52c41a' : '1px solid #e0e0e0',
-                        background: isCurrent ? '#f9f0ff' : answered ? '#f6ffed' : '#fafafa',
-                        fontWeight: isCurrent ? 600 : 400,
-                        fontFamily: 'inherit', color: '#333', transition: 'all 0.15s',
-                      }}>
-                      {q}
+            <div className="qa-main-body">
+              <AttemptHistoryPanel attempts={history} collapsed={false} />
+            </div>
+          </>
+        )}
+        {qa.attempt && (
+          <>
+            <div className="qa-main-header">
+              <PageHeader
+                title={qa.attempt.topic_name || kpName || '答题'}
+                subtitle={qa.isFinished ? '已完成 · 综合评分如下' : stepInfo}
+                right={
+                  qa.canAnswer ? (
+                    <button
+                      type="button"
+                      className="ai-stop-btn"
+                      onClick={handleManualFinish}
+                      disabled={!!qa.loading}
+                      title="结束本题并综合打分"
+                    >
+                      结束并打分
                     </button>
-                  )
-                })}
-                </div>
-              </div>
-            )}
-
-            {/* 答题对话区 */}
-            <div style={{ flex: 1, overflow: 'auto', padding: '20px 24px' }}>
-              {rounds.map((r, i) => renderRound(r, i))}
-              {currentRound.length > 0 && renderRound(currentRound, 'cur')}
-              {loadingType === 'score' && <div className="loading">🤔 正在评分...</div>}
-              {loadingType === 'next' && <div className="loading">🧠 正在出题...</div>}
-
-              {phase === 'answering' && !loadingType && (
-                <div className="chat-input-wrap">
-                  <input className="chat-input" placeholder="输入你的回答..."
-                    value={input} onChange={e => setInput(e.target.value)}
-                    onKeyDown={e => e.key === 'Enter' && !e.shiftKey && submitAnswer()} />
-                  <button className="send-btn" onClick={submitAnswer} disabled={!input.trim()}>发送</button>
-                  {isFollowUp && (
-                    <button className="stop-followup-btn" onClick={stopFollowUp}>⏹ 停止追问</button>
-                  )}
-                </div>
-              )}
-              {phase === 'scored' && !loadingType && rounds.length < totalQuestionCount && (
-                <button className="next-btn" onClick={nextQuestion}>➡️ 下一题</button>
-              )}
-              {(phase === 'finished' || (phase === 'scored' && rounds.length >= totalQuestionCount)) && !loadingType && (
-                <div style={{ textAlign: 'center', padding: '20px 0', color: '#52c41a', fontSize: 16, fontWeight: 600 }}>
-                  🎉 全部题目已完成！
-                </div>
-              )}
+                  ) : qa.isFinished ? (
+                    <button
+                      type="button"
+                      className="ai-stop-btn"
+                      onClick={startNewAttempt}
+                      title="再做一次本题"
+                    >
+                      再来一轮
+                    </button>
+                  ) : null
+                }
+              />
+            </div>
+            <div className="qa-main-body">
+              {qa.error && <div className="qa-error">{qa.error}</div>}
+              {/* 历史作答面板（不含当前 attempt）：默认按 historyCollapsed */}
+              <AttemptHistoryPanel
+                attempts={history}
+                collapsed={historyCollapsed}
+                currentAttemptId={qa.attempt.attempt_id}
+              />
+              <ConversationView attempt={qa.attempt} />
+              {qa.loading === 'answering' && <div className="qa-loading"><TypingDots text="正在分析回答" /></div>}
+              {qa.loading === 'finishing' && <StagePulse text="正在综合打分" sub="根据所有追问生成评分与总结" />}
+              {qa.loading === 'starting' && <div className="qa-loading"><TypingDots text="正在准备题目" /></div>}
               <div ref={bottomRef} />
             </div>
-          </div>
+            {qa.canAnswer && (
+              <div className="qa-main-input">
+                <AnswerInput
+                  onSend={handleAnswer}
+                  disabled={!!qa.loading}
+                  placeholder="输入你的回答…（Enter 发送，Shift+Enter 换行）"
+                />
+              </div>
+            )}
+          </>
         )}
-      </div>
+      </section>
     </div>
   )
 }

@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     # DashScope Embedding（二期使用）
     DASHSCOPE_API_KEY: str = ""
 
+    # GitHub OAuth
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    JWT_SECRET: str = "interview-agent-jwt-secret-change-me"
+    FRONTEND_URL: str = "http://localhost:5173"
+
     # 业务参数
     MAX_FOLLOW_UP_ROUNDS: int = 3  # 单题最大追问轮数
 
