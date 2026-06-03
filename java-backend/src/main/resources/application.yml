@@ -1,0 +1,64 @@
+server:
+  port: 8080
+  # 让 Spring MVC 在虚拟线程上承载请求
+  # (与 spring.threads.virtual.enabled 协同)
+
+spring:
+  application:
+    name: interview-agent
+  profiles:
+    active: dev
+  threads:
+    virtual:
+      enabled: true
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/interview_agent_java}
+    username: ${DB_USER:iagent_java}
+    password: ${DB_PASSWORD:iagent_java}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 2
+      connection-timeout: 30000
+      pool-name: iagent-hikari
+
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+    locations: classpath:db/migration
+    table: flyway_schema_history
+
+  # Spring AI: 用 OpenAI starter 指向 DeepSeek（OpenAI 兼容）
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
+          temperature: 0.3
+
+# 业务自定义配置（LlmProperties / EmbeddingProperties）
+iagent:
+  llm:
+    chat-temperature-score: 0.0
+    chat-temperature-generate: 0.6
+  embedding:
+    dashscope-api-key: ${DASHSCOPE_API_KEY:}
+    model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
+    dimension: 1024
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    root: INFO
+    com.interview.agent: DEBUG
+    org.flywaydb: INFO
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} - %msg%n"

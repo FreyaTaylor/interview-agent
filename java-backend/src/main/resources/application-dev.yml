@@ -1,0 +1,5 @@
+# dev 覆盖项（本地开发用）
+logging:
+  level:
+    com.interview.agent: DEBUG
+    org.springframework.jdbc.core: DEBUG
