@@ -4,7 +4,7 @@
 > 1. 本文件
 > 2. [docs/TECH_DESIGN.md](../docs/TECH_DESIGN.md) — 产品 / 数据模型 / API 契约（与 Python 端共享）
 > 3. [docs/JAVA_REWRITE_PLAN.md](../docs/JAVA_REWRITE_PLAN.md) — 模块清单与映射
-> 4. [java-backend/docs/ADR.md](docs/ADR.md) — 技术选型决策记录（为什么选 JdbcClient / Flyway 等）
+> 4. [java-backend/docs/ADR.md](docs/ADR.md) — 技术选型决策记录（为什么选 MyBatis @注解 / Flyway 等）
 > 5. Python 原版实现（同语义参考）：[backend/](../backend/)
 >
 > 根目录的 [CONVENTIONS.md](../CONVENTIONS.md) 是 **Python 端**规范，仅业务规则部分对 Java 通用，技术栈部分**不要照搬**。
@@ -18,7 +18,7 @@
 | JDK | **21 LTS**（启用虚拟线程） |
 | 构建 | **Maven**（单 module 起步） |
 | Web | **Spring Boot 3.x + Spring MVC**（`spring.threads.virtual.enabled=true`） |
-| DB | **Spring `JdbcClient` + HikariCP**（手写 SQL，不引入 JPA / MyBatis） |
+| DB | **MyBatis 3.x + HikariCP**（`mybatis-spring-boot-starter`，@注解 Mapper，不写 XML）|
 | Schema 迁移 | **Flyway**（`src/main/resources/db/migration/V*.sql`） |
 | DB 引擎 | **PostgreSQL 16 + pgvector**（独立 DB `interview_agent_java` / user `iagent_java`） |
 | LLM（Chat / 结构化输出） | **Spring AI 1.x** `ChatClient`（OpenAI 兼容 → DeepSeek） |
@@ -28,7 +28,7 @@
 | 端口 | 8080 |
 | API 文档 | `springdoc-openapi`（可选） |
 
-**不引入**：Lombok、MapStruct、JPA/Hibernate、WebFlux、R2DBC、Reactor。
+**不引入**：Lombok、MapStruct、JPA/Hibernate、MyBatis-Plus、WebFlux、R2DBC、Reactor。
 
 ---
 
@@ -62,15 +62,23 @@ java-backend/
 └── src/test/java/                     # JUnit 5 + Testcontainers
 ```
 
-**每个业务模块内分层**（参考 Spring 经典三层）：
+**每个业务模块内分层**（参考 Spring 经典三层 + 接口/实现分离）：
 ```
 xxx/
-├── XxxController.java       # @RestController，路由
-├── XxxService.java          # 业务编排
-├── XxxRepository.java       # JdbcClient 封装
-├── dto/                     # Record：XxxReq / XxxResp / XxxView
-└── entity/                  # Record 或普通类：与表一对一
+├── controller/
+│   └── XxxController.java       # @RestController，路由
+├── service/
+│   ├── XxxService.java          # 接口：只声明能力（方法签名 + 一句话 Javadoc）
+│   └── impl/
+│       └── XxxServiceImpl.java  # @Service 实现，业务逻辑 / 完整 Javadoc 都在这里
+├── mapper/
+│   └── XxxMapper.java           # MyBatis @Mapper 接口（SQL 写在注解里）
+├── entity/                  # Record：与表一对一
+└── dto/                     # Record：XxxReq / XxxResp / XxxView
 ```
+
+> 接口 vs 实现：Controller **依赖接口**，Spring 自动注入唯一的 `@Service` Bean。现阶段每个接口仅一个实现，但预留划分以便后续切插代理 / 多实现路由，与主流 Spring 项目习惯一致。
+> 横切包（`common/` `infra/`）不必遵从这个骨架：HealthController / GlobalExceptionHandler 这种辅助类直接放包根。
 
 ---
 
@@ -111,22 +119,26 @@ xxx/
 - 一个 `@RestController` 对应一个业务子域；过大的 Controller 拆 `XxxAdminController` / `XxxQueryController`
 - 请求体 / 响应体 **必须**用 Record DTO，**不**直接暴露 Entity
 
-### 3.4 DB / Repository
+### 3.4 DB / Mapper（MyBatis @注解）
 
 - 表名：snake_case **单数**（`knowledge_node`，不是 `knowledge_nodes`），与 Python 端一致
 - 所有表必有：`id BIGSERIAL PRIMARY KEY`、`created_at TIMESTAMP DEFAULT NOW()`
 - 关键业务表带 `user_id BIGINT DEFAULT 1`（一期写死，不强制鉴权）
-- **手写 SQL**，用 `JdbcClient.sql(...).param(...).query(RowMapper).list()`
-- 复杂查询 SQL 用 Java 文本块 `"""..."""`，多行对齐易读
-- **JSONB**：写入 `new PGobject() { type="jsonb", value=jsonStr }`；读出 `rs.getString("col")` + Jackson 反序列化
-- **vector**：参数化绑定 `?::vector`，值用 `EmbeddingService.toPgVectorLiteral(float[])` → `'[v1,v2,...]'`
-- **乐观锁**：用 `version` 字段，`UPDATE ... SET version = version + 1 WHERE id = ? AND version = ?`；失败重试上限 3 次
+- **MyBatis @注解** 方式（`mybatis-spring-boot-starter`），**不**用 XML mapper，**不**用 JPA
+- 包结构：每个领域 `xxx/entity/XxxEntity.java`（Record）+ `xxx/mapper/XxxMapper.java`（`@Mapper` 接口）
+- SQL 写在 `@Select` / `@Insert` / `@Update` / `@Delete` 注解的文本块 `"""..."""` 里；列名复用提取 `static final String COLS = "..."`
+- 动态 SQL（IN 子句、可选 WHERE）用 `<script>` + `<foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>`；空集合在 Service 端用 `if (!list.isEmpty())` 兜底
+- `INSERT ... RETURNING id` 用 `@Select` 承载（Record 无 setter，不能用 `@Options(useGeneratedKeys=true)`）
+- 自动驼峰映射：`mybatis.configuration.map-underscore-to-camel-case: true`（snake_case 列直接绑 camelCase Record 参数 / 字段）
+- 编译参数必须开 `-parameters`（Maven `<parameters>true</parameters>`），否则 Record 构造器参数名丢失，MyBatis 无法按名绑定
+- **JSONB**：参数 String 即可，列声明 `::jsonb` cast；读出 String + Jackson 反序列化
+- **vector**：参数 String literal（`EmbeddingService.toPgVectorLiteral(float[])` → `'[v1,v2,...]'`），SQL 里 `#{embeddingLiteral}::vector`
+- **乐观锁**：`version` 字段，`UPDATE ... SET version = version + 1 WHERE id = #{id} AND version = #{version}`；失败重试上限 3 次
 - **事务**：跨表写用 `@Transactional`；只读查询不加注解
-- **不使用** JPA / MyBatis / EntityManager
 
 ### 3.5 Flyway
 
-- 文件名：`V{递增编号}__{说明}.sql`，如 `V1__init_schema.sql`、`V2__add_user_answer_embedding.sql`
+- 文件名：`V{递增编号}__{说明}.sql`，如 `V1__init_schema.sql`、`V2__add_xxx_col.sql`
 - **永不修改**已发布的 V 文件；新增列 / 改约束写新 V 文件
 - 初始 schema 按 [docs/TECH_DESIGN.md](../docs/TECH_DESIGN.md) 重新建一遍（不复用 Python Alembic 输出）
 - `CREATE EXTENSION IF NOT EXISTS vector;` 必须在 V1 里
@@ -165,6 +177,35 @@ xxx/
 - 参数校验：Jakarta Validation (`@Valid` + `@NotNull` 等)，错误码 `40001`
 - 不允许吞异常（`catch (Exception e) {}` 空块）；至少 `log.warn` 并 rethrow 或转 `BizException`
 - 受检异常（如 `IOException`）：在 Service 边界转 `BizException`
+
+### 3.10 服务分层（接口 + 实现）
+
+- 每个业务 Service **接口 + 实现** 分离：
+  - 接口 `xxx/service/XxxService.java`：只有方法签名 + 一句话 Javadoc 说明能力
+  - 实现 `xxx/service/impl/XxxServiceImpl.java`：`@Service` 注解，完整 Javadoc + 业务逻辑
+- Controller / 其他 Service 注入**接口类型**，由 Spring 自动绑定唯一实现
+- 实现类方法必须加 `@Override`
+- 现阶段每个接口仅一个实现；分层为后续切插代理 / 多实现路由 / 单测 mock 预留
+- 完整 Javadoc 只写一份在实现类上（避免接口与实现 Javadoc 双重维护漂移）；接口里每个方法一行注释说清"做什么"即可
+- 例外：`common/` `infra/` 等横切包不必走接口/实现分层
+
+### 3.11 注释规范
+
+每个方法必须包含**两层**注释：
+
+1. **方法头 Javadoc**（写在实现类上）
+   - 一句话用途
+   - `<ol>` 列表分步骤描述完整业务逻辑
+   - 关键约束 / 边界 / 反直觉点 / 陷阱（如 `<foreach>` 空集陷阱、事务边界、对称逻辑等）
+   - `@param`（仅当含义不明显时）、`@return`（说明返回结构）、`@throws`（含错误码）
+2. **方法体内行内注释**
+   - 每个步骤用 `// Step N:` 标号，与 Javadoc 的 `<ol>` 顺序一一对应
+   - 核心代码（含 trick、反直觉点、为何这样写）单独一行解释 **why**，不是 **what**
+   - 不写"赋值给变量 x"这种重复代码字面的废话注释
+
+类级 Javadoc 写清楚：模块归属（如 S1 / S5）、业务规则汇总、依赖外部服务的失败降级策略。
+
+参考实现：[admin/service/impl/KnowledgeAdminServiceImpl.java](src/main/java/com/interview/agent/admin/service/impl/KnowledgeAdminServiceImpl.java)
 
 ---
 
@@ -205,7 +246,7 @@ xxx/
 | Python | Java |
 |---|---|
 | `async def` route | 同步方法（虚拟线程承载） |
-| `AsyncSession` (SQLAlchemy) | `JdbcClient` |
+| `AsyncSession` (SQLAlchemy) | MyBatis `@Mapper` 接口 |
 | `await llm_client.chat(...)` | `chatClient.prompt(...).call().content()` |
 | `Pydantic BaseModel` | Java Record |
 | `JSONB` (SQLAlchemy) | `PGobject("jsonb", json)` + Jackson |

@@ -29,6 +29,13 @@ spring:
     locations: classpath:db/migration
     table: flyway_schema_history
 
+# MyBatis 全局配置：snake_case 列 → camelCase 字段；启用结果缓存
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-fetch-size: 100
+    default-statement-timeout: 30
+
   # Spring AI: 用 OpenAI starter 指向 DeepSeek（OpenAI 兼容）
   ai:
     openai:

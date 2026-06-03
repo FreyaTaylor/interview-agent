@@ -4,7 +4,9 @@
 
 ---
 
-## ADR-001：DB 访问层 — 选 JdbcClient，不引入 MyBatis
+## ADR-001：DB 访问层 — 选 JdbcClient，不引入 MyBatis（已被 ADR-004 取代）
+
+> **状态：Superseded by ADR-004（2026-06）**。下方为历史记录，保留供回溯。
 
 **决策**：使用 Spring `JdbcClient` + HikariCP，手写 SQL；不引入 MyBatis / MyBatis-Plus / JPA / JOOQ。
 
@@ -64,8 +66,8 @@
 ```
 java-backend/src/main/resources/db/migration/
 ├── V1__init_schema.sql              # 空库第一次跑，建所有表
-├── V2__add_user_answer_embedding.sql
-└── V3__add_interview_weight_col.sql
+├── V2__add_xxx_col.sql
+└── V3__rename_yyy.sql
 ```
 
 启动时 Spring Boot 自动调用 Flyway → 查 `flyway_schema_history` → 跑还没跑过的 V 脚本。**空库 = 跑 V1**。
@@ -96,3 +98,88 @@ java-backend/src/main/resources/db/migration/
 | LLM Chat | Spring AI 1.x `ChatClient` | 结构化输出 `.entity(Class<T>)` 体验好 |
 | Embedding / Vision | LangChain4j | Spring AI 对 DashScope 一等支持有限，LangChain4j 更稳 |
 | DB | 同 PG 实例独立 DB `interview_agent_java` + user `iagent_java` | 与 Python 端完全隔离，重写期间互不污染 |
+
+---
+
+## ADR-003：SQL 字面量放置 — 抽到 `XxxSql.java` 常量类（已被 ADR-004 取代）
+
+> **状态：Superseded by ADR-004（2026-06）**。下方为历史记录，保留供回溯。
+
+**决策**：所有 Repository 用到的 SQL 字面量统一放在**同包**下 `XxxSql.java` 常量类（包私有 final class，只有 `static final String`），Repository 不出现任何 SQL 字符串。
+
+### 候选对比
+
+| 方案 | 写法 | 取舍 |
+|---|---|---|
+| 内嵌文本块（旧） | `jdbc.sql("""SELECT ...""")` 写在方法里 | Repository 方法又长又乱，SQL 与 Java 逻辑搅在一起 |
+| **A2 常量类（选）** | `jdbc.sql(XxxSql.FIND_ALL)` | 0 新依赖；SQL 集中、可一眼审完；Repository 方法 ≤ 5 行 |
+| A1 外置 `.sql` 文件 | `@Value("classpath:sql/xxx/find_all.sql")` | IDE 高亮更好，但要写 SqlLoader 工具类，多 N 个小文件 |
+| MyBatis / jOOQ | — | 已被 ADR-001 拒绝 |
+
+### 规范
+
+- 文件命名：`XxxSql.java`（与 `XxxRepository.java` 同包同前缀）
+- 类修饰：`final class`，包私有，私有构造器
+- 常量名：Repository 方法名转 `SCREAMING_SNAKE_CASE`（`findAllOrdered` → `FIND_ALL_ORDERED`）
+- 当 INSERT/SELECT 有多条变体（如带/不带 embedding），后缀 `_WITH_X` / `_WITHOUT_X`
+- 共享片段（如 SELECT 列清单）放本类顶部，用 `String.formatted()` 拼装
+- 例外：一次性 DDL 或纯 1 行 SQL 可直接内联，不必单独建常量
+- 参考实现：`com.interview.agent.knowledge.KnowledgeNodeSql`
+
+---
+
+## ADR-004：切换到 MyBatis @注解 Mapper（取代 ADR-001 + ADR-003）
+
+**决策**：DB 访问层改用 `mybatis-spring-boot-starter` 的 **@注解 Mapper**，不写 XML。每个领域：`xxx/entity/XxxEntity.java`（Record）+ `xxx/mapper/XxxMapper.java`（`@Mapper` 接口）。
+
+### 触发原因
+
+S1 落地 A2 方案（JdbcClient + `XxxSql.java`）后实际感受：
+
+- 一个领域要 3 个文件（Entity + Repository + Sql），CRUD 简单实体仍要 ~80 行 Repository 模板代码（参数绑定 + RowMapper lambda + 调用 SQL 常量）
+- IN 子句要手拼 `?, ?, ?` placeholders + 显式 `for` 循环绑参，比 MyBatis `<foreach>` 啰嗦
+- INSERT...RETURNING id 在 JdbcClient 下需要 `KeyHolder`，啰嗦
+- 用户反馈："3 文件/实体很蠢"
+
+### 候选对比（复评）
+
+| 维度 | A2 JdbcClient + Sql 常量 | MyBatis @注解 ✅ |
+|---|---|---|
+| 文件数/实体 | 3（Entity/Repo/Sql） | 2（Entity/Mapper） |
+| 代码行数（11 SQL CRUD 实测） | ~140 行 Repo + ~80 行 Sql | ~140 行 Mapper（含 SQL） |
+| IN 子句 | 手拼 placeholders | `<script><foreach>` |
+| INSERT RETURNING id | KeyHolder 啰嗦 | `@Select` 承载，1 行 |
+| Record 映射 | RowMapper lambda | 自动驼峰（开 `-parameters` + `map-underscore-to-camel-case`）|
+| pgvector | `?::vector` 字面量 | `#{x}::vector`，等价 |
+| JSONB | `PGobject` | String + `::jsonb` cast，等价 |
+| 学习成本 | 0 | 低（仅注解 5 个，无 XML） |
+
+### 关键约束
+
+- **必须**开 Maven `-parameters`，否则 Record 构造器参数名丢失 → MyBatis 无法按名绑定
+- **必须**配 `mybatis.configuration.map-underscore-to-camel-case: true`
+- **不**用 XML mapper，**不**用 MyBatis-Plus（增加心智负担且自动 CRUD 对复杂查询无收益）
+- 动态 SQL 一律 `<script>` + `<foreach>`；空集合在 Service 端 `if (!list.isEmpty())` 兜底（`<foreach>` 空集会拼出非法 SQL）
+- `INSERT ... RETURNING id` 用 `@Select` 注解（Record 无 setter，不能用 `@Options(useGeneratedKeys=true)`）
+
+### 包结构
+
+```
+com.interview.agent.<domain>/
+├── entity/
+│   └── XxxEntity.java     # Record
+└── mapper/
+    └── XxxMapper.java     # @Mapper interface
+```
+
+### 影响
+
+- 删除 `xxx/XxxRepository.java` + `xxx/XxxSql.java`，新增 `xxx/mapper/XxxMapper.java`
+- ADR-001 「不引入 MyBatis」**撤销**
+- ADR-003 「SQL 抽到 XxxSql.java」**撤销**
+- [CONVENTIONS.md §3.4](../CONVENTIONS.md) 已同步更新
+
+### 参考实现
+
+- [knowledge/mapper/KnowledgeNodeMapper.java](../src/main/java/com/interview/agent/knowledge/mapper/KnowledgeNodeMapper.java)
+

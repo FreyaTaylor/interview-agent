@@ -2,7 +2,7 @@
 
 > **范围**：Spring Boot 工程骨架 + 横切组件 + DB / LLM / Embedding 客户端 + Flyway V1 建所有表 + health 接口。
 > **对应模块**：原 [JAVA_REWRITE_PLAN.md §0](../../../docs/JAVA_REWRITE_PLAN.md)。
-> **状态**：✅ 完成（本地 `mvn package` 通过 + 启动 Flyway V1 → 16 张表 + `GET /api/health` 返回 ApiResponse 成功）
+> **状态**：✅ 完成（本地 `mvn package` 通过 + 启动 Flyway V1 → 15 张表 + `GET /api/health` 返回 ApiResponse 成功）
 
 ---
 
@@ -67,7 +67,6 @@
 | 13 | `interview_knowledge_question` | 7 Interview | knowledge 类 |
 | 14 | `interview_project_question` | 7 Interview | project 类 |
 | 15 | `interview_other_question` | 7 Interview | hr / leetcode / 其他 |
-| 16 | `user_answer_embedding` | 7 Interview | `embedding vector(1024)` Agent 长期记忆 |
 
 ---
 
@@ -107,6 +106,6 @@ curl http://localhost:8080/api/health
 
 ## 6. 后续阶段对接
 
-- **S1 知识树 Admin CRUD**：直接用 `knowledge_node` 表 + `JdbcClient` + `EmbeddingService.toPgVectorLiteral(...)` 写 embedding
+- **S1 知识树 Admin CRUD**：直接用 `knowledge_node` 表 + MyBatis Mapper + `EmbeddingService.toPgVectorLiteral(...)` 写 embedding
 - **S2 知识树查询**：在 `KnowledgeRepository` 加 `findAll()` → 内存组装树
 - **S3 Study**：`study_question` + `question_attempt` 已就绪；`ChatClient.prompt(...).call().entity(RubricResult.class)`

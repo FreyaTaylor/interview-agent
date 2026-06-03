@@ -69,6 +69,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- MyBatis: 以注解方式写 Mapper（SQL 与 Java 实体同文件，避免 Repository+Sql 两个文件） -->
+        <dependency>
+            <groupId>org.mybatis.spring.boot</groupId>
+            <artifactId>mybatis-spring-boot-starter</artifactId>
+            <version>3.0.4</version>
+        </dependency>
+
         <!-- Flyway -->
         <dependency>
             <groupId>org.flywaydb</groupId>
@@ -121,6 +128,8 @@
                 <artifactId>maven-compiler-plugin</artifactId>
                 <configuration>
                     <release>21</release>
+                    <!-- -parameters 是 MyBatis 用 Record 作为查询返回类型的必要条件（靠 record 构造器参数名绑列） -->
+                    <parameters>true</parameters>
                 </configuration>
             </plugin>
         </plugins>

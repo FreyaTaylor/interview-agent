@@ -21,7 +21,6 @@
 | 对话（Conversation/Session） | 一次围绕某知识点/项目的多轮问答 | `conversation` / `project_session` |
 | Rubric | 评分关键点列表（JSON），总分恒为 100 | JSONB 字段 |
 | 掌握度（Mastery） | 知识点级别 0-100，EMA 更新 | `mastery_record` / `mastery_history` |
-| 长期记忆 | 用户回答的向量化存储 | `user_answer_embedding` |
 
 ### 1.3 一期范围（已落地）
 
@@ -154,7 +153,6 @@ tests/                   # golden case
 | `interview_knowledge_question` | `interview_record_id`, `knowledge_node_id`, `tag`, `questions`(JSONB), `user_answer`, `original_dialogue`, `score_result`(JSONB) |
 | `interview_project_question` | `interview_record_id`, `project_node_id`, `project_name`, `questions`, `user_answer`, `score_result` |
 | `interview_other_question` | `category`(`algorithm`/`hr`/`other`), `tag`, `questions`, `user_answer`, `score_result` |
-| `user_answer_embedding` | `user_id`, `knowledge_point_id`, `source`(`interview`/`study`), `question_text`, `answer_text`, `embedding`(Vector 1024), `score` |
 
 > **草稿字段**：`draft_turns` / `draft_groups` 是“面试解析校对”弹框保存但未提交的中间状态，
 > 由 `POST /api/interview/draft` 写入，`finalize_interview()` 成功后清零。历史列表返回 `has_draft` / `has_parsed` 两个布尔供
@@ -369,10 +367,9 @@ tests/                   # golden case
     c. interview_scorer.score_all_groups() knowledge=Rubric，project=印象评估，algorithm=题解对比，hr=表现评价
     d. interview_storage.store_new_interview_tables()
     e. update_knowledge_weights()          被考到的知识点 interview_weight ↑
-    f. store_answer_embeddings()           DashScope 向量 → user_answer_embedding
-    g. services/mastery.update_mastery_ema() 自动更新掌握度
-    h. LLM 生成 3-5 句面试官评语 + 通过概率
-    i. 清空 draft_turns/draft_groups
+    f. services/mastery.update_mastery_ema() 自动更新掌握度
+    g. LLM 生成 3-5 句面试官评语 + 通过概率
+    h. 清空 draft_turns/draft_groups
   → 评分结果 + 整体分析
 
 > **详情读取时的名字同步**：`get_history_detail()` 会按 `matched_node_id` /
@@ -425,8 +422,8 @@ tests/                   # golden case
 
 ### 9.3 pgvector
 
-- `knowledge_node.embedding`、`project_node.embedding`、`user_answer_embedding.embedding` 均使用 `Vector(1024)`
-- 用于：面试问题 → 知识节点匹配、项目话题去重合并、答案语义检索
+- `knowledge_node.embedding`、`project_node.embedding` 均使用 `Vector(1024)`
+- 用于：面试问题 → 知识节点匹配、项目话题去重合并
 
 ---
 

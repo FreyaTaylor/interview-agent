@@ -1,6 +1,5 @@
-package com.interview.agent.api;
+package com.interview.agent.common;
 
-import com.interview.agent.common.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 

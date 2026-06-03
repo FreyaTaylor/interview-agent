@@ -1,6 +1,6 @@
 # Java Backend 重写计划（按功能模块组织）
 
-> 目标：用 **Spring Boot 3 + Spring MVC（虚拟线程） + JdbcClient + Spring AI + LangChain4j** 重写 Python `backend/`，**独立新建数据库**（同一 PG 实例，新 DB + 新 user，空库起步）。
+> 目标：用 **Spring Boot 3 + Spring MVC（虚拟线程） + MyBatis @注解 + Spring AI + LangChain4j** 重写 Python `backend/`，**独立新建数据库**（同一 PG 实例，新 DB + 新 user，空库起步）。
 > 本文档按 **功能模块** 组织（不按时间阶段），每个模块独立可讨论 / 独立可实现 / 独立可验收。
 >
 > 参考蓝本：
@@ -14,7 +14,7 @@
 
 ## 0. 基础设施（横切，所有模块共用） — ✅ S0 已完成
 
-**摘要**：Spring Boot 3.3 + Spring MVC（虚拟线程）+ JdbcClient + HikariCP + Flyway + Spring AI 1.0（DeepSeek）+ LangChain4j 1.0（DashScope embedding）。独立 DB `interview_agent_java` / user `iagent_java`，空库起步，Flyway V1 一次性建 16 张表。
+**摘要**：Spring Boot 3.3 + Spring MVC（虚拟线程）+ MyBatis 3.0（@注解 Mapper）+ HikariCP + Flyway + Spring AI 1.0（DeepSeek）+ LangChain4j 1.0（DashScope embedding）。独立 DB `interview_agent_java` / user `iagent_java`，空库起步，Flyway V1 一次性建 15 张表。
 
 **详细设计、交付物清单、本地启动步骤、验收记录**见 → [java-backend/docs/modules/S0-infrastructure.md](../java-backend/docs/modules/S0-infrastructure.md)
 
@@ -25,12 +25,12 @@
 | # | 模块 | 包 | 路由前缀 | 涉及表 | 优先级 |
 |---|---|---|---|---|---|
 | 1 | 知识树（查询） | `knowledge/` | `/api/knowledge` | `knowledge_node` | P0 |
-| 2 | 知识树管理（Admin） | `admin/` | `/api/admin/tree-nodes`、`/api/admin/trees/*` | `knowledge_node` | P1 |
+| 2 | 知识树管理（Admin） | `admin/` | `/api/admin/tree-nodes`、`/api/admin/trees/*` | `knowledge_node` | P1（CRUD ✅ S1 已完成；树生成待 S5） |
 | 3 | 项目树管理（Admin） | `admin/` | `/api/admin/project-nodes` | `project_node` | P1 |
 | 4 | Learn 讲解 + 探索对话 | `learn/` | `/api/learn` | `knowledge_content`、`learn_chat`、`study_question` | P0 |
 | 5 | Study 学习闭环 | `study/` | `/api/study` | `study_question`、`question_attempt`、`knowledge_node`（mastery） | P0 |
 | 6 | Project Grilling 项目拷打 | `project/` | `/api/project-grilling` | `project`、`project_node`、`question_attempt`、`project_user_profile` | P1 |
-| 7 | Interview 面试复盘 | `interview/` | `/api/interview` | `interview_record`、`interview_{knowledge,project,other}_question`、`user_answer_embedding` | P1 |
+| 7 | Interview 面试复盘 | `interview/` | `/api/interview` | `interview_record`、`interview_{knowledge,project,other}_question` | P1 |
 | 8 | User Profile 用户画像 | `user/` | `/api/user` | `user` | P2 |
 | 9 | Auth（GitHub OAuth） | `auth/` | `/api/auth` | `user` | P3（一期可跳过） |
 | 10 | ASR 录音上传 | `interview/`（子能力） | `/api/interview/upload-audio` | — | P3（一期可跳过） |
@@ -43,14 +43,11 @@
 
 **目标**：Admin 对知识树做 CRUD + LLM 生成 / 文本解析 / 图片解析 / .mm 导入 / 优化 / 合并。
 
-### 2.1 节点 CRUD（对照 `api/admin/_tree_router_factory.py` + `tree_nodes.py`）
-| API | 说明 |
-|---|---|
-| `GET /api/admin/tree-nodes` | 完整节点列表 |
-| `POST /api/admin/tree-nodes` | 新增（自动算 level、生成 embedding） |
-| `PUT /api/admin/tree-nodes/{id}` | 修改（移父 → 递归重算后代 level） |
-| `PUT /api/admin/tree-nodes/batch-sort` | 批量排序 |
-| `DELETE /api/admin/tree-nodes/{id}` | 递归删除 |
+### 2.1 节点 CRUD — ✅ S1 已完成
+
+5 个端点：`GET /api/admin/tree-nodes`、`POST /api/admin/tree-nodes`、`PUT /api/admin/tree-nodes/{id}`、`PUT /api/admin/tree-nodes/batch-sort`、`DELETE /api/admin/tree-nodes/{id}`。
+
+**详细设计 / 表 / 模块交互 / 验收**见 → [java-backend/docs/modules/S1-knowledge-admin-crud.md](../java-backend/docs/modules/S1-knowledge-admin-crud.md)
 
 ### 2.2 树生成（对照 `api/admin/tree_gen.py`）
 | API | 说明 | 依赖 |
@@ -81,7 +78,7 @@
 | 类 | 职责 | Python 对照 |
 |---|---|---|
 | `KnowledgeNode` (Entity) | 映射 `knowledge_node` 表 | `models/knowledge.py` |
-| `KnowledgeNodeRepository` (`JdbcClient`) | findAll / findByParentId / findRoots | `services/knowledge_node.py` |
+| `KnowledgeNodeMapper` (`@Mapper`) | findAllOrdered / findById / findChildIds / hasChildren / 写入 + FK 清理 | `services/knowledge_node.py` |
 | `KnowledgeService` | 组装树（递归 children） | 同 |
 | `KnowledgeController` | `GET /api/knowledge/tree` | `api/knowledge.py` |
 
@@ -216,7 +213,7 @@
 
 ## 7. Interview 模块（`interview/`）— 链路最长
 
-**目标**：粘贴面试文本 → LLM 解析 turns+groups → pgvector 匹配 knowledge/project 节点 → 按类型评分 → 整体分析 → 落 4 表 + 副作用（更新 mastery weight + 写 user_answer_embedding）。
+**目标**：粘贴面试文本 → LLM 解析 turns+groups → pgvector 匹配 knowledge/project 节点 → 按类型评分 → 整体分析 → 落 4 表 + 副作用（更新 mastery weight）。
 
 | API | 说明 |
 |---|---|
@@ -250,7 +247,6 @@
 - `interview_knowledge_question` — knowledge_node_id, tag, questions/user_answer/original_dialogue, score_result(JSONB)
 - `interview_project_question` — project_node_id, project_name, 同上
 - `interview_other_question` — content, tag('hr'|'leetcode'|'misc'), extra(JSONB)
-- `user_answer_embedding` — embedding(vector), score, source='interview'
 
 **关键规则**
 - text_hash = `SHA-256(raw_text.strip()).hex`
@@ -334,7 +330,7 @@ graph LR
 | **S6** | 项目树 Admin（3）| 项目树 CRUD + from-text，为 Project Grilling 备数据 | S0 |
 | **S7** | Project Grilling（6）| 复用 `question_attempt` + `project_user_profile` 乐观锁 + fire-and-forget | S3 + S6 |
 | **S8a** | Interview（7）— preview-parse / parse / history 列表 | turns / parser / matcher 跑通 | S1 + S6 |
-| **S8b** | Interview（7）— finalize / check-duplicate / overwrite + 落库 + 副作用 | scorer / storage + `interview_weight += 1` + `user_answer_embedding` | S8a |
+| **S8b** | Interview（7）— finalize / check-duplicate / overwrite + 落库 + 副作用 | scorer / storage + `interview_weight += 1` | S8a |
 | **S8c** | Interview（7）— recalibrate / draft / 详情 / 删除 / PATCH | 边角能力 | S8b |
 | **S9** | User Profile（8）| 2 API，随时插队 | S0 |
 | **S10**（可推迟）| Auth（9）+ ASR（10）| 一期 `user_id=1` 写死可不做 | — |

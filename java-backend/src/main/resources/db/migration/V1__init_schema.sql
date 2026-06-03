@@ -262,20 +262,3 @@ CREATE TABLE interview_other_question (
     created_at          TIMESTAMP   NOT NULL DEFAULT NOW()
 );
 CREATE INDEX idx_ioq_record ON interview_other_question(interview_record_id);
-
--- -----------------------------------------------------------------------------
--- 16. user_answer_embedding —— 用户回答向量（Agent 长期记忆）
--- -----------------------------------------------------------------------------
-CREATE TABLE user_answer_embedding (
-    id                    BIGSERIAL PRIMARY KEY,
-    user_id               BIGINT       NOT NULL DEFAULT 1,
-    knowledge_point_id    BIGINT REFERENCES knowledge_node(id),
-    source                VARCHAR(20)  NOT NULL,   -- 'interview' | 'study'
-    knowledge_point_name  VARCHAR(200) NOT NULL,
-    question_text         TEXT         NOT NULL,
-    answer_text           TEXT         NOT NULL,
-    embedding             VECTOR(1024),
-    score                 SMALLINT,
-    created_at            TIMESTAMP    NOT NULL DEFAULT NOW()
-);
-CREATE INDEX idx_uae_user_kp ON user_answer_embedding(user_id, knowledge_point_id);
