@@ -40,6 +40,11 @@ spring:
         options:
           model: ${DEEPSEEK_MODEL:deepseek-chat}
           temperature: 0.3
+  # LLM 长输出（讲解 4096 token / 题目 5 道）需要更长的 HTTP 读超时
+  http:
+    client:
+      connect-timeout: 30s
+      read-timeout: 180s
 
   # 全局 Jackson：HTTP 请求/响应字段统一 snake_case（与 Python 端 + 前端约定一致）
   jackson:
@@ -52,6 +57,8 @@ mybatis:
     map-underscore-to-camel-case: true
     default-fetch-size: 100
     default-statement-timeout: 30
+  # 全局注册 JSONB TypeHandler：所有 jdbcType=OTHER 的 JSONB 列自动 Object ↔ JSONB
+  type-handlers-package: com.interview.agent.infra.db
 
 # 业务自定义配置（LlmProperties / EmbeddingProperties / CorsProperties）
 iagent:

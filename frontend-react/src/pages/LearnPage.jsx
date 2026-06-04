@@ -13,6 +13,16 @@ import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/Kn
 import AnswerInput from '../components/AnswerInput'
 import { Skeleton, StagePulse, TypingDots } from '../components/Loading'
 
+// 统一 POST + body 小包装（后端 java-style.md “API 形式”要求）
+async function postLearn(path, body) {
+  const resp = await fetch(`${API_LEARN}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+  return resp.json()
+}
+
 // Markdown 渲染组件
 // 预处理：在中文句号 / 问号 / 感叹号后插入硬换行（markdown 的 "  \n"），让正文一句一行更易读
 // 跳过 ``` 代码块、行内 `code`、标题行、表格行
@@ -173,17 +183,20 @@ export default function LearnPage() {
   const navigate = useNavigate()
   const tree = useKnowledgeTree()
   const [activeKpId, setActiveKpId] = useState(null)
-  const [content, setContent] = useState(null) // { content, questions, knowledge_point_name, mastery_level, last_studied_at }
+  const [content, setContent] = useState(null) // { content, knowledge_point_name, mastery_level, last_studied_at }
+  const [questions, setQuestions] = useState([]) // 题目列表（仅叶子节点非空）
   const [loading, setLoading] = useState(false)
   const [chatHistory, setChatHistory] = useState([])
   const [chatLoading, setChatLoading] = useState(false)
   const [quotedText, setQuotedText] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
+  const [regenAllLoading, setRegenAllLoading] = useState(false)
   const [addedLines, setAddedLines] = useState([])  // 本轮会话中被自动补充进讲解的行，用于绿色高亮
   const chatEndRef = useRef(null)
   const contentRef = useRef(null)
   const [expandedIds, setExpandedIds] = useState(new Set())
   const contentCacheRef = useRef({}) // 前端内存缓存：{ [kpId]: contentData }
+  const questionsCacheRef = useRef({}) // 前端内存缓存：{ [kpId]: questionsArray }
 
   // 知识树到位后，按当前 kpId 计算展开路径
   useEffect(() => {
@@ -208,6 +221,7 @@ export default function LearnPage() {
         setExpandedIds(findAncestorIds(tree, id))
       }
       loadContent(id)
+      loadQuestions(id)
       loadChatHistory(id)
     }
   }, [kpId, tree.length])
@@ -220,7 +234,7 @@ export default function LearnPage() {
       setLoading(false)
       // 后台静默刷新掌握度等可能变化的字段
       try {
-        const resp = await fetch(`${API_LEARN}/content/${id}`).then(r => r.json())
+        const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
         if (resp.code === 0) {
           contentCacheRef.current[id] = resp.data
           setContent(resp.data)
@@ -233,7 +247,7 @@ export default function LearnPage() {
     setContent(null)
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const resp = await fetch(`${API_LEARN}/content/${id}`).then(r => r.json())
+        const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
         if (resp.code === 0) {
           contentCacheRef.current[id] = resp.data
           setContent(resp.data)
@@ -252,10 +266,26 @@ export default function LearnPage() {
 
   const loadChatHistory = useCallback(async (id) => {
     try {
-      const resp = await fetch(`${API_LEARN}/chat-history/${id}`).then(r => r.json())
+      const resp = await postLearn('/chat-history', { kp_id: id })
       if (resp.code === 0) setChatHistory(resp.data || [])
     } catch (e) {
       console.error('加载对话历史失败:', e)
+    }
+  }, [])
+
+  const loadQuestions = useCallback(async (id) => {
+    // 题目与讲解并发拉，失败不阻断讲解加载
+    const cached = questionsCacheRef.current[id]
+    if (cached) setQuestions(cached)
+    try {
+      const resp = await postLearn('/questions', { kp_id: id, action: 'fetch' })
+      if (resp.code === 0) {
+        const qs = resp.data?.questions || []
+        questionsCacheRef.current[id] = qs
+        setQuestions(qs)
+      }
+    } catch (e) {
+      console.error('加载题目失败:', e)
     }
   }, [])
 
@@ -264,6 +294,7 @@ export default function LearnPage() {
     setExpandedIds(findAncestorIds(tree, id))
     navigate(`/learn/${id}`, { replace: true })
     loadContent(id)
+    loadQuestions(id)
     loadChatHistory(id)
     setQuotedText('')
     setAddedLines([])  // 切换知识点时清除上一个页的高亮
@@ -300,11 +331,7 @@ export default function LearnPage() {
     setChatLoading(true)
 
     try {
-      const resp = await fetch(`${API_LEARN}/chat`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ knowledge_point_id: activeKpId, message: text, quoted_text: quote }),
-      }).then(r => r.json())
+      const resp = await postLearn('/chat', { knowledge_point_id: activeKpId, message: text, quoted_text: quote })
       if (resp.code === 0) {
         const { reply, updated_subtopic, updated_content, merge_status } = resp.data
         setChatHistory(prev => [...prev, {
@@ -390,11 +417,38 @@ export default function LearnPage() {
               {/* 知识内容 */}
               <div className="learn-content-area">
                 <div className="learn-content" ref={contentRef}>
+                  <div className="learn-content-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                    <button
+                      className="learn-regen-all-btn"
+                      title="清空当前讲解和对话，重新生成讲解（题目不会变）"
+                      disabled={regenAllLoading}
+                      style={{ padding: '4px 12px', fontSize: 12, cursor: regenAllLoading ? 'not-allowed' : 'pointer', color: '#1677ff', background: 'transparent', border: '1px solid #1677ff', borderRadius: 4, opacity: regenAllLoading ? 0.6 : 1 }}
+                      onClick={async () => {
+                        if (!activeKpId || regenAllLoading) return
+                        if (!confirm('确定重新生成讲解？当前讲解和对话会被清空（题目不受影响）。')) return
+                        setRegenAllLoading(true)
+                        try {
+                          const resp = await postLearn('/content', { kp_id: activeKpId, action: 'regenerate' })
+                          if (resp.code === 0) {
+                            contentCacheRef.current[activeKpId] = resp.data
+                            setContent(resp.data)
+                            setChatHistory([])
+                          } else {
+                            alert(resp.message || '重新生成失败')
+                          }
+                        } catch (e) {
+                          alert('重新生成失败: ' + e.message)
+                        } finally {
+                          setRegenAllLoading(false)
+                        }
+                      }}
+                    >{regenAllLoading ? '生成中…' : '🔁 重新生成讲解'}</button>
+                  </div>
                   <LearnContentCards content={content.content} addedLines={addedLines} />
                 </div>
 
                 {/* 高频面试题（与答题页同源：study_question） */}
-                {content.questions?.length > 0 && (
+                {questions.length > 0 && (
                   <div className="learn-questions">
                     <div className="learn-q-header-row">
                       <h3>🎯 高频面试题</h3>
@@ -407,19 +461,13 @@ export default function LearnPage() {
                           if (!confirm('确定生成 5 道新面试题？已有作答历史的题目会保留。')) return
                           setRegenLoading(true)
                           try {
-                            const resp = await fetch(
-                              `${API_LEARN}/content/${activeKpId}/regenerate-questions`,
-                              { method: 'POST' },
-                            ).then(r => r.json())
+                            const resp = await postLearn('/questions', { kp_id: activeKpId, action: 'regenerate' })
                             if (resp.code === 0) {
-                              const prevIds = new Set((content?.questions || []).map(q => q.id))
-                              const newQs = resp.data.questions || []
+                              const prevIds = new Set(questions.map(q => q.id))
+                              const newQs = resp.data?.questions || []
                               const addedCount = newQs.filter(q => !prevIds.has(q.id)).length
-                              setContent(prev => {
-                                const next = { ...prev, questions: newQs }
-                                contentCacheRef.current[activeKpId] = next
-                                return next
-                              })
+                              questionsCacheRef.current[activeKpId] = newQs
+                              setQuestions(newQs)
                               if (addedCount === 0) {
                                 alert(`题目总数已达上限（${newQs.length} 道），未新增。`)
                               }
@@ -434,7 +482,7 @@ export default function LearnPage() {
                         }}
                       >{regenLoading ? '⏳ 生成中...' : '🔄 重新生成题目'}</button>
                     </div>
-                    {content.questions.map((q, i) => (
+                    {questions.map((q, i) => (
                       <div key={q.id ?? i} className="learn-question-card">
                         <div className="learn-q-title">Q{i + 1}: {q.question}</div>
                         {Array.isArray(q.recommended_answer) && q.recommended_answer.length > 0 ? (

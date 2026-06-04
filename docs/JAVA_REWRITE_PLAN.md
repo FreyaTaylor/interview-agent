@@ -24,7 +24,7 @@
 
 | # | 模块 | 包 | 路由前缀 | 涉及表 | 优先级 |
 |---|---|---|---|---|---|
-| 1 | 知识树（查询） | `knowledge/` | `/api/knowledge` | `knowledge_node` | P0 |
+| 1 | 知识树（查询） | `knowledge/` | `/api/knowledge` | `knowledge_node` | P0（✅ S2 完成） |
 | 2 | 知识树管理（Admin） | `admin/` | `/api/admin/tree-nodes`、`/api/admin/trees/*` | `knowledge_node` | P1（CRUD ✅ S1；树生成 ✅ S5 部分完成：from-text + from-generate） |
 | 3 | 项目树管理（Admin） | `admin/` | `/api/admin/project-nodes` | `project_node` | P1 |
 | 4 | Learn 讲解 + 探索对话 | `learn/` | `/api/learn` | `knowledge_content`、`learn_chat`、`study_question` | P0 |
@@ -64,20 +64,11 @@
 
 ---
 
-## 1. 知识树查询模块（`knowledge/`）
+## 1. 知识树查询模块（`knowledge/`） — ✅ S2 已完成
 
-**目标**：返回整棵知识树（含 weight / interview_weight / 层级）。
+**摘要**：单端点 `GET /api/knowledge/tree`，复用 S1 的 `KnowledgeNodeMapper.findAllOrdered()`，O(n) 把平表组装成嵌套树。`mastery_level / study_count` 占位返回 0，待 S3 完成后由 `QaAggregateService` 注入。
 
-| 类 | 职责 | Python 对照 |
-|---|---|---|
-| `KnowledgeNode` (Entity) | 映射 `knowledge_node` 表 | `models/knowledge.py` |
-| `KnowledgeNodeMapper` (`@Mapper`) | findAllOrdered / findById / findChildIds / hasChildren / 写入 + FK 清理 | `services/knowledge_node.py` |
-| `KnowledgeService` | 组装树（递归 children） | 同 |
-| `KnowledgeController` | `GET /api/knowledge/tree` | `api/knowledge.py` |
-
-**Schema**（`knowledge_node`）：`id, parent_id, name, level, weight, interview_weight, sort_order, embedding(vector(1024)), user_id`
-
-**验收**：`GET /api/knowledge/tree` 返回与 Python 端字段一致的嵌套结构。
+**详细设计 / 表 / 模块交互 / 验收**见 → [java-backend/docs/modules/S2-knowledge-query.md](../java-backend/docs/modules/S2-knowledge-query.md)
 
 ---
 
@@ -316,7 +307,7 @@ graph LR
 |---|---|---|---|
 | **S0** ✅ | 基础设施（0）| Spring Boot 骨架 / Flyway V1 建所有表 / `ApiResponse` / `ChatClient` / `EmbeddingService` / health 接口 | 无 |
 | **S1** | 知识树 Admin（2）— 仅节点 CRUD 子集 | 能手动灌数据，后续模块才有输入 | S0 |
-| **S2** | 知识树查询（1）| `GET /api/knowledge/tree` 验证树组装 | S1 |
+| **S2** ✅ | 知识树查询（1）| `GET /api/knowledge/tree` 验证树组装 | S1 |
 | **S3** | **Study（5）核心闭环** | 首次跑通 LLM / JSONB / 虚拟线程 / 评分聚合，架构可行性验收 | S2 |
 | **S4** | Learn（4）| 讲解 + 探索对话 + ensureKpStudied（依赖 `study_question` 表）| S3 |
 | **S5** | 知识树 Admin（2）— 树生成 6 种入口 | from-text / from-generate / from-mm / optimize / merge / from-image（视觉最后）| S4 |

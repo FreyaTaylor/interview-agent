@@ -69,6 +69,7 @@ xxx/
 │   └── XxxController.java       # @RestController，路由
 ├── service/
 │   ├── XxxService.java          # 接口：只声明能力（方法签名 + 一句话 Javadoc）
+│   ├── XxxHelper.java           # 可选：模块内跨多个 Service 共用的纯函数（@Service，扁平不入 impl/）
 │   └── impl/
 │       └── XxxServiceImpl.java  # @Service 实现，业务逻辑 / 完整 Javadoc 都在这里
 ├── mapper/
@@ -78,6 +79,9 @@ xxx/
 ```
 
 > 接口 vs 实现：Controller **依赖接口**，Spring 自动注入唯一的 `@Service` Bean。现阶段每个接口仅一个实现，但预留划分以便后续切插代理 / 多实现路由，与主流 Spring 项目习惯一致。
+>
+> `XxxHelper` 命名约定：**模块内** Service 之间共享的小函数（如 `LearnHelper.categoryPath(kpId)`）收纳于此；只供单个 Service 用 → 直接做 `private` 方法，不抽。**禁止**再创建 `*Generator` / `*Resolver` 这类薄包装（LLM 调用直接 inline 到 ServiceImpl + `LlmInvoker`）。
+>
 > 横切包（`common/` `infra/`）不必遵从这个骨架：HealthController / GlobalExceptionHandler 这种辅助类直接放包根。
 
 ---
@@ -112,6 +116,13 @@ xxx/
 ### 3.3 API 规范（与 Python 端对齐）
 
 - RESTful，kebab-case 路径，复数名词：`/api/study/attempts`、`/api/admin/tree-nodes`
+- **优先全 POST + body 参数**：所有读/写端点都用 POST，参数走 JSON body；避免 path/query 把字段写进 URL 和 access log
+- **用 `action` 字段区分语义**（不是用路径后缀）：
+  - `POST /api/learn/content`   body `{ kpId, action: "fetch"|"regenerate" }`
+  - `POST /api/learn/questions` body `{ kpId, action: "fetch"|"regenerate" }`
+  - action 解析下沉到 DTO record（如 `LearnAssetRequest.resolvedAction()`），Service 提供 `resolveXxx(Request)` 总入口；Controller 不写 switch/if
+- 仅纯静态资源 / 无任何参数才用 GET
+- **Controller 严格薄层**：每个方法体 ≤ 2 行（一行委托 Service + return），禁止在 Controller 里 switch action / 抛 BizException / 拼装多个 Service
 - 统一响应：`ApiResponse<T>{code: int, data: T, message: String}`
   - 成功：`{code: 0, data: ..., message: "success"}`
   - 失败：`{code: 40001, data: null, message: "..."}`（错误码沿用 Python 端，见 `backend/schemas/common.py`）
@@ -152,16 +163,18 @@ xxx/
 
 ### 3.7 LLM / Prompt
 
-- **Prompt 模板**放 `src/main/resources/prompts/{module}/*.txt`，禁止硬编码到 Java 文件
-- 加载工具：`PromptLoader.load("study/per_turn.txt")` → 缓存到 ConcurrentHashMap
-- 占位符用 `${var}` 风格；渲染走 Spring AI `PromptTemplate` 或自写 `StringSubstitutor`
-- **LLM 客户端**：
-  - Chat / 结构化输出 → `ChatClient`（Spring AI 1.x）
-    - 结构化输出用 `.entity(Class<T>)`；不稳定时回退到 `JsonUtil.extractJson(...)` 容错抽取
-  - Embedding → `EmbeddingService`（封装 LangChain4j DashScope）
-  - Vision → `VisionService`（LangChain4j `qwen-vl-max`，P1 模块用）
-- **温度**：评分类 0.0~0.2，生成类 0.5~0.7，在 Service 里显式指定
-- **token 上限**：在 `application.yml` 集中配置，不要散落
+- **Prompt 模板**走 `prompt_template` 表（DB 存储 + Flyway V?__ INSERT 种子，`ON CONFLICT (key) DO NOTHING`），**禁止**硬编码到 Java 文件或回退到 classpath txt 方案
+- 加载工具：`PromptService.render(key, Map.of("var_name", val))`，占位符 `{var_name}`（snake_case）；缓存走 `ConcurrentHashMap`，热更新调 `invalidateCache()` 或重启
+- key 命名：`<module>/<purpose>`，如 `learn/content-gen`、`learn/question-gen`、`tree/generate`
+- **LLM 调用必须走 `common/LlmInvoker.invoke(Spec, ResponseParser<T>)` 单一收口**：
+  - **禁止**在 Service 里直写 `chatClient.prompt()...call()`
+  - parser 用 lambda 或 method reference 直接传入，**不**创建独立 `XxxParser` 类（`@FunctionalInterface` 的本意）：
+    - 短逻辑 → inline lambda（如 `LearnContentServiceImpl` 的必选模块校验）
+    - 长逻辑 / 想单测 → 同类 `private static` 方法 + `Xxx::parseXxx` 方法引用（如 `LearnQuestionServiceImpl::parseQuestions`）
+  - parser 抛任意异常 = "此次结果无效"，自动触发下一轮重试（**不要**在 parser 里 try/catch 吞）
+  - 失败语义由 caller 决定：`.orElseThrow(() -> new BizException(50000, ...))` 阻断 / `.orElse(默认值)` 吞掉
+- **温度 / maxTokens / maxRetry** 都进 `LlmInvoker.Spec`，由调用方在常量里显式声明（评分类 0.0~0.2，生成类 0.3~0.7）
+- Embedding → `EmbeddingService`（封装 LangChain4j DashScope）；Vision → `VisionService`（`qwen-vl-max`，P1 模块用）
 
 ### 3.8 日志
 
@@ -187,7 +200,11 @@ xxx/
 - 实现类方法必须加 `@Override`
 - 现阶段每个接口仅一个实现；分层为后续切插代理 / 多实现路由 / 单测 mock 预留
 - 完整 Javadoc 只写一份在实现类上（避免接口与实现 Javadoc 双重维护漂移）；接口里每个方法一行注释说清"做什么"即可
-- 例外：`common/` `infra/` 等横切包不必走接口/实现分层
+- **职责单一**：一个 Service 只动一类资源。Learn 模块拆 `LearnContentService`（只动 `knowledge_content` + `learn_chat`）/ `LearnQuestionService`（只动 `study_question`）/ `LearnChatService`（只动 `learn_chat` + 调 LLM），不做"大杂烩 LearnService"
+  - 判断：Impl 类头能写「本服务**只**动 X」3 个表名以内 → 拆得对；要写 5 个表名 → 拆早了
+- **模块内共用纯函数**：放 `xxx/service/XxxHelper.java`（`@Service`，扁平不入 `impl/`）；只供单个 Service 用 → 直接做 `private` 方法
+- **禁止**再创建 `*Generator` / `*Resolver` 这类薄包装层（历史的 `LearnContentGenerator` / `CategoryPathResolver` 已删，LLM 调用 inline 到 ServiceImpl + `LlmInvoker`）
+- 例外：`common/` `infra/` 等横切包不必走接口/实现分层；`PromptService`、`LlmInvoker`、`JsonUtil` 这类纯工具单文件 `@Component`/`@Service` 即可
 
 ### 3.11 注释规范
 

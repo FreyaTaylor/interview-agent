@@ -9,15 +9,13 @@ import com.interview.agent.admin.dto.TreeNodeJson;
 import com.interview.agent.admin.service.TreeGenService;
 import com.interview.agent.common.BizException;
 import com.interview.agent.common.JsonUtil;
+import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.infra.llm.EmbeddingService;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
-import com.interview.agent.prompts.PromptLoader;
 import com.interview.agent.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.client.ChatClient;
-import org.springframework.ai.openai.OpenAiChatOptions;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -32,9 +30,8 @@ import java.util.stream.Collectors;
  *
  * <p>整体流程（两个入口共用）：
  * <ol>
- *   <li>构造 prompt（不同入口用不同模板）</li>
- *   <li>调 DeepSeek（{@link ChatClient}），最多重试 3 次 → 拿到 JSON 字符串</li>
- *   <li>{@link JsonUtil#extractJson} 容错抽取 + 反序列化为 {@link TreeNodeJson}</li>
+ *   <li>构造 vars（不同入口用不同 prompt key）</li>
+ *   <li>调 {@link LlmInvoker}（最多重试 {@value #LLM_RETRY} 次，parser 用 {@link JsonUtil#extractJson} 容错抽 JSON）</li>
  *   <li>{@link #checkDuplicateByName} 做两层去重（精确名 + LLM 语义）</li>
  *   <li>递归 {@link #saveRecursive} 落库（每个节点同步生成 embedding，失败降级为 null）</li>
  *   <li>事务提交，返回 root_id + name + leaf_count</li>
@@ -42,11 +39,12 @@ import java.util.stream.Collectors;
  *
  * <p>设计取舍：
  * <ul>
+ *   <li>LLM 调用全部走 {@link LlmInvoker}（仓库 java-style.md "LLM 调用单一收口"）；本类只关心拼 vars + 解析 JSON</li>
  *   <li>embedding 同步生成（而非 Python 那样后批量回填）—— 简化事务边界；
- *       单个节点 embed 失败降级为 null 不阻断整树，与 S1 KnowledgeAdminServiceImpl 一致。</li>
- *   <li>level 在递归里现算（base=1，每深一层 +1），与 S1 create() 单节点 level 推导一致。</li>
+ *       单个节点 embed 失败降级为 null 不阻断整树，与 S1 KnowledgeAdminServiceImpl 一致</li>
+ *   <li>level 在递归里现算（base=1，每深一层 +1），与 S1 create() 单节点 level 推导一致</li>
  *   <li>nodeType：有 children → category，否则 leaf（与 S1 "默认 leaf 后升级" 路径不同 ——
- *       树生成时整棵都知道形状，可一次定型，无需事后升级）。</li>
+ *       树生成时整棵都知道形状，可一次定型，无需事后升级）</li>
  * </ul>
  *
  * <p>用户：一期写死 user_id=1（CONVENTIONS §1，多用户在 S9 引入）。
@@ -70,19 +68,16 @@ public class TreeGenServiceImpl implements TreeGenService {
     private final KnowledgeNodeMapper repo;
     private final UserMapper userMapper;
     private final EmbeddingService embeddingService;
-    private final ChatClient chatClient;
-    private final PromptLoader promptLoader;
+    private final LlmInvoker llmInvoker;
 
     public TreeGenServiceImpl(KnowledgeNodeMapper repo,
                               UserMapper userMapper,
                               EmbeddingService embeddingService,
-                              ChatClient chatClient,
-                              PromptLoader promptLoader) {
+                              LlmInvoker llmInvoker) {
         this.repo = repo;
         this.userMapper = userMapper;
         this.embeddingService = embeddingService;
-        this.chatClient = chatClient;
-        this.promptLoader = promptLoader;
+        this.llmInvoker = llmInvoker;
     }
 
     // ============================================================
@@ -93,7 +88,12 @@ public class TreeGenServiceImpl implements TreeGenService {
      * 解析用户粘贴的文本（Markdown / 缩进列表）为知识树并落库。
      *
      * <p>LLM 只做"结构识别"——名称严格保持原文，不改写不归类（prompt 里有硬约束）。
-     *
+     * <ol>
+     *   <li>Step 1: 入参校验</li>
+     *   <li>Step 2: 调 LLM（低温严守原文）→ TreeNodeJson</li>
+     *   <li>Step 3: 树名去重</li>
+     *   <li>Step 4: 递归落库 + embedding</li>
+     * </ol>
      * @throws BizException 40001 text 空；40901 同名树已存在；50000 LLM 解析失败
      */
     @Override
@@ -105,9 +105,9 @@ public class TreeGenServiceImpl implements TreeGenService {
             throw new BizException(40001, "文本内容不能为空");
         }
 
-        // Step 2: 渲染 prompt + 调 LLM（带 3 次重试，低温模式严守原文）
-        String prompt = promptLoader.render("tree/parse-text.txt", Map.of("text", text));
-        TreeNodeJson tree = callLlmJson(prompt, "from-text", TEMP_PARSE_TEXT, TreeNodeJson.class);
+        // Step 2: 调 LLM
+        TreeNodeJson tree = callLlmJson("tree/parse-text", Map.of("text", text),
+                "from-text", TEMP_PARSE_TEXT, TreeNodeJson.class);
 
         // Step 3: 创建前去重（精确 + LLM 语义两层）
         String treeName = tree.name() == null ? "" : tree.name().strip();
@@ -130,7 +130,13 @@ public class TreeGenServiceImpl implements TreeGenService {
      *
      * <p>LLM 拿到 3 个变量：tree_name、requirements（空时回退用 tree_name）、profile_text（用户画像）。
      * LLM 返回 {@code {"children":[...]}} 不含根名，我们补上 {@code tree_name} 当根节点。
-     *
+     * <ol>
+     *   <li>Step 1: 入参校验 + requirements 回退</li>
+     *   <li>Step 2: 先去重（避免白调 LLM）</li>
+     *   <li>Step 3: 读用户画像</li>
+     *   <li>Step 4: 调 LLM → TreeNodeJson</li>
+     *   <li>Step 5: 补根名 + 递归落库</li>
+     * </ol>
      * @throws BizException 40001 treeName 空；40901 同名树已存在；50000 LLM 失败
      */
     @Override
@@ -153,18 +159,15 @@ public class TreeGenServiceImpl implements TreeGenService {
                 .filter(s -> !s.isEmpty())
                 .orElse("（未设置用户画像）");
 
-        // Step 4: 渲染 prompt + 调 LLM
-        String prompt = promptLoader.render("tree/generate.txt", Map.of(
+        // Step 4: 调 LLM
+        TreeNodeJson llmTree = callLlmJson("tree/generate", Map.of(
                 "tree_name", treeName,
                 "requirements", requirements,
                 "profile_text", profileText
-        ));
-        TreeNodeJson llmTree = callLlmJson(prompt, "from-generate", TEMP_GENERATE, TreeNodeJson.class);
+        ), "from-generate", TEMP_GENERATE, TreeNodeJson.class);
 
-        // Step 5: LLM 不返回根名，用 treeName 包装一层作为根
+        // Step 5: LLM 不返回根名，用 treeName 包装一层作为根；递归落库
         TreeNodeJson root = new TreeNodeJson(treeName, llmTree.children(), null);
-
-        // Step 6: 递归落库 + 同步 embedding
         SaveResult sr = saveRecursive(root, null, (short) 1, List.of());
         log.info("[TreeGen] from-generate done root={} name='{}' leaves={}", sr.rootId, treeName, sr.leafCount);
         return new TreeGenResp(sr.rootId, treeName, sr.leafCount);
@@ -189,12 +192,6 @@ public class TreeGenServiceImpl implements TreeGenService {
      *       避免同名节点在不同上下文下被向量混淆，如 Redis/Set vs JS/Set）</li>
      *   <li>embed 失败：降级为 null（节点照常入库，等后续 backfill）</li>
      * </ul>
-     *
-     * @param node      当前要写入的节点
-     * @param parentId  父节点 id（根节点传 null）
-     * @param level     当前 level（根=1）
-     * @param ancestors 祖先名链（不含 self），用于拼 embedding 文本
-     * @return SaveResult{当前节点 id, 该子树叶子计数}
      */
     private SaveResult saveRecursive(TreeNodeJson node,
                                      Long parentId,
@@ -264,45 +261,21 @@ public class TreeGenServiceImpl implements TreeGenService {
     }
 
     // ============================================================
-    // 内部：LLM 调用 + JSON 解析（3 次重试）
+    // 内部：LLM 调用 + JSON 解析
     // ============================================================
 
     /**
-     * 调 LLM 拿结构化 JSON，最多 {@value #LLM_RETRY} 次重试；按场景指定 temperature 与 max-tokens。
+     * 调 LLM 拿结构化 JSON 的薄封装：组 Spec + 反序列化；失败抛 50000。
+     * <p>parser 用 {@link JsonUtil#extractJson} 容错抽 JSON——即使 LLM 在 JSON 外塞了寒暄语，
+     * 也能从代码围栏 / 括号配对里抠出来；抽不到 / 反序列化失败抛异常 → LlmInvoker 自动进入下一轮。
      *
-     * <p>每次结果都过 {@link JsonUtil#extractJson} —— 即使 LLM 在 JSON 外塞了寒暄语，
-     * 也能从代码围栏 / 括号配对里抠出来。
-     *
-     * @param prompt      渲染好的 prompt
-     * @param scene       日志场景标签（如 "from-text"），便于排查
-     * @param temperature 本次调用温度（覆盖 yml 的全局默认）
-     * @param type        反序列化目标类型
-     * @param <T>         返回结构
-     * @return 解析后的 POJO
-     * @throws BizException 50000 全部重试都失败
+     * @param scene 日志场景标签（如 "from-text"），便于排查（LlmInvoker 日志带 prompt key 已够，本参数仅用于异常 message）
      */
-    private <T> T callLlmJson(String prompt, String scene, double temperature, Class<T> type) {
-        OpenAiChatOptions options = OpenAiChatOptions.builder()
-                .temperature(temperature)
-                .maxTokens(LLM_MAX_TOKENS)
-                .build();
-        Exception last = null;
-        for (int attempt = 1; attempt <= LLM_RETRY; attempt++) {
-            try {
-                // Step 1: 调用 DeepSeek（per-call options 覆盖全局温度）
-                String content = chatClient.prompt()
-                        .options(options)
-                        .user(prompt)
-                        .call()
-                        .content();
-                // Step 2: 容错抽 JSON + 反序列化
-                return JsonUtil.extractJson(content, type);
-            } catch (Exception e) {
-                last = e;
-                log.warn("[TreeGen] {} LLM 第 {}/{} 次失败: {}", scene, attempt, LLM_RETRY, e.getMessage());
-            }
-        }
-        throw new BizException(50000, "LLM 调用失败（" + scene + "）：" + (last != null ? last.getMessage() : "未知"));
+    private <T> T callLlmJson(String promptKey, Map<String, Object> vars,
+                              String scene, double temperature, Class<T> type) {
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(promptKey, vars, temperature, LLM_MAX_TOKENS, LLM_RETRY);
+        return llmInvoker.invoke(spec, raw -> JsonUtil.extractJson(raw, type))
+                .orElseThrow(() -> new BizException(50000, "LLM 调用失败（" + scene + "）"));
     }
 
     // ============================================================
@@ -312,11 +285,12 @@ public class TreeGenServiceImpl implements TreeGenService {
     /**
      * 创建树前的同名检查（两层）：
      * <ol>
-     *   <li>精确匹配（case-insensitive，trim 后比较）—— 命中即抛 40901</li>
-     *   <li>LLM 语义匹配 —— 让 LLM 判断新名是否与某已有根节点同主题；命中抛 40901</li>
+     *   <li>Step 1: 拉所有根节点</li>
+     *   <li>Step 2: 精确匹配（case-insensitive，trim 后比较）—— 命中即抛 40901</li>
+     *   <li>Step 3: LLM 语义匹配 —— 让 LLM 判断新名是否与某已有根节点同主题；命中抛 40901</li>
      * </ol>
-     *
-     * <p>第二层 LLM 失败时仅记 warning 不阻断（与 Python 一致 —— LLM 不可用不应该阻止合法创建）。
+     * <p>第二层 LLM 失败时跳过不阻断（与 Python 一致 —— LLM 不可用不应该阻止合法创建）。
+     * LlmInvoker 返 empty 即视为不可用，直接 return。
      *
      * @throws BizException 40901 重复
      */
@@ -336,7 +310,7 @@ public class TreeGenServiceImpl implements TreeGenService {
             }
         }
 
-        // Step 3: LLM 语义匹配（失败不阻断）
+        // Step 3: LLM 语义匹配（失败不阻断 → Optional.empty 直接退出）
         List<String> existingNames = roots.stream()
                 .map(r -> r.name() == null ? "" : r.name().strip())
                 .filter(s -> !s.isEmpty())
@@ -344,31 +318,26 @@ public class TreeGenServiceImpl implements TreeGenService {
         if (existingNames.isEmpty()) {
             return;
         }
-        try {
-            String namesText = existingNames.stream().map(n -> "- " + n).collect(Collectors.joining("\n"));
-            String prompt = promptLoader.render("tree/duplicate-check.txt", Map.of(
-                    "new_name", name,
-                    "existing_names", namesText
-            ));
-            // 复用 callLlmJson：零温 + 单次重试逻辑也走完整 3 次（语义判定贵但偶发失败）
-            DuplicateCheckResult res = callLlmJson(prompt, "dup-check", TEMP_DUP_CHECK, DuplicateCheckResult.class);
-            if (res != null && Boolean.TRUE.equals(res.duplicate()) && res.matchedName() != null) {
-                String matched = res.matchedName().strip();
-                for (KnowledgeNode r : roots) {
-                    String rn = r.name() == null ? "" : r.name().strip();
-                    if (rn.toLowerCase(Locale.ROOT).equals(matched.toLowerCase(Locale.ROOT))) {
-                        throw new BizException(40901, "与已有知识树「" + r.name() + "」语义重复，请更换名称或合并");
-                    }
-                }
+        String namesText = existingNames.stream().map(n -> "- " + n).collect(Collectors.joining("\n"));
+        LlmInvoker.Spec spec = new LlmInvoker.Spec("tree/duplicate-check", Map.of(
+                "new_name", name,
+                "existing_names", namesText
+        ), TEMP_DUP_CHECK, LLM_MAX_TOKENS, LLM_RETRY);
+        DuplicateCheckResult res = llmInvoker.invoke(spec, raw -> JsonUtil.extractJson(raw, DuplicateCheckResult.class))
+                .orElse(null);
+        if (res == null || !Boolean.TRUE.equals(res.duplicate()) || res.matchedName() == null) {
+            return;
+        }
+        String matched = res.matchedName().strip().toLowerCase(Locale.ROOT);
+        for (KnowledgeNode r : roots) {
+            String rn = r.name() == null ? "" : r.name().strip();
+            if (rn.toLowerCase(Locale.ROOT).equals(matched)) {
+                throw new BizException(40901, "与已有知识树「" + r.name() + "」语义重复，请更换名称或合并");
             }
-        } catch (BizException e) {
-            throw e;  // 重复错误向上抛
-        } catch (Exception e) {
-            log.warn("[TreeGen] 语义去重检测失败（跳过）: {}", e.getMessage());
         }
     }
 
-    /** LLM duplicate-check.txt 的输出结构。 */
+    /** LLM tree/duplicate-check 的输出结构。 */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     private record DuplicateCheckResult(
             Boolean duplicate,

@@ -1075,7 +1075,20 @@ body {
 .learn-chat-msg {
   margin-bottom: 8px; padding: 8px 12px; border-radius: 10px;
   font-size: 13px; line-height: 1.7; max-width: 95%;
+  word-break: break-word; overflow-wrap: anywhere; min-width: 0;
 }
+/* 对话气泡内的 markdown 渲染（含 pre/code）必须按容器宽度换行，避免横向溢出被裁切 */
+.learn-chat-msg pre {
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+  max-width: 100%; overflow-x: auto; margin: 6px 0;
+  background: #f6f8fa; padding: 8px 10px; border-radius: 6px;
+  font-size: 12px;
+}
+.learn-chat-msg code {
+  white-space: pre-wrap; word-break: break-word; overflow-wrap: anywhere;
+}
+.learn-chat-msg pre code { background: none; padding: 0; }
+.learn-chat-msg p { margin: 4px 0; }
 .learn-chat-msg.user {
   background: #e6f4ff; margin-left: auto; text-align: right;
 }

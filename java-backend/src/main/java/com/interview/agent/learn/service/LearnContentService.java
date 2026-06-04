@@ -1,0 +1,19 @@
+package com.interview.agent.learn.service;
+
+import com.interview.agent.learn.dto.ContentView;
+import com.interview.agent.learn.dto.LearnAssetRequest;
+
+/**
+ * Learn 模块 · 讲解（content）业务接口。
+ *
+ * <p>职责：知识点讲解 Markdown 的取/生成/重生；与题目、对话完全无关。
+ * <p>用户：一期写死 user_id=1（CONVENTIONS §1）。
+ */
+public interface LearnContentService {
+
+    /** 总入口：根据 {@code action} 分发 fetch / regenerate。 */
+    ContentView resolveContent(LearnAssetRequest req);
+
+    /** 幂等保证：若讲解不存在则生成并落库（供 S3 串联调用）。 */
+    void ensureContent(long kpId);
+}
