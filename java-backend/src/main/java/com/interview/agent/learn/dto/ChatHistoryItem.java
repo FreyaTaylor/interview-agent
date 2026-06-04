@@ -4,6 +4,7 @@ public record ChatHistoryItem(
         String role,
         String content,
         String quotedText,
+        Long quotedSubtopicId,
         String createdAt
 ) {
 }

@@ -12,6 +12,8 @@
  *   - disabled:       loading 期间禁用全部按钮
  *   - placeholder:    输入框占位
  *   - autoFocus:      渲染后自动聚焦
+ *
+ * 交互约定：Enter 始终是换行，发送只能点“发送”按钮（避免误触发）。
  */
 import { useRef, useState, useEffect } from 'react'
 import useSpeechRecognition from '../hooks/useSpeechRecognition'
@@ -20,7 +22,7 @@ export default function AnswerInput({
   onSend,
   onStopFollowUp = null,
   disabled = false,
-  placeholder = '输入你的回答... (Shift+Enter 换行)',
+  placeholder = '输入你的回答...（点右侧按钮发送，Enter 换行）',
   autoFocus = false,
 }) {
   const [input, setInput] = useState('')
@@ -77,13 +79,6 @@ export default function AnswerInput({
     }
   }
 
-  function handleKeyDown(e) {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      handleSend()
-    }
-  }
-
   const micTitle = voiceError
     ? `语音失败: ${voiceError}（点击重试）`
     : voiceProcessing ? '语音解析中…（点击强制停止）'
@@ -120,7 +115,6 @@ export default function AnswerInput({
           className="ai-input"
           value={input}
           onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
           placeholder={placeholder}
           rows={3}
           disabled={disabled}

@@ -9,9 +9,9 @@ import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.learn.dto.LearnAssetRequest;
 import com.interview.agent.learn.dto.QuestionItemView;
 import com.interview.agent.learn.dto.QuestionsView;
-import com.interview.agent.learn.entity.KnowledgeContent;
+import com.interview.agent.learn.entity.KnowledgeSubtopic;
 import com.interview.agent.learn.entity.StudyQuestion;
-import com.interview.agent.learn.mapper.KnowledgeContentMapper;
+import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
 import com.interview.agent.learn.mapper.StudyQuestionMapper;
 import com.interview.agent.learn.service.LearnHelper;
 import com.interview.agent.learn.service.LearnQuestionService;
@@ -68,18 +68,18 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     private static final TypeReference<Map<String, Object>> RESP_TYPE = new TypeReference<>() {};
 
     private final KnowledgeNodeMapper nodeMapper;
-    private final KnowledgeContentMapper contentMapper;
+    private final KnowledgeSubtopicMapper subtopicMapper;
     private final StudyQuestionMapper questionMapper;
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
 
     public LearnQuestionServiceImpl(KnowledgeNodeMapper nodeMapper,
-                                    KnowledgeContentMapper contentMapper,
+                                    KnowledgeSubtopicMapper subtopicMapper,
                                     StudyQuestionMapper questionMapper,
                                     LearnHelper helper,
                                     LlmInvoker llmInvoker) {
         this.nodeMapper = nodeMapper;
-        this.contentMapper = contentMapper;
+        this.subtopicMapper = subtopicMapper;
         this.questionMapper = questionMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
@@ -180,10 +180,8 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
      * <p>caller 决定是否吞异常；本方法不主动 try/catch。空列表直接跳过 insert。
      */
     private void generateAndPersist(KnowledgeNode node, int count, List<String> existingQs) {
-        // Step 1: 准备讲解上下文（截断）+ 避免重复块
-        String content = contentMapper.findByKpId(node.id())
-                .map(KnowledgeContent::content)
-                .orElse("");
+        // Step 1: 准备讲解上下文（拼接子话题 body_md，截断） + 避免重复块
+        String content = renderSubtopicsAsContext(node.id());
         if (content.length() > CONTEXT_LIMIT) {
             content = content.substring(0, CONTEXT_LIMIT);
         }
@@ -245,6 +243,25 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
             sb.append("- ").append(existing.get(i)).append('\n');
         }
         return sb.toString();
+    }
+
+    /**
+     * 把该 KP 的全部子话题拼成"讲解上下文"喂给出题 prompt。
+     * 格式：每个子话题以 {@code #### title} 起头 + body_md；空 KP 返空串。
+     */
+    private String renderSubtopicsAsContext(long kpId) {
+        List<KnowledgeSubtopic> rows = subtopicMapper.findByKp(kpId);
+        if (rows.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (KnowledgeSubtopic s : rows) {
+            sb.append("#### ").append(s.title()).append("\n\n");
+            if (s.bodyMd() != null && !s.bodyMd().isBlank()) {
+                sb.append(s.bodyMd().strip()).append("\n\n");
+            }
+        }
+        return sb.toString().strip();
     }
 
     private static String asString(Object v) {

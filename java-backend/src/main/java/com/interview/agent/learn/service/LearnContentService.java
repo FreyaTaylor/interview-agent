@@ -16,4 +16,7 @@ public interface LearnContentService {
 
     /** 幂等保证：若讲解不存在则生成并落库（供 S3 串联调用）。 */
     void ensureContent(long kpId);
+
+    /** 删除单个子话题（需同时传 kpId 防越权）；记录不存在 → 抛 40400。 */
+    void deleteSubtopic(long kpId, long subtopicId);
 }

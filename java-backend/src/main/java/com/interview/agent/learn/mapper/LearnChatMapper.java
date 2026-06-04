@@ -12,7 +12,7 @@ import java.util.List;
 @Mapper
 public interface LearnChatMapper {
 
-    String COLS = "id, knowledge_point_id, user_id, role, content, quoted_text, created_at";
+    String COLS = "id, knowledge_point_id, user_id, role, content, quoted_text, quoted_subtopic_id, created_at";
 
     @Select("SELECT " + COLS + " FROM learn_chat WHERE knowledge_point_id = #{kpId} ORDER BY id")
     List<LearnChat> findByKpId(@Param("kpId") long kpId);
@@ -25,13 +25,14 @@ public interface LearnChatMapper {
     List<LearnChat> findRecent(@Param("kpId") long kpId, @Param("limit") int limit);
 
     @Insert("""
-            INSERT INTO learn_chat (knowledge_point_id, role, content, quoted_text)
-            VALUES (#{kpId}, #{role}, #{content}, #{quotedText})
+            INSERT INTO learn_chat (knowledge_point_id, role, content, quoted_text, quoted_subtopic_id)
+            VALUES (#{kpId}, #{role}, #{content}, #{quotedText}, #{quotedSubtopicId})
             """)
     int insert(@Param("kpId") long kpId,
                @Param("role") String role,
                @Param("content") String content,
-               @Param("quotedText") String quotedText);
+               @Param("quotedText") String quotedText,
+               @Param("quotedSubtopicId") Long quotedSubtopicId);
 
     @Delete("DELETE FROM learn_chat WHERE knowledge_point_id = #{kpId}")
     int deleteByKpId(@Param("kpId") long kpId);

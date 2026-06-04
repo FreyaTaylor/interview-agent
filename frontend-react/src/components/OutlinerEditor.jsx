@@ -148,8 +148,8 @@ export default function OutlinerEditor({
     if (!node || !node.name.trim()) return
     setSaving(true)
     try {
-      await fetch(`${apiUrl}/${nodeId}`, {
-        method: 'PUT',
+      await fetch(`${apiUrl}/${nodeId}/update`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: node.name.trim() }),
       })
@@ -181,7 +181,7 @@ export default function OutlinerEditor({
           updates.push({ id: newId, sort_order: newSortOrder })
           if (updates.length) {
             await fetch(`${apiUrl}/batch-sort`, {
-              method: 'PUT',
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ updates }),
             })
@@ -212,13 +212,13 @@ export default function OutlinerEditor({
     const newParentChildren = getChildren(newParent.id)
     setSaving(true)
     try {
-      await fetch(`${apiUrl}/${node.id}`, {
-        method: 'PUT',
+      await fetch(`${apiUrl}/${node.id}/update`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parent_id: newParent.id }),
       })
       await fetch(`${apiUrl}/batch-sort`, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates: [{ id: node.id, sort_order: newParentChildren.length }] }),
       })
@@ -249,13 +249,13 @@ export default function OutlinerEditor({
         }
       }
       updates.push({ id: node.id, sort_order: newSortOrder })
-      await fetch(`${apiUrl}/${node.id}`, {
-        method: 'PUT',
+      await fetch(`${apiUrl}/${node.id}/update`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parent_id: parent.parent_id }),
       })
       await fetch(`${apiUrl}/batch-sort`, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates }),
       })
@@ -270,7 +270,7 @@ export default function OutlinerEditor({
     const visIdx = visibleNodes.findIndex(n => n.id === node.id)
     const prevNode = visIdx > 0 ? visibleNodes[visIdx - 1] : null
     try {
-      await fetch(`${apiUrl}/${node.id}`, { method: 'DELETE' })
+      await fetch(`${apiUrl}/${node.id}/delete`, { method: 'POST' })
       await fetchData()
       if (prevNode) setFocusId(prevNode.id)
     } catch (e) { console.error('删除失败:', e) }
@@ -423,8 +423,8 @@ export default function OutlinerEditor({
     setSaving(true)
     try {
       const movingParent = newParentId !== dragNode.parent_id
-      const moveResp = await fetch(`${apiUrl}/${dragNode.id}`, {
-        method: 'PUT',
+      const moveResp = await fetch(`${apiUrl}/${dragNode.id}/update`, {
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           parent_id: newParentId,
@@ -439,7 +439,7 @@ export default function OutlinerEditor({
       // Step 4: 批量排序（dragNode 自身 + 让位的兄弟）
       updates.push({ id: dragNode.id, sort_order: newSortOrder })
       await fetch(`${apiUrl}/batch-sort`, {
-        method: 'PUT',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates }),
       })
@@ -450,15 +450,15 @@ export default function OutlinerEditor({
         undo: async () => {
           // 先把 parent 改回去（若变过）
           if (movingParent) {
-            await fetch(`${apiUrl}/${dragNode.id}`, {
-              method: 'PUT',
+            await fetch(`${apiUrl}/${dragNode.id}/update`, {
+              method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ parent_id: oldParentId, moving_parent: true }),
             })
           }
           // 还原所有受影响节点的 sort_order
           await fetch(`${apiUrl}/batch-sort`, {
-            method: 'PUT',
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               updates: snapshot.map(s => ({ id: s.id, sort_order: s.sort_order })),
@@ -644,8 +644,8 @@ export default function OutlinerEditor({
                   onChange={async (e) => {
                     const w = Number(e.target.value)
                     setFlatNodes(prev => prev.map(n => n.id === node.id ? { ...n, interview_weight: w } : n))
-                    await fetch(`${apiUrl}/${node.id}`, {
-                      method: 'PUT',
+                    await fetch(`${apiUrl}/${node.id}/update`, {
+                      method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
                       body: JSON.stringify({ interview_weight: w }),
                     })
@@ -669,7 +669,7 @@ export default function OutlinerEditor({
                   if (hasKids) {
                     if (!window.confirm(`确定删除「${node.name}」及其所有子节点？`)) return
                   }
-                  await fetch(`${apiUrl}/${node.id}`, { method: 'DELETE' })
+                  await fetch(`${apiUrl}/${node.id}/delete`, { method: 'POST' })
                   await fetchData()
                 }}
               >×</button>

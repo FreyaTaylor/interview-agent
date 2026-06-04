@@ -955,10 +955,86 @@ body {
 .learn-sub-card-body { font-size: 13.5px; color: #555; line-height: 1.8; }
 .learn-sub-card-body p { margin: 4px 0; }
 .learn-sub-card-body strong { color: #1f1f1f; font-weight: 700; }
+.learn-sub-card-body ul,
+.learn-sub-card-body ol {
+  /* 收紧默认 40px 缩进，避免圆点超出卡片 padding 看起来像挂在上一张卡上 */
+  padding-left: 20px; margin: 6px 0;
+}
+.learn-sub-card-body li { margin: 2px 0; }
 .learn-sub-card-body blockquote {
   border-left: 3px solid #91caff; background: #f0f7ff;
   padding: 8px 14px; margin: 8px 0; border-radius: 0 6px 6px 0;
   color: #444; font-size: 13px;
+}
+
+/* 子话题卡片 - 头部（标题 + 重要度） */
+.learn-sub-card-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; margin-bottom: 8px;
+}
+.learn-sub-card-head .learn-sub-card-title {
+  flex: 1; margin-bottom: 0;
+}
+.learn-importance {
+  flex-shrink: 0; font-size: 13px; color: #faad14; letter-spacing: 1px;
+  user-select: none;
+}
+.learn-importance-dim { color: #e8e8e8; }
+
+/* 子话题卡片 - 删除按钮（头部右侧，hover 才显眼） */
+.learn-sub-card-delete {
+  flex-shrink: 0; width: 22px; height: 22px; padding: 0;
+  border: none; background: transparent; cursor: pointer;
+  color: #bfbfbf; font-size: 18px; line-height: 1;
+  border-radius: 4px; transition: all 0.15s;
+}
+.learn-sub-card-delete:hover {
+  background: #fff1f0; color: #ff4d4f;
+}
+
+/* 子话题卡片 - 被引用高亮 */
+.learn-sub-card-quoted {
+  border-color: #faad14; background: #fffbe6;
+  box-shadow: 0 0 0 2px rgba(250,173,20,0.15);
+}
+
+/* 子话题卡片 - 刚被追加/新增时的闪烁高亮（红底 → 淡出） */
+.learn-sub-card-flash {
+  animation: learnSubCardFlash 2.2s ease-out;
+}
+@keyframes learnSubCardFlash {
+  0%   { background: #fff1f0; box-shadow: 0 0 0 3px rgba(255,77,79,0.45); }
+  40%  { background: #fff1f0; box-shadow: 0 0 0 3px rgba(255,77,79,0.30); }
+  100% { background: #fafcff; box-shadow: 0 0 0 0 rgba(255,77,79,0);   }
+}
+
+/* 追问列表（直接展开 Q+A，类似对话气泡） */
+.learn-fu-list {
+  margin-top: 10px; padding-top: 10px; border-top: 1px dashed #e6f4ff;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.learn-fu {
+  font-size: 13px; background: #fff; border: 1px solid #e6f4ff;
+  border-radius: 8px; padding: 8px 12px;
+}
+.learn-fu-q {
+  display: flex; align-items: flex-start; gap: 6px;
+  color: #1677ff; font-weight: 600; line-height: 1.6;
+  padding-bottom: 6px; border-bottom: 1px dashed #e6f4ff; margin-bottom: 6px;
+}
+.learn-fu-icon { flex-shrink: 0; }
+.learn-fu-q-text { flex: 1; }
+.learn-fu-a { color: #444; line-height: 1.8; font-size: 13px; }
+.learn-fu-a p { margin: 4px 0; }
+.learn-fu-a strong { color: #1f1f1f; font-weight: 700; }
+.learn-fu-a code {
+  background: #f5f5f5; padding: 1px 4px; border-radius: 3px;
+  font-size: 12.5px; color: #c41d7f;
+}
+
+/* 对话引用 tag（子话题 id） */
+.learn-chat-quote-tag {
+  font-size: 11px; color: #1677ff; margin-left: 4px;
 }
 
 /* 面试题 */

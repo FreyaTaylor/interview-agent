@@ -214,8 +214,8 @@ export default function AdminPage() {
 
   async function handleUpdateNode(nodeId) {
     if (!editName.trim()) return
-    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}`, {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
+    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}/update`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: editName.trim() }),
     })
     setEditingId(null); setEditName(''); fetchTree()
@@ -223,7 +223,7 @@ export default function AdminPage() {
 
   async function handleDeleteNode(nodeId, name) {
     if (!window.confirm(`确定删除「${name}」及其所有子节点？`)) return
-    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}`, { method: 'DELETE' })
+    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}/delete`, { method: 'POST' })
     fetchTree(); fetchStats()
   }
 

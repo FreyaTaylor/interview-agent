@@ -8,6 +8,7 @@ import com.interview.agent.learn.dto.ContentView;
 import com.interview.agent.learn.dto.KpIdRequest;
 import com.interview.agent.learn.dto.LearnAssetRequest;
 import com.interview.agent.learn.dto.QuestionsView;
+import com.interview.agent.learn.dto.SubtopicDeleteRequest;
 import com.interview.agent.learn.service.LearnChatService;
 import com.interview.agent.learn.service.LearnContentService;
 import com.interview.agent.learn.service.LearnQuestionService;
@@ -26,6 +27,7 @@ import java.util.List;
  *   <li>POST /api/learn/questions     body {kp_id, action} — 题目（fetch/regenerate）</li>
  *   <li>POST /api/learn/chat          body ChatRequest      — 对话</li>
  *   <li>POST /api/learn/chat-history  body {kp_id}          — 历史对话</li>
+ *   <li>POST /api/learn/subtopic-delete body {kp_id, subtopic_id} — 删除单个子话题</li>
  * </ul>
  *
  * <p>本类严格薄层：每个方法体一行委托，逻辑全部下沉到三个职责单一的 Service
@@ -59,11 +61,18 @@ public class LearnController {
 
     @PostMapping("/chat")
     public ApiResponse<ChatReplyView> chat(@Valid @RequestBody ChatRequest req) {
-        return ApiResponse.success(chatService.chat(req.knowledgePointId(), req.message(), req.quotedText()));
+        return ApiResponse.success(chatService.chat(req.knowledgePointId(), req.message(),
+                req.quotedSubtopicId(), req.quotedText()));
     }
 
     @PostMapping("/chat-history")
     public ApiResponse<List<ChatHistoryItem>> chatHistory(@Valid @RequestBody KpIdRequest req) {
         return ApiResponse.success(chatService.getChatHistory(req.kpId()));
+    }
+
+    @PostMapping("/subtopic-delete")
+    public ApiResponse<Void> deleteSubtopic(@Valid @RequestBody SubtopicDeleteRequest req) {
+        contentService.deleteSubtopic(req.kpId(), req.subtopicId());
+        return ApiResponse.success(null);
     }
 }

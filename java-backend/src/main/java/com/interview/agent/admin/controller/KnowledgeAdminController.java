@@ -6,11 +6,9 @@ import com.interview.agent.admin.dto.KnowledgeNodeView;
 import com.interview.agent.admin.dto.UpdateKnowledgeNodeReq;
 import com.interview.agent.admin.service.KnowledgeAdminService;
 import com.interview.agent.common.ApiResponse;
-import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -21,10 +19,11 @@ import java.util.Map;
 /**
  * Admin —— 知识树节点 CRUD（S1）。
  *
- * 路径前缀：/api/admin/tree-nodes
+ * <p>路径前缀：/api/admin/tree-nodes
  *
- * 注意路径冲突顺序：Spring MVC 字面量段优先于 PathVariable，
- *                  所以 /batch-sort 和 /{id} 共存没问题。
+ * <p>遵循 CONVENTIONS §3.3：全 POST。CRUD 各操作 body shape 不同（BatchSortReq /
+ * UpdateKnowledgeNodeReq / 仅 id），不强行合并为单一 action 入口；以路径动词区分。
+ * 路径冲突：Spring MVC 字面量段（/batch-sort）优先于 PathVariable，与 /{id}/xxx 共存安全。
  */
 @RestController
 @RequestMapping("/api/admin/tree-nodes")
@@ -46,19 +45,19 @@ public class KnowledgeAdminController {
         return ApiResponse.success(service.create(req));
     }
 
-    @PutMapping("/batch-sort")
+    @PostMapping("/batch-sort")
     public ApiResponse<Map<String, Object>> batchSort(@RequestBody BatchSortReq req) {
         return ApiResponse.success(service.batchSort(req));
     }
 
-    @PutMapping("/{id}")
+    @PostMapping("/{id}/update")
     public ApiResponse<Map<String, Object>> update(
             @PathVariable long id,
             @RequestBody UpdateKnowledgeNodeReq req) {
         return ApiResponse.success(service.update(id, req));
     }
 
-    @DeleteMapping("/{id}")
+    @PostMapping("/{id}/delete")
     public ApiResponse<Map<String, Object>> delete(@PathVariable long id) {
         return ApiResponse.success(service.delete(id));
     }

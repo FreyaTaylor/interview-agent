@@ -1,8 +1,8 @@
 /**
- * 学习页面 — 知识点讲解 + 探索对话
- * 左侧：知识树目录（整棵树，当前节点高亮）
- * 右上：Markdown 讲解 + 高频面试题 + 掌握度信息
- * 右下：探索对话框（支持引用知识文本）
+ * 学习页面 — 知识点子话题卡片 + 探索对话（S4 重构后）
+ * 左侧：知识树目录
+ * 右上：子话题卡片（含 ⭐ 重要度 + 追问折叠）
+ * 右下：探索对话框（前端把"用户停留在哪个子话题卡片内"的 subtopic_id 一并传给后端）
  */
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
@@ -13,7 +13,7 @@ import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/Kn
 import AnswerInput from '../components/AnswerInput'
 import { Skeleton, StagePulse, TypingDots } from '../components/Loading'
 
-// 统一 POST + body 小包装（后端 java-style.md “API 形式”要求）
+// 统一 POST + body 小包装（后端 java-style.md "API 形式"要求）
 async function postLearn(path, body) {
   const resp = await fetch(`${API_LEARN}${path}`, {
     method: 'POST',
@@ -23,159 +23,100 @@ async function postLearn(path, body) {
   return resp.json()
 }
 
-// Markdown 渲染组件
-// 预处理：在中文句号 / 问号 / 感叹号后插入硬换行（markdown 的 "  \n"），让正文一句一行更易读
-// 跳过 ``` 代码块、行内 `code`、标题行、表格行
+// Markdown 渲染：在中文句号 / 问号 / 感叹号后插入硬换行（"  \n"），跳过代码块/标题/表格/引用
+// 两种情况都要处理：
+//   (1) 句号后同行非空字符 → 强行插换行   "AssertionError。 Exception" → "AssertionError。\nException"
+//   (2) 句号后是软换行（单 \n） → Markdown 默认渲染为空格，需升级为硬换行
 function preprocessSentences(raw) {
   if (!raw) return raw
-  // 按 ``` fenced code 拆段（偶数段是普通文本，奇数段是代码块，原样保留）
   const parts = raw.split(/(```[\s\S]*?```)/g)
   return parts.map((seg, i) => {
-    if (i % 2 === 1) return seg // 代码块原样
-    return seg.split('\n').map(line => {
+    if (i % 2 === 1) return seg
+    // 第一遍：行内 "句号 + 空格? + 非空白" → 插入硬换行
+    const broken = seg.split('\n').map(line => {
       const trimmed = line.trimStart()
-      // 标题行 / 表格行 / 引用行不动
       if (!trimmed) return line
-      if (trimmed.startsWith('#')) return line
-      if (trimmed.startsWith('|')) return line
-      if (trimmed.startsWith('>')) return line
-      // 行内代码 `...` 用占位符护住，处理完再还原
+      if (trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('>')) return line
       const codeSlots = []
       const guarded = line.replace(/`[^`\n]*`/g, m => {
         codeSlots.push(m)
         return `\u0000${codeSlots.length - 1}\u0000`
       })
-      // 中文句号 / 问号 / 感叹号 后若还有非空白字符，则插入硬换行
-      const broken = guarded.replace(/([。？！])(?=\S)/g, '$1  \n')
-      return broken.replace(/\u0000(\d+)\u0000/g, (_, idx) => codeSlots[Number(idx)])
+      const fixed = guarded.replace(/([。？！])[ \t　]*(?=\S)/g, '$1  \n')
+      return fixed.replace(/\u0000(\d+)\u0000/g, (_, idx) => codeSlots[Number(idx)])
     }).join('\n')
+    // 第二遍：跨行 "句号 + 单换行" → "句号  \n"（保留段落结构，仅升级软换行为硬换行）
+    // 不动 "句号 + 空行 + ..."（那是段落分隔，已经是硬分段）
+    return broken.replace(/([。？！])\n(?!\n)(?=[^\s#|>])/g, '$1  \n')
   }).join('')
 }
 
-// 以“整块”为单位标记高亮：不再在源码插哨兵，避免被 Markdown 语法吃掉。
-// addedLines 传进来是“后端返回的新增原文行”（可能含 markdown 修饰）。
-function _normForBlockMatch(s) {
-  if (!s) return ''
-  return s.replace(/[\*_`~|>#\-\s]+/g, '')
-}
-function _collectText(node) {
-  if (!node) return ''
-  if (node.type === 'text' || node.type === 'inlineCode') return node.value || ''
-  if (!node.children) return ''
-  return node.children.map(_collectText).join('')
-}
-function remarkHighlightAdded(addedLines) {
-  const normSet = new Set((addedLines || []).map(_normForBlockMatch).filter(s => s.length >= 4))
-  return (tree) => {
-    if (normSet.size === 0) return
-    function walk(node) {
-      if (!node.children) return
-      for (const child of node.children) {
-        if (['paragraph', 'blockquote', 'listItem', 'heading'].includes(child.type)) {
-          const text = _normForBlockMatch(_collectText(child))
-          if (text && [...normSet].some(n => text.includes(n) || n.includes(text))) {
-            child.data = child.data || {}
-            const hp = (child.data.hProperties = child.data.hProperties || {})
-            const cls = Array.isArray(hp.className) ? hp.className : (hp.className ? [hp.className] : [])
-            if (!cls.includes('learn-added')) cls.push('learn-added')
-            hp.className = cls
-          }
-        }
-        walk(child)
-      }
-    }
-    walk(tree)
-  }
-}
-
-function MarkdownContent({ content, addedLines }) {
+function MarkdownContent({ content }) {
   if (!content) return null
-  const pre = preprocessSentences(content)
-  const plugins = [remarkGfm]
-  if (addedLines && addedLines.length > 0) plugins.push(remarkHighlightAdded(addedLines))
-  return <Markdown remarkPlugins={plugins}>{pre}</Markdown>
+  return <Markdown remarkPlugins={[remarkGfm]}>{preprocessSentences(content)}</Markdown>
 }
 
-// 对话气泡里展示融合状态的小徽章
-const MERGE_STATUS_MAP = {
-  merged:      { icon: '✅', text: '已补充到讲解（绿色高亮）', cls: 'ok' },
-  created:     { icon: '🆕', text: '已新增子话题到讲解（绿色高亮）', cls: 'ok' },
-  no_change:   { icon: 'ℹ️', text: '原文已覆盖，无新增内容', cls: 'info' },
-  skipped:     { icon: 'ℹ️', text: '原文已覆盖，无新增内容', cls: 'info' },
-  no_match:    { icon: '⚠️', text: '引用文本未匹配到任何子话题，未自动补充', cls: 'warn' },
-  parse_error: { icon: '⚠️', text: '融合解析失败，未自动补充', cls: 'warn' },
-  failed:      { icon: '⚠️', text: '融合失败，未自动补充', cls: 'warn' },
-}
-function MergeStatusBadge({ status }) {
-  const meta = MERGE_STATUS_MAP[status]
-  if (!meta) return null
-  return <div className={`learn-merge-badge ${meta.cls}`}>{meta.icon} {meta.text}</div>
+// 重要度 ⭐⭐⭐⭐⭐（实心数 = importance）
+function ImportanceStars({ value }) {
+  const n = Math.max(1, Math.min(5, value || 3))
+  return (
+    <span className="learn-importance" title={`面试重要度 ${n}/5`}>
+      {'★'.repeat(n)}<span className="learn-importance-dim">{'★'.repeat(5 - n)}</span>
+    </span>
+  )
 }
 
-// 将讲解内容按 ### 模块分块，每个 h4 子话题渲染为卡片
-function LearnContentCards({ content, addedLines }) {
-  if (!content) return null
-  // 按 ### 分割出顶级模块
-  const sections = content.split(/^(?=### )/m).filter(s => s.trim())
-
-  return sections.map((section, si) => {
-    // 提取 ### 标题行
-    const lines = section.split('\n')
-    const titleLine = lines[0]?.replace(/^###\s*/, '') || ''
-    const body = lines.slice(1).join('\n').trim()
-
-    // 判断是否包含 #### 子话题（兼容 #### 后有无空格）
-    const hasSubTopics = /^####\s?\S/m.test(body)
-
-    if (!hasSubTopics) {
-      // 没有 #### 的模块（如一句话概述）：整块渲染为卡片
-      return (
-        <div key={si} className="learn-section-card">
-          <div className="learn-section-title">{titleLine}</div>
-          <div className="learn-section-body">
-            <MarkdownContent content={body} addedLines={addedLines} />
-          </div>
-        </div>
-      )
-    }
-
-    // 有 #### 的模块（如核心原理）：每个 #### 渲染为子卡片
-    const subSections = body.split(/^(?=####\s?\S)/m).filter(s => s.trim())
-    // 可能 #### 前还有一段引导文字
-    const leadParts = []
-    const subCards = []
-    for (const sub of subSections) {
-      if (/^####\s?\S/.test(sub)) {
-        const subLines = sub.split('\n')
-        const subTitle = subLines[0].replace(/^####\s*/, '')
-        const subBody = subLines.slice(1).join('\n').trim()
-        subCards.push({ title: subTitle, body: subBody })
-      } else {
-        leadParts.push(sub)
-      }
-    }
-
-    return (
-      <div key={si} className="learn-section-card">
-        <div className="learn-section-title">{titleLine}</div>
-        {leadParts.map((lp, li) => (
-          <div key={li} className="learn-section-body">
-            <MarkdownContent content={lp} addedLines={addedLines} />
-          </div>
-        ))}
-        <div className="learn-sub-cards">
-          {subCards.map((sc, ci) => (
-            <div key={ci} className="learn-sub-card">
-              <div className="learn-sub-card-title">{sc.title}</div>
-              <div className="learn-sub-card-body">
-                <MarkdownContent content={sc.body} addedLines={addedLines} />
-              </div>
-            </div>
-          ))}
-        </div>
+// 追问直接展开显示：Q 一行 + A 正文（原“对话气泡”样式）
+function FollowupItem({ fu }) {
+  return (
+    <div className="learn-fu">
+      <div className="learn-fu-q">
+        <span className="learn-fu-icon">🎙</span>
+        <span className="learn-fu-q-text">{fu.q}</span>
       </div>
-    )
-  })
+      <div className="learn-fu-a">
+        <MarkdownContent content={fu.a} />
+      </div>
+    </div>
+  )
+}
+
+// 单个子话题卡片
+function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete }) {
+  const cardRef = useRef(null)
+  function handleQuoteSelection() {
+    const sel = window.getSelection()
+    const text = sel?.toString().trim() || ''
+    if (text && cardRef.current?.contains(sel.anchorNode)) {
+      onQuote(st.id, text)
+    }
+  }
+  return (
+    <div
+      ref={cardRef}
+      className={`learn-sub-card ${isHighlighted ? 'learn-sub-card-quoted' : ''} ${isFlash ? 'learn-sub-card-flash' : ''}`}
+      data-subtopic-id={st.id}
+      onMouseUp={handleQuoteSelection}
+    >
+      <div className="learn-sub-card-head">
+        <div className="learn-sub-card-title">{st.title}</div>
+        <ImportanceStars value={st.importance} />
+        <button
+          className="learn-sub-card-delete"
+          title="删除此子话题"
+          onClick={(e) => { e.stopPropagation(); onDelete(st) }}
+        >×</button>
+      </div>
+      <div className="learn-sub-card-body">
+        <MarkdownContent content={st.body_md} />
+      </div>
+      {Array.isArray(st.followups) && st.followups.length > 0 && (
+        <div className="learn-fu-list">
+          {st.followups.map((fu, i) => <FollowupItem key={i} fu={fu} />)}
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function LearnPage() {
@@ -183,43 +124,53 @@ export default function LearnPage() {
   const navigate = useNavigate()
   const tree = useKnowledgeTree()
   const [activeKpId, setActiveKpId] = useState(null)
-  const [content, setContent] = useState(null) // { content, knowledge_point_name, mastery_level, last_studied_at }
-  const [questions, setQuestions] = useState([]) // 题目列表（仅叶子节点非空）
+  const [content, setContent] = useState(null) // { knowledge_point_name, subtopics, mastery_level }
+  const [questions, setQuestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [chatHistory, setChatHistory] = useState([])
   const [chatLoading, setChatLoading] = useState(false)
+  const [quotedSubtopicId, setQuotedSubtopicId] = useState(null)
   const [quotedText, setQuotedText] = useState('')
   const [regenLoading, setRegenLoading] = useState(false)
   const [regenAllLoading, setRegenAllLoading] = useState(false)
-  const [addedLines, setAddedLines] = useState([])  // 本轮会话中被自动补充进讲解的行，用于绿色高亮
   const chatEndRef = useRef(null)
-  const contentRef = useRef(null)
   const [expandedIds, setExpandedIds] = useState(new Set())
-  const contentCacheRef = useRef({}) // 前端内存缓存：{ [kpId]: contentData }
-  const questionsCacheRef = useRef({}) // 前端内存缓存：{ [kpId]: questionsArray }
+  const [flashSubtopicId, setFlashSubtopicId] = useState(null) // 刚被追加/新增的子话题：顶层添加闪烁红色背景
 
-  // 知识树到位后，按当前 kpId 计算展开路径
+  // 追加/新增后：滚动目标卡到可视区中间 + 闪烁红背景 ~2s。
+  // 仅仅 setFlashSubtopicId 是不够的 — 同一 id 连续触发不会重启 CSS 动画，所以先 null 再 set。
+  const flashAndScroll = useCallback((subtopicId) => {
+    if (!subtopicId) return
+    setFlashSubtopicId(null)
+    // 等 DOM 重染（新卡刚插入）后再查询 + 启动动画
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const el = document.querySelector(`[data-subtopic-id="${subtopicId}"]`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        setFlashSubtopicId(subtopicId)
+        setTimeout(() => setFlashSubtopicId(prev => (prev === subtopicId ? null : prev)), 2200)
+      })
+    })
+  }, [])
+  const contentCacheRef = useRef({})
+  const questionsCacheRef = useRef({})
+
   useEffect(() => {
     if (kpId && tree.length > 0) {
       setExpandedIds(findAncestorIds(tree, parseInt(kpId)))
     }
   }, [tree, kpId])
 
-  // 对话面板自动滚到底部
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
   }, [chatHistory, chatLoading])
 
-  // URL 参数驱动
   useEffect(() => {
     if (kpId) {
       const id = parseInt(kpId)
-      // 学习/答题共用一个 lastKpId，供顶部导航直接跳回
       try { localStorage.setItem('lastKpId', String(id)) } catch (_) { /* ignore */ }
       setActiveKpId(id)
-      if (tree.length > 0) {
-        setExpandedIds(findAncestorIds(tree, id))
-      }
+      if (tree.length > 0) setExpandedIds(findAncestorIds(tree, id))
       loadContent(id)
       loadQuestions(id)
       loadChatHistory(id)
@@ -227,22 +178,20 @@ export default function LearnPage() {
   }, [kpId, tree.length])
 
   const loadContent = useCallback(async (id) => {
-    // 有缓存则立即显示，不闪 loading
     const cached = contentCacheRef.current[id]
     if (cached) {
       setContent(cached)
       setLoading(false)
-      // 后台静默刷新掌握度等可能变化的字段
+      // 后台静默刷新
       try {
         const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
         if (resp.code === 0) {
           contentCacheRef.current[id] = resp.data
           setContent(resp.data)
         }
-      } catch (e) { /* 静默失败，已有缓存兜底 */ }
+      } catch (_) { /* 静默 */ }
       return
     }
-
     setLoading(true)
     setContent(null)
     for (let attempt = 0; attempt < 2; attempt++) {
@@ -256,9 +205,8 @@ export default function LearnPage() {
         }
         if (attempt === 1) setContent({ error: resp.message || '加载失败' })
       } catch (e) {
-        console.error(`加载内容第${attempt+1}次失败:`, e)
         if (attempt === 1) setContent({ error: '加载失败: ' + e.message })
-        else await new Promise(r => setTimeout(r, 1000)) // 等 1 秒重试
+        else await new Promise(r => setTimeout(r, 1000))
       }
     }
     setLoading(false)
@@ -268,13 +216,10 @@ export default function LearnPage() {
     try {
       const resp = await postLearn('/chat-history', { kp_id: id })
       if (resp.code === 0) setChatHistory(resp.data || [])
-    } catch (e) {
-      console.error('加载对话历史失败:', e)
-    }
+    } catch (e) { console.error('加载对话历史失败:', e) }
   }, [])
 
   const loadQuestions = useCallback(async (id) => {
-    // 题目与讲解并发拉，失败不阻断讲解加载
     const cached = questionsCacheRef.current[id]
     if (cached) setQuestions(cached)
     try {
@@ -284,9 +229,7 @@ export default function LearnPage() {
         questionsCacheRef.current[id] = qs
         setQuestions(qs)
       }
-    } catch (e) {
-      console.error('加载题目失败:', e)
-    }
+    } catch (e) { console.error('加载题目失败:', e) }
   }, [])
 
   function handleSelectKp(id) {
@@ -296,63 +239,98 @@ export default function LearnPage() {
     loadContent(id)
     loadQuestions(id)
     loadChatHistory(id)
+    setQuotedSubtopicId(null)
     setQuotedText('')
-    setAddedLines([])  // 切换知识点时清除上一个页的高亮
   }
 
-  // 文本选中引用
-  useEffect(() => {
-    function handleMouseUp(e) {
-      // 点击发送按钮或引用栏时不处理
-      if (e.target.closest('.learn-chat-input-wrap') || e.target.closest('.learn-quote-bar')) return
-      setTimeout(() => {
-        const sel = window.getSelection()
-        const text = sel?.toString().trim()
-        if (text && text.length > 0) {
-          // 检查选区是否在内容区域（讲解 + 面试题）
-          const contentArea = document.querySelector('.learn-content-area')
-          if (contentArea?.contains(sel.anchorNode)) {
-            setQuotedText(text)
-          }
-        }
-      }, 10)
-    }
-    document.addEventListener('mouseup', handleMouseUp)
-    return () => document.removeEventListener('mouseup', handleMouseUp)
-  }, [])
+  // 用户在某个 subtopic 卡片内选中文字 → 同时记录 id + text
+  function handleQuoteFromCard(subtopicId, text) {
+    setQuotedSubtopicId(subtopicId)
+    setQuotedText(text)
+  }
 
-  // 发送对话（msg 由 AnswerInput 传入）
+  // 删除某个子话题：二次确认 → 后端删 → 本地状态 + 缓存同步剔除
+  async function handleDeleteSubtopic(st) {
+    if (!activeKpId) return
+    if (!window.confirm(`确定删除子话题「${st.title}」？此操作不可撤销。`)) return
+    try {
+      const resp = await postLearn('/subtopic-delete', {
+        kp_id: Number(activeKpId), subtopic_id: st.id,
+      })
+      if (resp.code !== 0) {
+        alert('删除失败: ' + (resp.message || '未知错误'))
+        return
+      }
+      setContent(prev => {
+        if (!prev || !Array.isArray(prev.subtopics)) return prev
+        const next = { ...prev, subtopics: prev.subtopics.filter(s => s.id !== st.id) }
+        contentCacheRef.current[activeKpId] = next
+        return next
+      })
+      // 若刚好引用的是被删卡片，清掉引用
+      if (quotedSubtopicId === st.id) {
+        setQuotedSubtopicId(null)
+        setQuotedText('')
+      }
+    } catch (e) {
+      alert('删除失败: ' + e.message)
+    }
+  }
+
+  // 发送对话
   async function handleSendChat(msg) {
     const text = (msg || '').trim()
     if (!text || chatLoading || !activeKpId) return
-    const quote = quotedText || null
+    const quoteId = quotedSubtopicId
+    const quoteText = quotedText || null
+    setQuotedSubtopicId(null)
     setQuotedText('')
-    setChatHistory(prev => [...prev, { role: 'user', content: text, quoted_text: quote }])
+    setChatHistory(prev => [...prev, {
+      role: 'user', content: text, quoted_text: quoteText, quoted_subtopic_id: quoteId,
+    }])
     setChatLoading(true)
 
     try {
-      const resp = await postLearn('/chat', { knowledge_point_id: activeKpId, message: text, quoted_text: quote })
+      const resp = await postLearn('/chat', {
+        knowledge_point_id: activeKpId,
+        message: text,
+        quoted_subtopic_id: quoteId,
+        quoted_text: quoteText,
+      })
       if (resp.code === 0) {
-        const { reply, updated_subtopic, updated_content, merge_status } = resp.data
+        const { reply, action, appended_to, followup, new_subtopic } = resp.data
         setChatHistory(prev => [...prev, {
           role: 'assistant',
           content: reply,
-          updated_subtopic: updated_subtopic || null,
-          merge_status: merge_status || null,
+          action: action || 'none',
+          appended_to: appended_to || null,
+          followup: followup || null,
+          new_subtopic: new_subtopic || null,
         }])
-        // 实时更新讲解内容 + 计算 diff 用于红色高亮
-        if (updated_content) {
-          const prevText = content?.content || ''
-          const prevSet = new Set(prevText.split('\n').map(s => s.trim()).filter(Boolean))
-          const newAdded = updated_content.split('\n')
-            .map(s => s.trim())
-            .filter(s => s && s.length > 4 && !s.startsWith('#') && !s.startsWith('|') && !s.startsWith('---') && !prevSet.has(s))
-          if (newAdded.length > 0) {
-            setAddedLines(prev => [...prev, ...newAdded])
-          }
-          const newContent = { ...content, content: updated_content }
-          setContent(newContent)
-          if (activeKpId) contentCacheRef.current[activeKpId] = newContent
+        // 副作用反映到 content：append_followup → 找到 subtopic 追加 followup；new_subtopic → 末尾追加
+        if (action === 'append_followup' && appended_to && followup) {
+          setContent(prev => {
+            if (!prev?.subtopics) return prev
+            const next = {
+              ...prev,
+              subtopics: prev.subtopics.map(st =>
+                st.id === appended_to
+                  ? { ...st, followups: [...(st.followups || []), { ...followup, created_at: new Date().toISOString() }] }
+                  : st
+              ),
+            }
+            if (activeKpId) contentCacheRef.current[activeKpId] = next
+            return next
+          })
+          flashAndScroll(appended_to)
+        } else if (action === 'new_subtopic' && new_subtopic) {
+          setContent(prev => {
+            if (!prev?.subtopics) return prev
+            const next = { ...prev, subtopics: [...prev.subtopics, new_subtopic] }
+            if (activeKpId) contentCacheRef.current[activeKpId] = next
+            return next
+          })
+          flashAndScroll(new_subtopic.id)
         }
       }
     } catch (e) {
@@ -363,10 +341,9 @@ export default function LearnPage() {
     }
   }
 
-  // 合并对话到讲解 — 已取消（对话后后端会自动融入到子话题，无需手动点击）
-
   const m = content?.mastery_level || 0
   const mColor = m >= 80 ? '#52c41a' : m >= 40 ? '#faad14' : m > 0 ? '#ff4d4f' : '#e0e0e0'
+  const subtopics = content?.subtopics || []
 
   return (
     <div className="learn-container">
@@ -388,7 +365,7 @@ export default function LearnPage() {
         )}
         {loading && (
           <div className="learn-loading-wrap">
-            <StagePulse text="正在生成知识讲解" sub="首次生成需 5-15s，请稍候" />
+            <StagePulse text="正在生成知识子话题" sub="首次生成需 5-15s，请稍候" />
             <Skeleton lines={5} hasTitle hasBlock />
           </div>
         )}
@@ -402,7 +379,6 @@ export default function LearnPage() {
 
         {content && !content.error && !loading && (
           <>
-            {/* 上方信息栏 */}
             <div className="learn-info-bar">
               <h2 className="learn-title">{content.knowledge_point_name}</h2>
               <div className="learn-meta">
@@ -412,42 +388,54 @@ export default function LearnPage() {
               </div>
             </div>
 
-            {/* 主体：左内容 + 右对话 */}
             <div className="learn-body">
-              {/* 知识内容 */}
+              {/* 子话题卡片区 */}
               <div className="learn-content-area">
-                <div className="learn-content" ref={contentRef}>
-                  <div className="learn-content-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
-                    <button
-                      className="learn-regen-all-btn"
-                      title="清空当前讲解和对话，重新生成讲解（题目不会变）"
-                      disabled={regenAllLoading}
-                      style={{ padding: '4px 12px', fontSize: 12, cursor: regenAllLoading ? 'not-allowed' : 'pointer', color: '#1677ff', background: 'transparent', border: '1px solid #1677ff', borderRadius: 4, opacity: regenAllLoading ? 0.6 : 1 }}
-                      onClick={async () => {
-                        if (!activeKpId || regenAllLoading) return
-                        if (!confirm('确定重新生成讲解？当前讲解和对话会被清空（题目不受影响）。')) return
-                        setRegenAllLoading(true)
-                        try {
-                          const resp = await postLearn('/content', { kp_id: activeKpId, action: 'regenerate' })
-                          if (resp.code === 0) {
-                            contentCacheRef.current[activeKpId] = resp.data
-                            setContent(resp.data)
-                            setChatHistory([])
-                          } else {
-                            alert(resp.message || '重新生成失败')
-                          }
-                        } catch (e) {
-                          alert('重新生成失败: ' + e.message)
-                        } finally {
-                          setRegenAllLoading(false)
+                <div className="learn-content-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
+                  <button
+                    className="learn-regen-all-btn"
+                    title="清空当前讲解和对话，重新生成（题目不变）"
+                    disabled={regenAllLoading}
+                    style={{ padding: '4px 12px', fontSize: 12, cursor: regenAllLoading ? 'not-allowed' : 'pointer', color: '#1677ff', background: 'transparent', border: '1px solid #1677ff', borderRadius: 4, opacity: regenAllLoading ? 0.6 : 1 }}
+                    onClick={async () => {
+                      if (!activeKpId || regenAllLoading) return
+                      if (!confirm('确定重新生成讲解？当前讲解和对话会被清空（题目不受影响）。')) return
+                      setRegenAllLoading(true)
+                      try {
+                        const resp = await postLearn('/content', { kp_id: activeKpId, action: 'regenerate' })
+                        if (resp.code === 0) {
+                          contentCacheRef.current[activeKpId] = resp.data
+                          setContent(resp.data)
+                          setChatHistory([])
+                        } else {
+                          alert(resp.message || '重新生成失败')
                         }
-                      }}
-                    >{regenAllLoading ? '生成中…' : '🔁 重新生成讲解'}</button>
-                  </div>
-                  <LearnContentCards content={content.content} addedLines={addedLines} />
+                      } catch (e) {
+                        alert('重新生成失败: ' + e.message)
+                      } finally {
+                        setRegenAllLoading(false)
+                      }
+                    }}
+                  >{regenAllLoading ? '生成中…' : '🔁 重新生成讲解'}</button>
                 </div>
 
-                {/* 高频面试题（与答题页同源：study_question） */}
+                <div className="learn-sub-cards">
+                  {subtopics.length === 0 && (
+                    <div className="learn-empty" style={{ padding: 24, color: '#999' }}>暂无子话题</div>
+                  )}
+                  {subtopics.map(st => (
+                    <SubtopicCard
+                      key={st.id}
+                      st={st}
+                      isHighlighted={st.id === quotedSubtopicId}
+                      isFlash={st.id === flashSubtopicId}
+                      onQuote={handleQuoteFromCard}
+                      onDelete={handleDeleteSubtopic}
+                    />
+                  ))}
+                </div>
+
+                {/* 高频面试题 */}
                 {questions.length > 0 && (
                   <div className="learn-questions">
                     <div className="learn-q-header-row">
@@ -487,9 +475,7 @@ export default function LearnPage() {
                         <div className="learn-q-title">Q{i + 1}: {q.question}</div>
                         {Array.isArray(q.recommended_answer) && q.recommended_answer.length > 0 ? (
                           <ul className="learn-q-answer">
-                            {q.recommended_answer.map((line, j) => (
-                              <li key={j}>{line}</li>
-                            ))}
+                            {q.recommended_answer.map((line, j) => (<li key={j}>{line}</li>))}
                           </ul>
                         ) : typeof q.recommended_answer === 'string' && q.recommended_answer ? (
                           <div className="learn-q-answer-text">{q.recommended_answer}</div>
@@ -504,30 +490,28 @@ export default function LearnPage() {
 
               {/* 右侧对话区 */}
               <div className="learn-chat-panel">
-                <div className="learn-chat-header">
-                  <span>💬 探索对话</span>
-                </div>
+                <div className="learn-chat-header"><span>💬 探索对话</span></div>
 
                 <div className="learn-chat-messages">
                   {chatHistory.length === 0 && (
                     <div style={{ color: '#ccc', fontSize: 13, padding: '12px 0' }}>
-                      选中左侧文本可引用提问
+                      在任一子话题卡片内选中文字可引用提问
                     </div>
                   )}
                   {chatHistory.map((msg, i) => (
                     <div key={i} className={`learn-chat-msg ${msg.role}`}>
                       {msg.quoted_text && (
-                        <div className="learn-chat-quote">📎 {msg.quoted_text}</div>
+                        <div className="learn-chat-quote">
+                          📎 {msg.quoted_text}
+                          {msg.quoted_subtopic_id && <span className="learn-chat-quote-tag"> · #{msg.quoted_subtopic_id}</span>}
+                        </div>
                       )}
                       <div><MarkdownContent content={msg.content} /></div>
-                      {msg.merge_status && <MergeStatusBadge status={msg.merge_status} />}
-                      {msg.updated_subtopic && (
-                        <div className="learn-chat-subtopic-update">
-                          <div className="learn-chat-subtopic-label">📝 已融合到讲解</div>
-                          <div className="learn-chat-subtopic-preview">
-                            <MarkdownContent content={msg.updated_subtopic} />
-                          </div>
-                        </div>
+                      {msg.action === 'append_followup' && msg.followup && (
+                        <div className="learn-merge-badge ok">✅ 已追加到子话题 #{msg.appended_to}：{msg.followup.q}</div>
+                      )}
+                      {msg.action === 'new_subtopic' && msg.new_subtopic && (
+                        <div className="learn-merge-badge ok">🆕 已新增子话题：{msg.new_subtopic.title}</div>
                       )}
                     </div>
                   ))}
@@ -541,8 +525,11 @@ export default function LearnPage() {
 
                 {quotedText && (
                   <div className="learn-quote-bar">
-                    <span>📎 "{quotedText.length > 40 ? quotedText.slice(0, 40) + '...' : quotedText}"</span>
-                    <button onClick={() => setQuotedText('')}>✕</button>
+                    <span>
+                      📎 "{quotedText.length > 40 ? quotedText.slice(0, 40) + '...' : quotedText}"
+                      {quotedSubtopicId && <span style={{ color: '#888', marginLeft: 6 }}>· #{quotedSubtopicId}</span>}
+                    </span>
+                    <button onClick={() => { setQuotedText(''); setQuotedSubtopicId(null) }}>✕</button>
                   </div>
                 )}
 
@@ -550,13 +537,11 @@ export default function LearnPage() {
                   <AnswerInput
                     onSend={handleSendChat}
                     disabled={chatLoading}
-                    placeholder="提问探索... (Shift+Enter 换行)"
+                    placeholder="提问探索...（点右侧按钮发送，Enter 换行）"
                   />
                 </div>
               </div>
             </div>
-
-            {/* 合并确认弹窗 — 已移除（改为对话后后端自动融入，新增内容以绿色高亮提示） */}
           </>
         )}
       </div>
