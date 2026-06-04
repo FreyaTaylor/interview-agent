@@ -25,7 +25,7 @@
 | # | 模块 | 包 | 路由前缀 | 涉及表 | 优先级 |
 |---|---|---|---|---|---|
 | 1 | 知识树（查询） | `knowledge/` | `/api/knowledge` | `knowledge_node` | P0 |
-| 2 | 知识树管理（Admin） | `admin/` | `/api/admin/tree-nodes`、`/api/admin/trees/*` | `knowledge_node` | P1（CRUD ✅ S1 已完成；树生成待 S5） |
+| 2 | 知识树管理（Admin） | `admin/` | `/api/admin/tree-nodes`、`/api/admin/trees/*` | `knowledge_node` | P1（CRUD ✅ S1；树生成 ✅ S5 部分完成：from-text + from-generate） |
 | 3 | 项目树管理（Admin） | `admin/` | `/api/admin/project-nodes` | `project_node` | P1 |
 | 4 | Learn 讲解 + 探索对话 | `learn/` | `/api/learn` | `knowledge_content`、`learn_chat`、`study_question` | P0 |
 | 5 | Study 学习闭环 | `study/` | `/api/study` | `study_question`、`question_attempt`、`knowledge_node`（mastery） | P0 |
@@ -50,24 +50,17 @@
 **详细设计 / 表 / 模块交互 / 验收**见 → [java-backend/docs/modules/S1-knowledge-admin-crud.md](../java-backend/docs/modules/S1-knowledge-admin-crud.md)
 
 ### 2.2 树生成（对照 `api/admin/tree_gen.py`）
-| API | 说明 | 依赖 |
-|---|---|---|
-| `POST /api/admin/trees/from-text` | 文本/Markdown → 树 | LLM |
-| `POST /api/admin/trees/from-generate` | LLM 直接生成 | LLM |
-| `POST /api/admin/trees/from-image` | 截图 → 树 | qwen-vl-max（视觉） |
-| `POST /api/admin/trees/from-mm` | .mm 文件导入 | XML 解析 |
-| `POST /api/admin/trees/{root_id}/optimize` | LLM 查漏补缺 | LLM |
-| `POST /api/admin/trees/merge` | 合并两棵树 | LLM |
 
-| 类 | 职责 |
-|---|---|
-| `KnowledgeAdminController` | 节点 CRUD |
-| `KnowledgeAdminService` | 树操作逻辑（含 level 重算） |
-| `TreeGenController` | 6 种生成入口 |
-| `TreeGenService` | LLM 编排 |
-| `TreePrompts` | 6 类 prompt（中文） |
+**Scope A 已完成（S5）**：from-text + from-generate + 两层去重（精确同名 + LLM 语义）。详见 → [java-backend/docs/modules/S5-tree-gen.md](../java-backend/docs/modules/S5-tree-gen.md)
 
-**注意**：from-image 一期可推迟（需视觉模型）。
+| API | 说明 | 依赖 | 状态 |
+|---|---|---|---|
+| `POST /api/admin/trees/from-text` | 文本/Markdown → 树 | LLM | ✅ S5 |
+| `POST /api/admin/trees/from-generate` | LLM 直接生成 | LLM | ✅ S5 |
+| `POST /api/admin/trees/from-image` | 截图 → 树 | qwen-vl-max（视觉） | ⏸ 二期 |
+| `POST /api/admin/trees/from-mm` | .mm 文件导入 | XML 解析 | ⏸ 二期 |
+| `POST /api/admin/trees/{root_id}/optimize` | LLM 查漏补缺 | LLM | ⏸ 二期 |
+| `POST /api/admin/trees/merge` | 合并两棵树 | LLM | ⏸ 二期 |
 
 ---
 

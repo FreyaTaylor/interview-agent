@@ -29,6 +29,23 @@ spring:
     locations: classpath:db/migration
     table: flyway_schema_history
 
+  # Spring AI: 用 OpenAI starter 指向 DeepSeek（OpenAI 兼容）
+  # base-url 硬编码不读 .env 的 DEEPSEEK_BASE_URL —— 那个变量是 Python 用的（带 /v1），
+  # Spring AI 会自动追加 /v1/chat/completions，再带 /v1 会变成 /v1/v1/...
+  ai:
+    openai:
+      api-key: ${DEEPSEEK_API_KEY:}
+      base-url: https://api.deepseek.com
+      chat:
+        options:
+          model: ${DEEPSEEK_MODEL:deepseek-chat}
+          temperature: 0.3
+
+  # 全局 Jackson：HTTP 请求/响应字段统一 snake_case（与 Python 端 + 前端约定一致）
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: NON_NULL
+
 # MyBatis 全局配置：snake_case 列 → camelCase 字段；启用结果缓存
 mybatis:
   configuration:
@@ -36,17 +53,7 @@ mybatis:
     default-fetch-size: 100
     default-statement-timeout: 30
 
-  # Spring AI: 用 OpenAI starter 指向 DeepSeek（OpenAI 兼容）
-  ai:
-    openai:
-      api-key: ${DEEPSEEK_API_KEY:}
-      base-url: ${DEEPSEEK_BASE_URL:https://api.deepseek.com}
-      chat:
-        options:
-          model: ${DEEPSEEK_MODEL:deepseek-chat}
-          temperature: 0.3
-
-# 业务自定义配置（LlmProperties / EmbeddingProperties）
+# 业务自定义配置（LlmProperties / EmbeddingProperties / CorsProperties）
 iagent:
   llm:
     chat-temperature-score: 0.0
@@ -55,6 +62,9 @@ iagent:
     dashscope-api-key: ${DASHSCOPE_API_KEY:}
     model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
     dimension: 1024
+  cors:
+    # 逗号分隔的允许来源；前端 Vite 默认 5173
+    allowed-origins: ${IAGENT_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
 
 management:
   endpoints:

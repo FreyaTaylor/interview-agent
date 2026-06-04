@@ -42,6 +42,10 @@ public interface KnowledgeNodeMapper {
     @Select("SELECT id FROM knowledge_node WHERE parent_id = #{parentId}")
     List<Long> findChildIds(@Param("parentId") long parentId);
 
+    /** 取所有根节点（parent_id IS NULL），用于 S5 树生成的同名/语义去重检查。 */
+    @Select("SELECT " + COLS + " FROM knowledge_node WHERE parent_id IS NULL ORDER BY id")
+    List<KnowledgeNode> findRoots();
+
     @Select("SELECT EXISTS(SELECT 1 FROM knowledge_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
@@ -115,6 +119,25 @@ public interface KnowledgeNodeMapper {
 
     @Update("UPDATE knowledge_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id}")
     int updateSortOrder(@Param("id") long id, @Param("sortOrder") int sortOrder);
+
+    /**
+     * 把以 rootId 为根的子树（不含 root 自身）所有节点 level += delta。
+     * 用于跨父亲拖动后，把整棵子树的 level 跟着平移，否则前端按 level 算缩进会"打扁"。
+     * 用 PG 的 WITH RECURSIVE 一条 SQL 搞定，避免 Java 端 BFS。
+     */
+    @Update("""
+            WITH RECURSIVE descendants AS (
+              SELECT id FROM knowledge_node WHERE parent_id = #{rootId}
+              UNION ALL
+              SELECT n.id FROM knowledge_node n
+                JOIN descendants d ON n.parent_id = d.id
+            )
+            UPDATE knowledge_node SET
+              level = level + #{delta},
+              updated_at = NOW()
+            WHERE id IN (SELECT id FROM descendants)
+            """)
+    int shiftDescendantLevels(@Param("rootId") long rootId, @Param("delta") int delta);
 
     @Update("UPDATE knowledge_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id}")
     int updateNodeType(@Param("id") long id, @Param("nodeType") String nodeType);

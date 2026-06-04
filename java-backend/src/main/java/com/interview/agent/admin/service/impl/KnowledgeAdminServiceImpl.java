@@ -179,8 +179,17 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
             String newNodeType = repo.hasChildren(id) ? "category" : "leaf";
             // Step 3.3: 一句 SQL 同时改 parent / level / nodeType
             repo.moveParent(id, req.parentId(), newLevel, newNodeType);
-            log.info("[KnowledgeAdmin] move id={} -> parent={} level={} type={}",
-                    id, req.parentId(), newLevel, newNodeType);
+            // Step 3.4: 把整棵子树的 level 跟着平移 delta —— 否则前端按 level 算缩进会"打扁"
+            //          （Python 端历史 bug：跨父移动一个有子节点的分类后，子孙仍保留旧 level）
+            int delta = newLevel - node.level();
+            if (delta != 0) {
+                int shifted = repo.shiftDescendantLevels(id, delta);
+                log.info("[KnowledgeAdmin] move id={} -> parent={} level={}(delta={}) type={} subtree_shifted={}",
+                        id, req.parentId(), newLevel, delta, newNodeType, shifted);
+            } else {
+                log.info("[KnowledgeAdmin] move id={} -> parent={} level={} type={}",
+                        id, req.parentId(), newLevel, newNodeType);
+            }
         }
 
         return Map.of("id", id, "name", newName != null ? newName : node.name());
