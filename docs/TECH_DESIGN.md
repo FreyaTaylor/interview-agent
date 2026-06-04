@@ -20,7 +20,7 @@
 | 项目节点（ProjectNode） | 项目拷打的"项目→话题→问题"三层树 | `project_node` |
 | 对话（Conversation/Session） | 一次围绕某知识点/项目的多轮问答 | `conversation` / `project_session` |
 | Rubric | 评分关键点列表（JSON），总分恒为 100 | JSONB 字段 |
-| 掌握度（Mastery） | 知识点级别 0-100，EMA 更新 | `mastery_record` / `mastery_history` |
+| 掌握度（Mastery） | 知识点级别 0-100，LLM 评分实时写回 | `knowledge_node.mastery_level`（Java） / `mastery_record`（Python 旧方案） |
 
 ### 1.3 一期范围（已落地）
 
@@ -137,6 +137,10 @@ tests/                   # golden case
 
 ### 5.2 学习与掌握度
 
+> Python 与 Java 端数据模型不同：Python 采用 `study_session / conversation / conversation_message + mastery_record / mastery_history`，Java 重写后简化为 `study_question / question_attempt + knowledge_node.mastery_level` 直接写回。
+
+#### Python（现行）
+
 | 表 | 关键字段 |
 |---|---|
 | `study_session` | `user_id`, `source_type`(`text_upload`/`manual_select`), `title` |
@@ -144,6 +148,16 @@ tests/                   # golden case
 | `conversation_message` | `role`(`user`/`agent`), `content`, `message_type`(`question`/`answer`/`scoring`/`follow_up`/`summary`) |
 | `mastery_record` | `user_id`, `knowledge_point_id`, `mastery_level`(0-100), `stability_s`, `study_count`, `last_studied_at` |
 | `mastery_history` | `knowledge_point_id`, `conversation_id`, `score`, `previous_mastery`, `new_mastery` |
+
+#### Java（S3 Study，详 [S3-study.md](modules/../../java-backend/docs/modules/S3-study.md)）
+
+| 表 | 关键字段 |
+|---|---|
+| `study_question` | `knowledge_point_id`, `question`, `rubric`(JSONB)；懒生成，KP 级复用 |
+| `question_attempt` | `user_id`, `study_question_id`, `dialog`(JSONB 多轮)，`feedback`(JSONB)，`final_score`，`status`(`active`/`finished`) |
+| `knowledge_node.mastery_level` / `study_count` | finish 钩子重算：KP 下**所有**题目分均值（未答题计 0）→ 写回 + `study_count + 1` |
+
+掌握度派生公式（Java）：`questionScore` = 最近 3 次 finished 平均；`kpMastery` = 该 KP 下**所有**题目分的均值（未答题 / questionScore 为 null 都计 0，分母 = KP 总题量；KP 下无任何题时 SQL 返 null，则不写）。
 
 ### 5.3 面试复盘
 

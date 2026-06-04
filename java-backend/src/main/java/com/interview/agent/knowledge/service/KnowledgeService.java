@@ -19,7 +19,7 @@ import java.util.Map;
  * 先建 id → 可变包装的映射，再在第二遍把每个节点挂到父节点的 children 上，
  * 时间复杂度 O(n)，比递归查询友好。
  *
- * mastery_level / study_count 暂时全部 0，等 S3（Study）完成后再注入。
+ * mastery_level / study_count 从 knowledge_node 同名列直读（由 study/finish 钩子写入）。
  */
 @Service
 public class KnowledgeService {
@@ -64,8 +64,8 @@ public class KnowledgeService {
                 n.nodeType(),
                 n.interviewWeight(),
                 n.sortOrder(),
-                0,           // masteryLevel —— S3 后补齐
-                0,           // studyCount   —— S3 后补齐
+                n.masteryLevel() == null ? 0 : n.masteryLevel().intValue(),
+                n.studyCount(),
                 children
         );
     }

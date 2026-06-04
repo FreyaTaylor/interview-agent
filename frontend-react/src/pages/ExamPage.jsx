@@ -14,7 +14,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { API_STUDY } from '../config'
+import { API_STUDY, API_LEARN, API_TEXT } from '../config'
 import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/KnowledgeSidebar'
 import AnswerInput from '../components/AnswerInput'
 import PageHeader from '../components/PageHeader'
@@ -44,7 +44,7 @@ export default function ExamPage() {
   // 历史面板默认是否折叠：未开始时展开，完成本轮后折叠
   const [historyCollapsed, setHistoryCollapsed] = useState(false)
 
-  const qa = useQAFlow(API_STUDY)
+  const qa = useQAFlow(API_STUDY, { style: 'java' })
   const bottomRef = useRef(null)
 
   // ---- 知识树到位后计算展开路径 ----
@@ -102,11 +102,23 @@ export default function ExamPage() {
     setKpName('')   // 立即清空，避免切换时标题仍显示上一个知识点名字
     qa.reset()
     try {
-      const resp = await fetch(`${API_STUDY}/knowledge-points/${id}/questions`)
+      const resp = await fetch(`${API_LEARN}/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kp_id: id, action: 'fetch' }),
+      })
       const data = await resp.json()
       if (data.code !== 0) throw new Error(data.message || '加载失败')
       setKpName(data.data.knowledge_point_name || '')
-      setQuestions(data.data.questions || [])
+      // 后端返 question_score；ExamPage 用的字段名是 attempt_count / score。
+      // 这里做字段适配：question_score=null 看作未作答。
+      const questionsAdapted = (data.data.questions || []).map(q => ({
+        ...q,
+        content: q.question,
+        attempt_count: q.question_score == null ? 0 : 1,
+        score: q.question_score,
+      }))
+      setQuestions(questionsAdapted)
     } catch (e) {
       setListError(e.message || '加载题目失败')
     } finally {
@@ -130,9 +142,13 @@ export default function ExamPage() {
     setHistoryLoading(true)
     let prior = []
     try {
-      const resp = await fetch(`${API_STUDY}/questions/${q.id}/attempts`)
+      const resp = await fetch(`${API_STUDY}/attempts-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: q.id }),
+      })
       const data = await resp.json()
-      if (data.code === 0) prior = data.data || []
+      if (data.code === 0) prior = data.data?.attempts || []
       setHistory(prior)
     } catch (_) { /* 忽略，留空数组 */ }
     finally { setHistoryLoading(false) }
@@ -182,9 +198,13 @@ export default function ExamPage() {
   async function refreshHistory() {
     if (!activeQuestionId) return
     try {
-      const resp = await fetch(`${API_STUDY}/questions/${activeQuestionId}/attempts`)
+      const resp = await fetch(`${API_STUDY}/attempts-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: activeQuestionId }),
+      })
       const data = await resp.json()
-      if (data.code === 0) setHistory(data.data || [])
+      if (data.code === 0) setHistory(data.data?.attempts || [])
     } catch (_) {}
   }
 
@@ -192,9 +212,20 @@ export default function ExamPage() {
   async function loadQuestionsScores() {
     if (!activeKpId) return
     try {
-      const resp = await fetch(`${API_STUDY}/knowledge-points/${activeKpId}/questions`)
+      const resp = await fetch(`${API_LEARN}/questions`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kp_id: activeKpId, action: 'fetch' }),
+      })
       const data = await resp.json()
-      if (data.code === 0) setQuestions(data.data.questions || [])
+      if (data.code !== 0) return
+      const questionsAdapted = (data.data.questions || []).map(q => ({
+        ...q,
+        content: q.question,
+        attempt_count: q.question_score == null ? 0 : 1,
+        score: q.question_score,
+      }))
+      setQuestions(questionsAdapted)
     } catch (_) {}
   }
 
@@ -277,7 +308,7 @@ export default function ExamPage() {
               />
             </div>
             <div className="qa-main-body">
-              <AttemptHistoryPanel attempts={history} collapsed={false} />
+              <AttemptHistoryPanel attempts={history} collapsed={false} apiBase={API_STUDY} />
             </div>
           </>
         )}
@@ -318,6 +349,7 @@ export default function ExamPage() {
                 attempts={history}
                 collapsed={historyCollapsed}
                 currentAttemptId={qa.attempt.attempt_id}
+                apiBase={API_STUDY}
               />
               <ConversationView attempt={qa.attempt} />
               {qa.loading === 'answering' && <div className="qa-loading"><TypingDots text="正在分析回答" /></div>}
@@ -331,6 +363,14 @@ export default function ExamPage() {
                   onSend={handleAnswer}
                   disabled={!!qa.loading}
                   placeholder="输入你的回答…（Enter 发送，Shift+Enter 换行）"
+                  correctApi={API_TEXT}
+                  questionContext={
+                    (qa.attempt?.dialog || [])
+                      .filter(m => m?.role === 'agent' && (m?.type === 'question' || m?.type === 'follow_up'))
+                      .slice(-2)
+                      .map(m => m.content)
+                      .join('\n')
+                  }
                 />
               </div>
             )}

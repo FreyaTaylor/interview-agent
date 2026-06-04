@@ -28,7 +28,8 @@ public interface KnowledgeNodeMapper {
 
     String COLS = """
             id, parent_id, name, level, node_type, interview_weight,
-            sort_order, is_user_created, created_at, updated_at
+            sort_order, is_user_created, mastery_level, study_count,
+            created_at, updated_at
             """;
 
     // ===== 查询 =====
@@ -141,6 +142,16 @@ public interface KnowledgeNodeMapper {
 
     @Update("UPDATE knowledge_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id}")
     int updateNodeType(@Param("id") long id, @Param("nodeType") String nodeType);
+
+    /** S3 Study finish 钩子：覆盖最新掌握度并把 study_count 累加 1。 */
+    @Update("""
+            UPDATE knowledge_node
+            SET mastery_level = #{mastery},
+                study_count = study_count + 1,
+                updated_at = NOW()
+            WHERE id = #{id}
+            """)
+    int updateMastery(@Param("id") long id, @Param("mastery") Integer mastery);
 
     // ===== 删除 + FK 兜底 =====
 

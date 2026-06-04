@@ -11,4 +11,5 @@ export const API_INTERVIEW = `${API_BASE}/interview`
 export const API_ADMIN = `${API_BASE}/admin`
 export const API_USER = `${API_BASE}/user`
 export const API_PROJECT_GRILLING = `${API_BASE}/project-grilling`
+export const API_TEXT = `${API_BASE}/text`
 export const API_ROOT = API_BASE

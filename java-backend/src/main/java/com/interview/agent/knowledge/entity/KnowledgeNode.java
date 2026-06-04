@@ -17,6 +17,8 @@ public record KnowledgeNode(
         short interviewWeight,    // 默认 3
         int sortOrder,
         boolean isUserCreated,
+        Short masteryLevel,       // S3 study 派生：可空（从未学过）
+        int studyCount,           // S3 study 派生：finished 次数累加
         Instant createdAt,
         Instant updatedAt
 ) {

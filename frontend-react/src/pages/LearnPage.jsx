@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { API_LEARN } from '../config'
+import { API_LEARN, API_TEXT } from '../config'
 import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/KnowledgeSidebar'
 import AnswerInput from '../components/AnswerInput'
 import { Skeleton, StagePulse, TypingDots } from '../components/Loading'
@@ -99,13 +99,16 @@ function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete }) {
       onMouseUp={handleQuoteSelection}
     >
       <div className="learn-sub-card-head">
-        <div className="learn-sub-card-title">{st.title}</div>
+        <div className="learn-sub-card-title">
+          <span className="learn-sub-card-title-text">{st.title}</span>
+          <button
+            className="learn-sub-card-delete"
+            title="删除此子话题"
+            onClick={(e) => { e.stopPropagation(); onDelete(st) }}
+            aria-label="删除此子话题"
+          >×</button>
+        </div>
         <ImportanceStars value={st.importance} />
-        <button
-          className="learn-sub-card-delete"
-          title="删除此子话题"
-          onClick={(e) => { e.stopPropagation(); onDelete(st) }}
-        >×</button>
       </div>
       <div className="learn-sub-card-body">
         <MarkdownContent content={st.body_md} />
@@ -538,6 +541,8 @@ export default function LearnPage() {
                     onSend={handleSendChat}
                     disabled={chatLoading}
                     placeholder="提问探索...（点右侧按钮发送，Enter 换行）"
+                    correctApi={API_TEXT}
+                    questionContext={quotedText || ''}
                   />
                 </div>
               </div>

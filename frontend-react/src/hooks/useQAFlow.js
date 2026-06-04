@@ -1,24 +1,20 @@
 /**
  * useQAFlow — 通用「按题作答」流程 hook。
  *
- * 与后端 qa_engine 对接，study / project-grilling 两侧共用同一套交互：
- *   POST  ${apiBase}/attempts                 开始作答（body: { question_id }）
- *   POST  ${apiBase}/attempts/{id}/turn       提交一轮回答（body: { answer }）
- *   POST  ${apiBase}/attempts/{id}/finish     收尾综合评分
- *   GET   ${apiBase}/attempts/{id}            读取作答详情
+ * 两种后端风格：
+ *   - 默认 (project-grilling Python)：
+ *       POST  ${apiBase}/attempts                 开始作答（body: { question_id }）
+ *       POST  ${apiBase}/attempts/{id}/turn       提交一轮回答（body: { answer }）
+ *       POST  ${apiBase}/attempts/{id}/finish     收尾综合评分
+ *       GET   ${apiBase}/attempts/{id}            读取作答详情
+ *   - style:'java' (S3 Study Java)：全 POST + action 后缀
+ *       POST  ${apiBase}/attempt-start    body { question_id }
+ *       POST  ${apiBase}/attempt-turn     body { attempt_id, user_answer }
+ *       POST  ${apiBase}/attempt-finish   body { attempt_id }
+ *       POST  ${apiBase}/attempt-detail   body { attempt_id }
  *
  * 用法：
- *   const qa = useQAFlow(API_STUDY)          // 或 API_PROJECT_GRILLING
- *   await qa.start(questionId)
- *   await qa.answer('用户回答...')
- *   await qa.finish()
- *
- * 状态字段：
- *   attempt:    null 或 { attempt_id, status, dialog[], follow_up_count?, current_step?,
- *                          max_steps?, final_score?, rubric_result?, overall_summary?,
- *                          design_issues?, question_content?, topic_name? }
- *   loading:    null | 'starting' | 'answering' | 'finishing' | 'loading'
- *   error:      string | null
+ *   const qa = useQAFlow(API_STUDY, { style: 'java' })   // 或 useQAFlow(API_PROJECT_GRILLING)
  */
 import { useCallback, useRef, useState } from 'react'
 
@@ -44,7 +40,8 @@ async function getJSON(url) {
   return data.data
 }
 
-export default function useQAFlow(apiBase) {
+export default function useQAFlow(apiBase, opts = {}) {
+  const isJava = opts.style === 'java'
   const [attempt, setAttempt] = useState(null)
   const [loading, setLoading] = useState(null)
   const [error, setError] = useState(null)
@@ -69,7 +66,8 @@ export default function useQAFlow(apiBase) {
     setError(null)
     setAttempt(null)
     try {
-      const data = await postJSON(`${apiBase}/attempts`, { question_id: questionId })
+      const url = isJava ? `${apiBase}/attempt-start` : `${apiBase}/attempts`
+      const data = await postJSON(url, { question_id: questionId })
       setAttempt({ ...data, status: 'in_progress' })
       return data
     } catch (e) {
@@ -79,7 +77,7 @@ export default function useQAFlow(apiBase) {
       setLoading(null)
       inflightRef.current = false
     }
-  }, [apiBase])
+  }, [apiBase, isJava])
 
   const answer = useCallback(async (text) => {
     if (inflightRef.current) return
@@ -93,10 +91,11 @@ export default function useQAFlow(apiBase) {
       dialog: [...(prev.dialog || []), { role: 'user', type: 'answer', content: text }],
     } : prev)
     try {
-      const data = await postJSON(
-        `${apiBase}/attempts/${attempt.attempt_id}/turn`,
-        { answer: text },
-      )
+      const url = isJava ? `${apiBase}/attempt-turn` : `${apiBase}/attempts/${attempt.attempt_id}/turn`
+      const body = isJava
+        ? { attempt_id: attempt.attempt_id, user_answer: text }
+        : { answer: text }
+      const data = await postJSON(url, body)
       merge(data)
       return data
     } catch (e) {
@@ -106,7 +105,7 @@ export default function useQAFlow(apiBase) {
       setLoading(null)
       inflightRef.current = false
     }
-  }, [apiBase, attempt?.attempt_id, merge])
+  }, [apiBase, isJava, attempt?.attempt_id, merge])
 
   const finish = useCallback(async () => {
     if (inflightRef.current) return
@@ -115,10 +114,9 @@ export default function useQAFlow(apiBase) {
     setLoading('finishing')
     setError(null)
     try {
-      const data = await postJSON(
-        `${apiBase}/attempts/${attempt.attempt_id}/finish`,
-        null,
-      )
+      const url = isJava ? `${apiBase}/attempt-finish` : `${apiBase}/attempts/${attempt.attempt_id}/finish`
+      const body = isJava ? { attempt_id: attempt.attempt_id } : null
+      const data = await postJSON(url, body)
       merge(data)
       return data
     } catch (e) {
@@ -128,7 +126,7 @@ export default function useQAFlow(apiBase) {
       setLoading(null)
       inflightRef.current = false
     }
-  }, [apiBase, attempt?.attempt_id, merge])
+  }, [apiBase, isJava, attempt?.attempt_id, merge])
 
   /** 载入既往作答详情（用于查看历史）。 */
   const load = useCallback(async (attemptId) => {
@@ -137,7 +135,9 @@ export default function useQAFlow(apiBase) {
     setLoading('loading')
     setError(null)
     try {
-      const data = await getJSON(`${apiBase}/attempts/${attemptId}`)
+      const data = isJava
+        ? await postJSON(`${apiBase}/attempt-detail`, { attempt_id: attemptId })
+        : await getJSON(`${apiBase}/attempts/${attemptId}`)
       setAttempt(data)
       return data
     } catch (e) {
@@ -147,7 +147,7 @@ export default function useQAFlow(apiBase) {
       setLoading(null)
       inflightRef.current = false
     }
-  }, [apiBase])
+  }, [apiBase, isJava])
 
   // 派生：是否还能继续追问
   const canAnswer = !!attempt

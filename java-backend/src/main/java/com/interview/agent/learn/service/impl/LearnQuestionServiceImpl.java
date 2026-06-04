@@ -72,17 +72,20 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     private final StudyQuestionMapper questionMapper;
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
+    private final com.interview.agent.study.service.ScoreAggregateService scoreAggregate;
 
     public LearnQuestionServiceImpl(KnowledgeNodeMapper nodeMapper,
                                     KnowledgeSubtopicMapper subtopicMapper,
                                     StudyQuestionMapper questionMapper,
                                     LearnHelper helper,
-                                    LlmInvoker llmInvoker) {
+                                    LlmInvoker llmInvoker,
+                                    com.interview.agent.study.service.ScoreAggregateService scoreAggregate) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
         this.questionMapper = questionMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
+        this.scoreAggregate = scoreAggregate;
     }
 
     /**
@@ -286,12 +289,13 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         return null;
     }
 
-    /** 叶子节点查全部题目转 DTO。 */
+    /** 叶子节点查全部题目转 DTO，并附题目分（无 finished 记录为 null）。 */
     private List<QuestionItemView> loadLeafQuestions(KnowledgeNode node) {
         List<StudyQuestion> rows = questionMapper.findByKpId(node.id());
         List<QuestionItemView> out = new ArrayList<>(rows.size());
         for (StudyQuestion r : rows) {
-            out.add(new QuestionItemView(r.id(), r.content(), r.sortOrder(), r.recommendedAnswer()));
+            Integer score = scoreAggregate.questionScore(r.id());
+            out.add(new QuestionItemView(r.id(), r.content(), r.sortOrder(), r.recommendedAnswer(), score));
         }
         return out;
     }

@@ -66,7 +66,7 @@
 
 ## 1. 知识树查询模块（`knowledge/`） — ✅ S2 已完成
 
-**摘要**：单端点 `GET /api/knowledge/tree`，复用 S1 的 `KnowledgeNodeMapper.findAllOrdered()`，O(n) 把平表组装成嵌套树。`mastery_level / study_count` 占位返回 0，待 S3 完成后由 `QaAggregateService` 注入。
+**摘要**：单端点 `GET /api/knowledge/tree`，复用 S1 的 `KnowledgeNodeMapper.findAllOrdered()`，O(n) 把平表组装成嵌套树。`mastery_level / study_count` 直读 `knowledge_node` 同名列（S3 study/finish 钩子实时写入）。
 
 **详细设计 / 表 / 模块交互 / 验收**见 → [java-backend/docs/modules/S2-knowledge-query.md](../java-backend/docs/modules/S2-knowledge-query.md)
 
@@ -74,7 +74,10 @@
 
 ## 5. Study 模块（`study/`）— 核心闭环
 
-**目标**：推荐知识点 → 选题 → 多轮答题 → Rubric 评分 → 派生掌握度。
+> **详细设计**见 → [java-backend/docs/modules/S3-study.md](../java-backend/docs/modules/S3-study.md)（📝 S3 设计中）
+
+**目标**：选题 → 多轮答题 → Rubric 评分 → 实时写回 `knowledge_node.mastery_level`。
+一期**不做**推荐列表 API（前端从知识树点叶子直接进 Study）。
 
 | API | 说明 |
 |---|---|

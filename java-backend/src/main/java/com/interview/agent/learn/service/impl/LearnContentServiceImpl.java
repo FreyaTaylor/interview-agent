@@ -228,7 +228,11 @@ public class LearnContentServiceImpl implements LearnContentService {
         for (KnowledgeSubtopic s : rows) {
             views.add(toView(s));
         }
-        return new ContentView(node.id(), node.name(), views, 0, null, generated);
+        // mastery_level 由 study/finish 钩子写到 knowledge_node.mastery_level，
+        // 从未学过为 null → 视图按 0 渲染（前端"未掌握"色块）。
+        // last_studied_at 暂未持久化（V12 未加列），统一返 null。
+        int mastery = node.masteryLevel() == null ? 0 : node.masteryLevel().intValue();
+        return new ContentView(node.id(), node.name(), views, mastery, null, generated);
     }
 
     static SubtopicView toView(KnowledgeSubtopic s) {

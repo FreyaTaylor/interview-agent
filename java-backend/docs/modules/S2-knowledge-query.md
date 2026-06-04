@@ -53,7 +53,7 @@
 | `node_type` | string | `category` \| `leaf` |
 | `interview_weight` | short | |
 | `sort_order` | int | |
-| `mastery_level` | int | **暂返回 0**，S3 完成后由 `QaAggregateService` 注入真值 |
+| `mastery_level` | int | 从 `knowledge_node.mastery_level` 直读（S3 study/finish 钩子写入）；从未学过 → 0 |
 | `study_count` | int | 同上 |
 | `children` | array | 嵌套子节点（叶子为空数组） |
 
@@ -77,7 +77,7 @@
 | 项 | Python | Java | 备注 |
 |---|---|---|---|
 | `parent_id=null` 的根节点序列化 | 字典 `"parent_id": None` → JSON `null` | Jackson 全局 NON_NULL inclusion → 字段省略 | 调用方都靠 `children` 嵌套关系，不依赖根的 `parent_id`，影响为 0 |
-| `mastery_level` / `study_count` | 通过 `qa_aggregate.get_kp_mastery_map` 批量查 attempt 表 | 暂硬编码 0 | S3 完成后补 `QaAggregateService` 并注入 |
+| `mastery_level` / `study_count` | 通过 `qa_aggregate.get_kp_mastery_map` 批量查 attempt 表 | 直读 `knowledge_node.mastery_level` / `study_count`（S3 study/finish 钩子实时写入） | 与 Python 语义一致；详见 S3 文档 |
 
 ---
 
@@ -108,7 +108,5 @@ curl -s http://localhost:8080/api/knowledge/tree | jq '.data[0] | {id,name,level
 
 ## 8. 后续工作
 
-- **S3 完成后**：注入 `mastery_level / study_count` 真值
-  - 在 `KnowledgeService` 注入 `QaAggregateService`
-  - `buildTree()` 内先调一次批量 `getKpMasteryMap(leafIds)`，写入对应 view 字段
+- **S5 树生成完成后**：本端点输出会自动包含新节点（共享 mapper）
 - **S5 树生成完成后**：本端点输出会自动包含新节点（共享 mapper）

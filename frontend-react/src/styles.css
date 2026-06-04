@@ -335,6 +335,56 @@ body {
 }
 .ai-send-btn:hover:not(:disabled) { background: #4096ff; }
 .ai-send-btn:disabled { background: #d9d9d9; cursor: not-allowed; }
+.ai-send-btn.ai-send-confirm { background: #52c41a; }
+.ai-send-btn.ai-send-confirm:hover:not(:disabled) { background: #73d13d; }
+
+.ai-send-original-btn {
+  padding: 6px 12px;
+  background: #fff;
+  color: #595959;
+  border: 1px solid #d9d9d9;
+  border-radius: 8px;
+  font-size: 13px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: all 0.15s;
+}
+.ai-send-original-btn:hover:not(:disabled) { border-color: #1677ff; color: #1677ff; }
+.ai-send-original-btn:disabled { color: #bfbfbf; cursor: not-allowed; }
+
+.ai-correct-hint {
+  margin-bottom: 6px;
+  padding: 8px 12px;
+  background: #f6ffed;
+  border: 1px solid #b7eb8f;
+  border-radius: 6px;
+  color: #389e0d;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.ai-correct-hint-title { font-weight: 600; margin-bottom: 4px; }
+.ai-correct-hint-preview {
+  padding: 6px 8px;
+  background: #fff;
+  border: 1px dashed #b7eb8f;
+  border-radius: 4px;
+  color: #262626;
+  font-size: 13px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  margin-bottom: 4px;
+}
+.ai-correct-hint-tip { color: #7cb305; font-size: 11px; }
+.ai-send-btn.ai-send-secondary {
+  background: #fff;
+  color: #595959;
+  border: 1px solid #d9d9d9;
+}
+.ai-send-btn.ai-send-secondary:hover:not(:disabled) {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: #fff;
+}
 
 .ai-stop-btn {
   padding: 6px 12px;
@@ -952,6 +1002,7 @@ body {
   background: linear-gradient(90deg, #e6f4ff 0%, transparent 100%);
   padding: 6px 12px; border-radius: 6px; border-left: 3px solid #1677ff;
 }
+.learn-sub-card-title-text { flex: 1; min-width: 0; }
 .learn-sub-card-body { font-size: 13.5px; color: #555; line-height: 1.8; }
 .learn-sub-card-body p { margin: 4px 0; }
 .learn-sub-card-body strong { color: #1f1f1f; font-weight: 700; }
@@ -974,6 +1025,7 @@ body {
 }
 .learn-sub-card-head .learn-sub-card-title {
   flex: 1; margin-bottom: 0;
+  display: flex; align-items: center; gap: 6px;
 }
 .learn-importance {
   flex-shrink: 0; font-size: 13px; color: #faad14; letter-spacing: 1px;
@@ -981,15 +1033,21 @@ body {
 }
 .learn-importance-dim { color: #e8e8e8; }
 
-/* 子话题卡片 - 删除按钮（头部右侧，hover 才显眼） */
+/* 子话题卡片 - 删除按钮（贴在标题文字后面，鼠标悬停卡片才显形） */
 .learn-sub-card-delete {
-  flex-shrink: 0; width: 22px; height: 22px; padding: 0;
+  flex-shrink: 0; width: 20px; height: 20px; padding: 0;
   border: none; background: transparent; cursor: pointer;
-  color: #bfbfbf; font-size: 18px; line-height: 1;
-  border-radius: 4px; transition: all 0.15s;
+  color: #bfbfbf; font-size: 16px; line-height: 1;
+  border-radius: 50%;
+  opacity: 0; transform: scale(0.85);
+  transition: opacity 0.15s ease, transform 0.15s ease,
+              color 0.15s, background 0.15s;
+}
+.learn-sub-card .learn-sub-card-head:hover .learn-sub-card-delete {
+  opacity: 0.7; transform: scale(1);
 }
 .learn-sub-card-delete:hover {
-  background: #fff1f0; color: #ff4d4f;
+  background: #fff1f0; color: #ff4d4f; opacity: 1 !important;
 }
 
 /* 子话题卡片 - 被引用高亮 */

@@ -29,6 +29,9 @@ public interface StudyQuestionMapper {
     @Select("SELECT " + COLS + " FROM study_question WHERE knowledge_point_id = #{kpId} ORDER BY sort_order, id")
     List<StudyQuestion> findByKpId(@Param("kpId") long kpId);
 
+    @Select("SELECT " + COLS + " FROM study_question WHERE id = #{id}")
+    java.util.Optional<StudyQuestion> findById(@Param("id") long id);
+
     @Select("SELECT EXISTS(SELECT 1 FROM study_question WHERE knowledge_point_id = #{kpId})")
     boolean existsByKpId(@Param("kpId") long kpId);
 

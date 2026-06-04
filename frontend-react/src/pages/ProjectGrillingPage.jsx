@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { API_PROJECT_GRILLING } from '../config'
+import { API_PROJECT_GRILLING, API_TEXT } from '../config'
 import AnswerInput from '../components/AnswerInput'
 import PageHeader from '../components/PageHeader'
 import ConversationView from '../components/ConversationView'
@@ -424,6 +424,14 @@ export default function ProjectGrillingPage() {
                   onSend={handleAnswer}
                   disabled={!!qa.loading}
                   placeholder="输入你的回答…（Enter 发送，Shift+Enter 换行）"
+                  correctApi={API_TEXT}
+                  questionContext={
+                    (qa.attempt?.dialog || [])
+                      .filter(m => m?.role === 'agent' && (m?.type === 'question' || m?.type === 'follow_up'))
+                      .slice(-2)
+                      .map(m => m.content)
+                      .join('\n')
+                  }
                 />
               </div>
             )}
