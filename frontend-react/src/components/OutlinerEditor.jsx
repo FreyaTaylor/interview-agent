@@ -40,7 +40,14 @@ export default function OutlinerEditor({
   const [focusId, setFocusId] = useState(null)
   const [dragId, setDragId] = useState(null)
   const [dragOverId, setDragOverId] = useState(null)
+  // 拖拽悬停位置：'before' | 'after' | 'child'
+  //   before/after = 与 target 同级，插到前/后
+  //   child       = 成为 target 的子节点（追加到末尾）
+  const [dragOverZone, setDragOverZone] = useState(null)
   const inputRefs = useRef({})
+  const emptyDragImg = useRef(null)  // 幕布风格：拖拽时隐藏文字本体
+  // 撤销栈：每次会改变结构的操作前 push 一份 {label, undo: async () => ...}
+  const undoStack = useRef([])
   const [saving, setSaving] = useState(false)
   const [optimizingId, setOptimizingId] = useState(null)
   // 来自 URL 的"定位"参数：?node=<id> — 加载完数据后展开祖先 + 滚动 + 高亮
@@ -117,6 +124,8 @@ export default function OutlinerEditor({
   }
 
   const visibleNodes = flatNodes.filter(n => isVisible(n))
+  // 拖拽中：被拖节点的所有子孙 id（用于把整棵子树一并高亮）
+  const draggingSubtreeIds = dragId != null ? getDescendantIds(dragId) : new Set()
 
   // ---- 折叠 ----
   function toggleCollapse(nodeId) {
@@ -267,52 +276,215 @@ export default function OutlinerEditor({
     } catch (e) { console.error('删除失败:', e) }
   }
 
+  // ---- 撤销栈 ----
+  // 每次结构性改动（drag / 删除 / 缩进等）push 一个 { label, undo: async () => ... }
+  // Ctrl/Cmd+Z 触发 pop 并执行
+  function pushUndo(entry) {
+    undoStack.current.push(entry)
+    if (undoStack.current.length > 30) undoStack.current.shift()
+  }
+  async function popUndo() {
+    const entry = undoStack.current.pop()
+    if (!entry) return
+    console.log('[Undo]', entry.label)
+    setSaving(true)
+    try {
+      await entry.undo()
+    } catch (err) {
+      console.error('[Undo] 失败:', err)
+      alert('撤销失败：' + (err.message || err))
+    } finally {
+      setSaving(false)
+    }
+  }
+  useEffect(() => {
+    function onKey(e) {
+      // Cmd+Z (mac) / Ctrl+Z (win)；忽略 Shift+Z（留给 redo 后续）
+      const isUndo = (e.key === 'z' || e.key === 'Z')
+        && (e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey
+      if (!isUndo) return
+      // 在输入框内时，让浏览器处理 input 自身的 undo
+      const t = e.target
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      e.preventDefault()
+      popUndo()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [])
+
   // ---- 拖拽 ----
+  // 判定拖拽落点（参考幕布/Notion 三段式）：
+  //   Y < height*1/3   → before  插到 target 同级上方
+  //   Y > height*2/3   → after   插到 target 同级下方
+  //   else（中段）     → child   插为 target 末位子
+  //   特例：X 在 indent+8 之前（toggle/bullet 列）一律按 after，
+  //         避免在窄列里误判为 child
+  function getDropZone(e, rowEl) {
+    const rect = rowEl.getBoundingClientRect()
+    const y = e.clientY - rect.top
+    const x = e.clientX - rect.left
+    const indent = parseInt(rowEl.dataset.indent || '16', 10)
+    const onBullet = x < indent + 8
+    if (y < rect.height / 3) return 'before'
+    if (y > rect.height * 2 / 3) return 'after'
+    return onBullet ? 'after' : 'child'
+  }
+
   function handleDragStart(e, node) {
     setDragId(node.id)
     e.dataTransfer.effectAllowed = 'move'
+    // 幕布风格：不拖动文字本体，隐藏原生拖拽幽灵图
+    // 用 1x1 透明图作为 drag image（设为 null 在部分浏览器不生效）
+    if (!emptyDragImg.current) {
+      const img = new Image()
+      img.src = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
+      emptyDragImg.current = img
+    }
+    try { e.dataTransfer.setDragImage(emptyDragImg.current, 0, 0) } catch { /* noop */ }
   }
   function handleDragOver(e, node) {
     e.preventDefault()
-    if (node.id !== dragId) setDragOverId(node.id)
+    if (node.id === dragId) {
+      e.dataTransfer.dropEffect = 'none'
+      return
+    }
+    const zone = getDropZone(e, e.currentTarget)
+    // 统一用 move（避免 copy 的绿色 +号 + 光标切换延迟）
+    e.dataTransfer.dropEffect = 'move'
+    if (node.id !== dragOverId) setDragOverId(node.id)
+    if (zone !== dragOverZone) setDragOverZone(zone)
   }
-  function handleDragLeave() { setDragOverId(null) }
+  function handleDragLeave() {
+    setDragOverId(null)
+    setDragOverZone(null)
+  }
 
   async function handleDrop(e, targetNode) {
     e.preventDefault()
+    const zone = dragOverZone || getDropZone(e, e.currentTarget)
     setDragOverId(null)
-    if (!dragId || dragId === targetNode.id) { setDragId(null); return }
-    const dragNode = flatNodes.find(n => n.id === dragId)
-    if (!dragNode) { setDragId(null); return }
-    if (getDescendantIds(dragId).has(targetNode.id)) { setDragId(null); return }
+    setDragOverZone(null)
+    const draggingId = dragId
+    setDragId(null)
 
+    // Step 1: 自检
+    if (!draggingId || draggingId === targetNode.id) return
+    const dragNode = flatNodes.find(n => n.id === draggingId)
+    if (!dragNode) return
+    // 防环：不能拖到自己的子孙下
+    if (getDescendantIds(draggingId).has(targetNode.id)) {
+      alert('不能把节点拖到自己的子节点下')
+      return
+    }
+
+    // Step 2: 根据 zone 计算新的 parent + sort_order，以及需要让位的兄弟
+    let newParentId, newSortOrder
+    const updates = []  // [{ id, sort_order }]
+    if (zone === 'child') {
+      // 作为 target 的最后一个子节点
+      newParentId = targetNode.id
+      const targetKids = flatNodes
+        .filter(n => n.parent_id === targetNode.id && n.id !== draggingId)
+      newSortOrder = targetKids.length
+      // 子节点追加到末尾，不需要给现有 kids 让位
+    } else {
+      // before / after：与 target 同级
+      newParentId = targetNode.parent_id
+      const baseOrder = targetNode.sort_order ?? 0
+      newSortOrder = zone === 'before' ? baseOrder : baseOrder + 1
+      // 该父下所有兄弟（排除被拖节点本身），sort_order >= newSortOrder 的统一 +1 让位
+      const siblings = flatNodes.filter(
+        n => n.parent_id === newParentId && n.id !== draggingId
+      )
+      for (const s of siblings) {
+        if ((s.sort_order ?? 0) >= newSortOrder) {
+          updates.push({ id: s.id, sort_order: (s.sort_order ?? 0) + 1 })
+        }
+      }
+    }
+
+    console.log('[Drag] drop', { drag: dragNode.name, target: targetNode.name, zone, newParentId, newSortOrder })
+
+    // 若目标 parent 未变，且新位置和原位置一致 → 无操作
+    if (newParentId === dragNode.parent_id && newSortOrder === (dragNode.sort_order ?? 0)) {
+      return
+    }
+
+    // ---- 撤销快照：当前所有兄弟（旧父 + 新父）的位置 + 被拖节点的原 parent_id ----
+    const oldParentId = dragNode.parent_id
+    const oldSortOrder = dragNode.sort_order ?? 0
+    const affectedParentIds = new Set([oldParentId, newParentId])
+    const snapshot = flatNodes
+      .filter(n => affectedParentIds.has(n.parent_id))
+      .map(n => ({ id: n.id, parent_id: n.parent_id, sort_order: n.sort_order ?? 0 }))
+
+    // Step 3: PUT 改父亲（关键：moving_parent=true，否则后端忽略 parent_id）
     setSaving(true)
     try {
+      const movingParent = newParentId !== dragNode.parent_id
       const moveResp = await fetch(`${apiUrl}/${dragNode.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_id: targetNode.parent_id }),
+        body: JSON.stringify({
+          parent_id: newParentId,
+          moving_parent: movingParent,
+        }),
       }).then(r => r.json()).catch(() => ({ code: -1, message: '网络错误' }))
       if (moveResp.code !== 0) {
         alert(`拖动失败：${moveResp.message || '未知错误'}`)
         return
       }
-      const newSortOrder = targetNode.sort_order ?? 0
-      const siblings = flatNodes.filter(n => n.parent_id === targetNode.parent_id)
-      const updates = [{ id: dragNode.id, sort_order: newSortOrder }]
-      for (const s of siblings) {
-        if ((s.sort_order ?? 0) >= newSortOrder && s.id !== dragNode.id) {
-          updates.push({ id: s.id, sort_order: (s.sort_order ?? 0) + 1 })
-        }
-      }
+
+      // Step 4: 批量排序（dragNode 自身 + 让位的兄弟）
+      updates.push({ id: dragNode.id, sort_order: newSortOrder })
       await fetch(`${apiUrl}/batch-sort`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates }),
       })
+
+      // 推入撤销栈
+      pushUndo({
+        label: `移动「${dragNode.name}」`,
+        undo: async () => {
+          // 先把 parent 改回去（若变过）
+          if (movingParent) {
+            await fetch(`${apiUrl}/${dragNode.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ parent_id: oldParentId, moving_parent: true }),
+            })
+          }
+          // 还原所有受影响节点的 sort_order
+          await fetch(`${apiUrl}/batch-sort`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              updates: snapshot.map(s => ({ id: s.id, sort_order: s.sort_order })),
+            }),
+          })
+          await fetchData()
+        },
+      })
+
+      // Step 5: 若 drop 'child' 模式且 target 处于折叠，把它展开以便看到结果
+      if (zone === 'child' && collapsed.has(targetNode.id)) {
+        setCollapsed(prev => {
+          const next = new Set(prev)
+          next.delete(targetNode.id)
+          try { localStorage.setItem(storageKey, JSON.stringify([...next])) } catch {}
+          return next
+        })
+      }
+
       await fetchData()
-    } catch (e) { console.error('拖拽移动失败:', e); alert(`拖动失败：${e.message || e}`) }
-    finally { setSaving(false); setDragId(null) }
+    } catch (err) {
+      console.error('拖拽移动失败:', err)
+      alert(`拖动失败：${err.message || err}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   // ---- 新增根节点 ----
@@ -417,7 +589,8 @@ export default function OutlinerEditor({
           <span>Tab 缩进</span>
           <span>Shift+Tab 反缩进</span>
           <span>Backspace 删除空行</span>
-          <span>拖拽排序</span>
+          <span>拖拽：上 1/3 = 插到上方，下 1/3 = 插到下方，中段 = 作为子节点</span>
+          <span>Ctrl/Cmd+Z 撤销上一步</span>
         </div>
       </div>
 
@@ -427,13 +600,18 @@ export default function OutlinerEditor({
           const hasKids = hasChildren(node.id)
           const isCollapsed = collapsed.has(node.id)
           const isDragging = dragId === node.id
+          const isDraggingDescendant = dragId != null && draggingSubtreeIds.has(node.id)
           const isDragOver = dragOverId === node.id
+          const dragOverClass = isDragOver ? `drag-over drag-over-${dragOverZone}` : ''
           const placeholder = placeholders[Math.min(depth, placeholders.length - 1)] || ''
 
+          const indentPx = 16 + depth * 24
+          const draggingClass = isDragging ? 'dragging dragging-root' : (isDraggingDescendant ? 'dragging' : '')
           return (
             <div key={node.id}
-              className={`outliner-item ${isDragging ? 'dragging' : ''} ${isDragOver ? 'drag-over' : ''}`}
-              style={{ paddingLeft: 16 + depth * 24 }}
+              className={`outliner-item ${draggingClass} ${dragOverClass}`}
+              style={{ paddingLeft: indentPx, '--row-indent': indentPx + 'px' }}
+              data-indent={indentPx}
               draggable
               onDragStart={e => handleDragStart(e, node)}
               onDragOver={e => handleDragOver(e, node)}
@@ -452,6 +630,8 @@ export default function OutlinerEditor({
                 className={`outliner-input level-${Math.min(depth, 3)} ${highlightId === node.id ? 'located-flash' : ''}`}
                 value={node.name}
                 placeholder={placeholder}
+                draggable={false}
+                onDragStart={e => e.preventDefault()}
                 onChange={e => handleNameChange(node.id, e.target.value)}
                 onBlur={() => handleBlur(node.id)}
                 onKeyDown={e => handleKeyDown(e, node)}

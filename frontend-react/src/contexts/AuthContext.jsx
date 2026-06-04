@@ -21,12 +21,9 @@ export function AuthProvider({ children }) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
-    const token = urlToken || localStorage.getItem('token')
-    if (token) {
-      fetchUser(token)
-    } else {
-      setLoading(false)
-    }
+    // 一期 Mock：Java 后端 /api/auth/me 永远返回固定 user_id=1，无需 token
+    const token = urlToken || localStorage.getItem('token') || 'dev'
+    fetchUser(token)
   }, [])
 
   async function fetchUser(token) {
