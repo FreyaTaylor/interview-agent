@@ -60,7 +60,11 @@ export default function OutlinerEditor({
   // ---- 数据获取 ----
   const fetchData = useCallback(async () => {
     try {
-      const resp = await fetch(apiUrl).then(r => r.json())
+      const resp = await fetch(`${apiUrl}/list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      }).then(r => r.json())
       if (resp.code === 0) {
         setFlatNodes(toOutlineOrder(resp.data || []))
       }
@@ -148,10 +152,10 @@ export default function OutlinerEditor({
     if (!node || !node.name.trim()) return
     setSaving(true)
     try {
-      await fetch(`${apiUrl}/${nodeId}/update`, {
+      await fetch(`${apiUrl}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: node.name.trim() }),
+        body: JSON.stringify({ id: nodeId, name: node.name.trim() }),
       })
     } catch (e) { console.error('保存失败:', e) }
     finally { setSaving(false) }
@@ -165,7 +169,7 @@ export default function OutlinerEditor({
       const siblings = getSiblings(node)
       const newSortOrder = (node.sort_order ?? 0) + 1
       try {
-        const resp = await fetch(apiUrl, {
+        const resp = await fetch(`${apiUrl}/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ parent_id: node.parent_id, name: '' }),
@@ -212,10 +216,10 @@ export default function OutlinerEditor({
     const newParentChildren = getChildren(newParent.id)
     setSaving(true)
     try {
-      await fetch(`${apiUrl}/${node.id}/update`, {
+      await fetch(`${apiUrl}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_id: newParent.id }),
+        body: JSON.stringify({ id: node.id, parent_id: newParent.id, moving_parent: true }),
       })
       await fetch(`${apiUrl}/batch-sort`, {
         method: 'POST',
@@ -249,10 +253,10 @@ export default function OutlinerEditor({
         }
       }
       updates.push({ id: node.id, sort_order: newSortOrder })
-      await fetch(`${apiUrl}/${node.id}/update`, {
+      await fetch(`${apiUrl}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ parent_id: parent.parent_id }),
+        body: JSON.stringify({ id: node.id, parent_id: parent.parent_id, moving_parent: true }),
       })
       await fetch(`${apiUrl}/batch-sort`, {
         method: 'POST',
@@ -270,7 +274,11 @@ export default function OutlinerEditor({
     const visIdx = visibleNodes.findIndex(n => n.id === node.id)
     const prevNode = visIdx > 0 ? visibleNodes[visIdx - 1] : null
     try {
-      await fetch(`${apiUrl}/${node.id}/delete`, { method: 'POST' })
+      await fetch(`${apiUrl}/delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: node.id }),
+      })
       await fetchData()
       if (prevNode) setFocusId(prevNode.id)
     } catch (e) { console.error('删除失败:', e) }
@@ -423,10 +431,11 @@ export default function OutlinerEditor({
     setSaving(true)
     try {
       const movingParent = newParentId !== dragNode.parent_id
-      const moveResp = await fetch(`${apiUrl}/${dragNode.id}/update`, {
+      const moveResp = await fetch(`${apiUrl}/update`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          id: dragNode.id,
           parent_id: newParentId,
           moving_parent: movingParent,
         }),
@@ -450,10 +459,10 @@ export default function OutlinerEditor({
         undo: async () => {
           // 先把 parent 改回去（若变过）
           if (movingParent) {
-            await fetch(`${apiUrl}/${dragNode.id}/update`, {
+            await fetch(`${apiUrl}/update`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ parent_id: oldParentId, moving_parent: true }),
+              body: JSON.stringify({ id: dragNode.id, parent_id: oldParentId, moving_parent: true }),
             })
           }
           // 还原所有受影响节点的 sort_order
@@ -490,7 +499,7 @@ export default function OutlinerEditor({
   // ---- 新增根节点 ----
   async function handleAddRoot() {
     try {
-      const resp = await fetch(apiUrl, {
+      const resp = await fetch(`${apiUrl}/create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ parent_id: null, name: '' }),
@@ -644,10 +653,10 @@ export default function OutlinerEditor({
                   onChange={async (e) => {
                     const w = Number(e.target.value)
                     setFlatNodes(prev => prev.map(n => n.id === node.id ? { ...n, interview_weight: w } : n))
-                    await fetch(`${apiUrl}/${node.id}/update`, {
+                    await fetch(`${apiUrl}/update`, {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ interview_weight: w }),
+                      body: JSON.stringify({ id: node.id, interview_weight: w }),
                     })
                   }}
                 >
@@ -669,7 +678,11 @@ export default function OutlinerEditor({
                   if (hasKids) {
                     if (!window.confirm(`确定删除「${node.name}」及其所有子节点？`)) return
                   }
-                  await fetch(`${apiUrl}/${node.id}/delete`, { method: 'POST' })
+                  await fetch(`${apiUrl}/delete`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ id: node.id }),
+                  })
                   await fetchData()
                 }}
               >×</button>

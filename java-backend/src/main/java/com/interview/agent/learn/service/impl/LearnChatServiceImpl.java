@@ -15,6 +15,7 @@ import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
 import com.interview.agent.learn.mapper.LearnChatMapper;
 import com.interview.agent.learn.service.LearnChatService;
 import com.interview.agent.learn.service.LearnHelper;
+import com.interview.agent.prompts.PromptKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -50,7 +51,6 @@ public class LearnChatServiceImpl implements LearnChatService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnChatServiceImpl.class);
 
-    private static final String CHAT_PROMPT_KEY = "learn/chat";
     private static final int HISTORY_PROMPT_LIMIT = 10;
     private static final double CHAT_TEMPERATURE = 0.3;
     private static final int CHAT_MAX_TOKENS = 4096;
@@ -117,7 +117,7 @@ public class LearnChatServiceImpl implements LearnChatService {
         vars.put("history", history);
         vars.put("user_input", message.strip());
 
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(CHAT_PROMPT_KEY, vars,
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_CHAT, vars,
                 CHAT_TEMPERATURE, CHAT_MAX_TOKENS, 1);
         Map<String, Object> resp = llmInvoker.invoke(spec,
                 raw -> JsonUtil.extractJson(raw, RESP_TYPE))

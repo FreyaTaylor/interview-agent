@@ -109,7 +109,11 @@ export default function AdminPage() {
   }
 
   function fetchTree() {
-    fetch(`${API_ADMIN}/tree-nodes`).then(r => r.json()).then(resp => {
+    fetch(`${API_ADMIN}/tree-nodes/list`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{}',
+    }).then(r => r.json()).then(resp => {
       if (resp.code === 0) setTreeNodes(resp.data || [])
     }).catch(() => {})
   }
@@ -205,7 +209,7 @@ export default function AdminPage() {
   // ---- 知识树编辑 ----
   async function handleAddNode(parentId) {
     if (!addName.trim()) return
-    await fetch(`${API_ADMIN}/tree-nodes`, {
+    await fetch(`${API_ADMIN}/tree-nodes/create`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ parent_id: parentId, name: addName.trim() }),
     })
@@ -214,16 +218,19 @@ export default function AdminPage() {
 
   async function handleUpdateNode(nodeId) {
     if (!editName.trim()) return
-    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}/update`, {
+    await fetch(`${API_ADMIN}/tree-nodes/update`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: editName.trim() }),
+      body: JSON.stringify({ id: nodeId, name: editName.trim() }),
     })
     setEditingId(null); setEditName(''); fetchTree()
   }
 
   async function handleDeleteNode(nodeId, name) {
     if (!window.confirm(`确定删除「${name}」及其所有子节点？`)) return
-    await fetch(`${API_ADMIN}/tree-nodes/${nodeId}/delete`, { method: 'POST' })
+    await fetch(`${API_ADMIN}/tree-nodes/delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: nodeId }),
+    })
     fetchTree(); fetchStats()
   }
 

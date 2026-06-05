@@ -3,6 +3,7 @@ package com.interview.agent.text.service;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
+import com.interview.agent.prompts.PromptKeys;
 import org.springframework.stereotype.Service;
 
 import java.util.HashMap;
@@ -16,7 +17,6 @@ import java.util.Map;
 @Service
 public class TextCorrectService {
 
-    private static final String PROMPT_KEY = "text/correct";
     private static final double TEMPERATURE = 0.0;   // 纠错要稳，绝不创造
     private static final int MAX_TOKENS = 2048;
     private static final int MAX_RETRY = 2;
@@ -43,7 +43,7 @@ public class TextCorrectService {
         vars.put("text", trimmed);
         vars.put("context", context == null || context.isBlank() ? "（无）" : context.trim());
 
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(PROMPT_KEY, vars, TEMPERATURE, MAX_TOKENS, MAX_RETRY);
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.TEXT_CORRECT, vars, TEMPERATURE, MAX_TOKENS, MAX_RETRY);
         return llmInvoker.invoke(spec, TextCorrectService::parse).orElse(trimmed);
     }
 

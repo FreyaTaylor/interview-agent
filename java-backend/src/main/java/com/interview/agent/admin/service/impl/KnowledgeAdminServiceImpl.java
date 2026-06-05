@@ -2,6 +2,7 @@ package com.interview.agent.admin.service.impl;
 
 import com.interview.agent.admin.dto.BatchSortReq;
 import com.interview.agent.admin.dto.CreateKnowledgeNodeReq;
+import com.interview.agent.admin.dto.DeleteNodeReq;
 import com.interview.agent.admin.dto.KnowledgeNodeView;
 import com.interview.agent.admin.dto.UpdateKnowledgeNodeReq;
 import com.interview.agent.admin.service.KnowledgeAdminService;
@@ -77,10 +78,10 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
      *
      * <p>完整逻辑：
      * <ol>
-     *   <li>校验 name 不能为空 / 纯空白。</li>
+     *   <li>name 清洗：可以空（outliner UX）—— 前端按 Enter 先创建占位节点再 onBlur 填名字。</li>
      *   <li>根据 parentId 判定 level：有 parent → parent.level + 1，无 parent → 1（根节点）。</li>
      *   <li>新节点 nodeType 一律默认 leaf（与 level 解耦，不再按 level≥3 硬性判定）。</li>
-     *   <li>调 EmbeddingService 生成 name 的向量字面量；失败降级为 null。</li>
+     *   <li>调 EmbeddingService 生成 name 的向量字面量（空 name 跳过）；失败降级为 null。</li>
      *   <li>按是否有 embedding 选两个 Mapper 方法之一 INSERT，拿回新 id。</li>
      *   <li>若父节点原本是 leaf，升回 category（与删除后“没娃变 leaf”逻辑对称）。</li>
      * </ol>
@@ -88,16 +89,13 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
      * <p>全程 @Transactional：INSERT + 父节点 nodeType 更新要么同时成功要么同时回滚。
      *
      * @return 只返回必要字段：{id, name, level}（Controller 拿去拼 ApiResponse）
-     * @throws BizException 40001 名称空；40400 父节点不存在
+     * @throws BizException 40400 父节点不存在
      */
     @Override
     @Transactional
     public Map<String, Object> create(CreateKnowledgeNodeReq req) {
-        // Step 1: 名称清洗与非空校验
+        // Step 1: 名称清洗 — 允许为空（outliner Enter 创建占位节点，onBlur 后走 update 填名字）
         String name = req.name() == null ? "" : req.name().strip();
-        if (name.isEmpty()) {
-            throw new BizException(40001, "节点名称不能为空");
-        }
 
         // Step 2: 查父节点 → 推导 level（根节点 level=1）
         short level;
@@ -114,8 +112,9 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         String nodeType = "leaf";
         short weight = req.interviewWeight() != null ? req.interviewWeight() : DEFAULT_INTERVIEW_WEIGHT;
 
-        // Step 4: 同步生成 embedding（需要调 DashScope）；失败降级为 null，不阻断创建
-        String embeddingLiteral = safeEmbed(name);
+        // Step 4: 同步生成 embedding（需要调 DashScope）；失败降级为 null，不阻断创建。
+        //         name 为空时跳过向量生成（outliner 创建占位场景），onBlur 调 update 后可由 backfill 补
+        String embeddingLiteral = name.isEmpty() ? null : safeEmbed(name);
 
         // Step 5: INSERT（两个 SQL 变体：带 / 不带 embedding）—— 避免 MyBatis 绑 NULL 到 ::vector 出错
         long newId = (embeddingLiteral == null)
@@ -152,7 +151,9 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
      */
     @Override
     @Transactional
-    public Map<String, Object> update(long id, UpdateKnowledgeNodeReq req) {
+    public Map<String, Object> update(UpdateKnowledgeNodeReq req) {
+        // Step 0: id 从 body 读（不再走 PathVariable）
+        long id = req.id();
         // Step 1: 存在性检查（后面还要用 node.name() 做返回默认值）
         KnowledgeNode node = repo.findById(id)
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
@@ -251,7 +252,9 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
      */
     @Override
     @Transactional
-    public Map<String, Object> delete(long id) {
+    public Map<String, Object> delete(DeleteNodeReq req) {
+        // Step 0: id 从 body 读
+        long id = req.id();
         // Step 1: 存在性检查，同时拿到 parentId 供最后“父降级”使用
         KnowledgeNode node = repo.findById(id)
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));

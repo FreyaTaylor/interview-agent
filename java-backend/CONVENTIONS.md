@@ -117,7 +117,10 @@ xxx/
 
 - RESTful，kebab-case 路径，复数名词：`/api/study/attempts`、`/api/admin/tree-nodes`
 - **优先全 POST + body 参数**：所有读/写端点都用 POST，参数走 JSON body；避免 path/query 把字段写进 URL 和 access log
-- **用 `action` 字段区分语义**（不是用路径后缀）：
+- **id 一律走 body，禁用 `@PathVariable`**：包括 update/delete 这种"看起来很想用 RESTful 路径"的场景。共享 DTO（如 `admin/dto/DeleteNodeReq`），多个 Update DTO 顶部加 `Long id` 字段；Service 方法只接 DTO，不再接独立 `long id` 参数
+- **list 端点也用 POST `/list` + body `{}`**，不要 GET 取列表。空 body 比 GET query 更利于前端封装一致 + 后续加过滤参数零成本扩
+- **多操作 CRUD 路径动词分开 OK**（admin tree 模式）：`/list /create /update /delete /batch-sort` 5 端点拆开，每个 body shape 清晰；不强行合并成单 action 入口。判断：能否用同一 Request DTO 表达所有操作？能 → 合并为 action 字段；不能 → 路径动词分开
+- **用 `action` 字段区分语义**（同一资源多操作 + body shape 一致时；不是用路径后缀）：
   - `POST /api/learn/content`   body `{ kpId, action: "fetch"|"regenerate" }`
   - `POST /api/learn/questions` body `{ kpId, action: "fetch"|"regenerate" }`
   - action 解析下沉到 DTO record（如 `LearnAssetRequest.resolvedAction()`），Service 提供 `resolveXxx(Request)` 总入口；Controller 不写 switch/if
@@ -166,6 +169,12 @@ xxx/
 - **Prompt 模板**走 `prompt_template` 表（DB 存储 + Flyway V?__ INSERT 种子，`ON CONFLICT (key) DO NOTHING`），**禁止**硬编码到 Java 文件或回退到 classpath txt 方案
 - 加载工具：`PromptService.render(key, Map.of("var_name", val))`，占位符 `{var_name}`（snake_case）；缓存走 `ConcurrentHashMap`，热更新调 `invalidateCache()` 或重启
 - key 命名：`<module>/<purpose>`，如 `learn/content-gen`、`learn/question-gen`、`tree/generate`
+- **Prompt key 必须用 `com.interview.agent.prompts.PromptKeys.XXX` 常量引用**（强制）：
+  - **禁止**字面量 `new LlmInvoker.Spec("project/parse-text", ...)`
+  - **禁止**在 ServiceImpl 里写文件私有 `private static final String XXX_PROMPT_KEY = "..."`
+    （历史上曾出现两个 ServiceImpl 都叫 `GEN_PROMPT_KEY` 但指向不同 key 的坑）
+  - 新增 prompt 三步缺一不可：① 写 Flyway `V?__seed_*.sql` 插表；② 在 `PromptKeys.java` 登记常量（JavaDoc 标注 V seed 来源）；③ 业务代码引用常量
+  - 不变式：`PromptKeys` 常量集合 == `SELECT key FROM prompt_template` 集合
 - **LLM 调用必须走 `common/LlmInvoker.invoke(Spec, ResponseParser<T>)` 单一收口**：
   - **禁止**在 Service 里直写 `chatClient.prompt()...call()`
   - parser 用 lambda 或 method reference 直接传入，**不**创建独立 `XxxParser` 类（`@FunctionalInterface` 的本意）：

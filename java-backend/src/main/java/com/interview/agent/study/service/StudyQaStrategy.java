@@ -2,6 +2,7 @@ package com.interview.agent.study.service;
 
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
+import com.interview.agent.prompts.PromptKeys;
 import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.stereotype.Component;
 
@@ -20,8 +21,6 @@ import java.util.Map;
 @Component
 public class StudyQaStrategy {
 
-    private static final String PROMPT_PER_TURN = "study/per-turn";
-    private static final String PROMPT_FINAL = "study/final-score";
     private static final double TEMP_PER_TURN = 0.3;
     private static final double TEMP_FINAL = 0.2;
     private static final int MAX_TOKENS = 3072;
@@ -53,7 +52,7 @@ public class StudyQaStrategy {
         vars.put("prior_follow_up_types", priorFollowUpTypes.isEmpty() ? "（无）" : String.join(", ", priorFollowUpTypes));
         vars.put("allowed_follow_up_types", allowedFollowUpTypes.isEmpty() ? "（无，必须结束）" : String.join(", ", allowedFollowUpTypes));
 
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(PROMPT_PER_TURN, vars, TEMP_PER_TURN, MAX_TOKENS, MAX_RETRY);
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.STUDY_PER_TURN, vars, TEMP_PER_TURN, MAX_TOKENS, MAX_RETRY);
         return llmInvoker.invoke(spec, StudyQaStrategy::parsePerTurn)
                 .orElseGet(() -> PerTurn.empty(currentStep));
     }
@@ -65,7 +64,7 @@ public class StudyQaStrategy {
         vars.put("rubric_template_json", JsonUtil.toJson(rubricTemplate));
         vars.put("dialog_render", renderDialog(dialog));
 
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(PROMPT_FINAL, vars, TEMP_FINAL, MAX_TOKENS, MAX_RETRY);
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.STUDY_FINAL_SCORE, vars, TEMP_FINAL, MAX_TOKENS, MAX_RETRY);
         return llmInvoker.invoke(spec, StudyQaStrategy::parseFinalScore).orElseGet(FinalScore::zero);
     }
 

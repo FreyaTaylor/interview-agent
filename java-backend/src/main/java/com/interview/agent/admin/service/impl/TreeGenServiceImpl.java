@@ -13,6 +13,7 @@ import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.infra.llm.EmbeddingService;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
+import com.interview.agent.prompts.PromptKeys;
 import com.interview.agent.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -106,7 +107,7 @@ public class TreeGenServiceImpl implements TreeGenService {
         }
 
         // Step 2: 调 LLM
-        TreeNodeJson tree = callLlmJson("tree/parse-text", Map.of("text", text),
+        TreeNodeJson tree = callLlmJson(PromptKeys.TREE_PARSE_TEXT, Map.of("text", text),
                 "from-text", TEMP_PARSE_TEXT, TreeNodeJson.class);
 
         // Step 3: 创建前去重（精确 + LLM 语义两层）
@@ -160,7 +161,7 @@ public class TreeGenServiceImpl implements TreeGenService {
                 .orElse("（未设置用户画像）");
 
         // Step 4: 调 LLM
-        TreeNodeJson llmTree = callLlmJson("tree/generate", Map.of(
+        TreeNodeJson llmTree = callLlmJson(PromptKeys.TREE_GENERATE, Map.of(
                 "tree_name", treeName,
                 "requirements", requirements,
                 "profile_text", profileText
@@ -319,7 +320,7 @@ public class TreeGenServiceImpl implements TreeGenService {
             return;
         }
         String namesText = existingNames.stream().map(n -> "- " + n).collect(Collectors.joining("\n"));
-        LlmInvoker.Spec spec = new LlmInvoker.Spec("tree/duplicate-check", Map.of(
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.TREE_DUPLICATE_CHECK, Map.of(
                 "new_name", name,
                 "existing_names", namesText
         ), TEMP_DUP_CHECK, LLM_MAX_TOKENS, LLM_RETRY);

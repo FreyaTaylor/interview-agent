@@ -14,6 +14,7 @@ import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
 import com.interview.agent.learn.mapper.LearnChatMapper;
 import com.interview.agent.learn.service.LearnContentService;
 import com.interview.agent.learn.service.LearnHelper;
+import com.interview.agent.prompts.PromptKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +41,6 @@ import java.util.Map;
 @Service
 public class LearnContentServiceImpl implements LearnContentService {
 
-    private static final String GEN_PROMPT_KEY = "learn/subtopics-gen";
     private static final int GEN_MAX_RETRY = 3;
     private static final int GEN_MAX_TOKENS = 4096;
     private static final double GEN_TEMPERATURE = 0.3;
@@ -173,7 +173,7 @@ public class LearnContentServiceImpl implements LearnContentService {
                 "knowledge_point", node.name(),
                 "category_path", helper.categoryPath(node.id())
         );
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(GEN_PROMPT_KEY, vars,
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPICS_GEN, vars,
                 GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
         List<Map<String, Object>> items = llmInvoker.invoke(spec, raw -> {
             List<Map<String, Object>> parsed = JsonUtil.extractJson(raw, SUBTOPIC_LIST);

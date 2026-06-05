@@ -15,6 +15,7 @@ import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
 import com.interview.agent.learn.mapper.StudyQuestionMapper;
 import com.interview.agent.learn.service.LearnHelper;
 import com.interview.agent.learn.service.LearnQuestionService;
+import com.interview.agent.prompts.PromptKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -59,7 +60,6 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     private static final int REGENERATE_BATCH = 5;
     private static final int REGENERATE_CAP = 15;
 
-    private static final String GEN_PROMPT_KEY = "learn/question-gen";
     private static final int GEN_MAX_TOKENS = 4096;
     private static final double GEN_TEMPERATURE = 0.4;
     private static final int CONTEXT_LIMIT = 3000;
@@ -201,7 +201,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         vars.put("avoid_section", avoidSection);
 
         // Step 3: 调 LLM；失败返空
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(GEN_PROMPT_KEY, vars, GEN_TEMPERATURE, GEN_MAX_TOKENS, 1);
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_QUESTION_GEN, vars, GEN_TEMPERATURE, GEN_MAX_TOKENS, 1);
         List<QuestionItem> items = llmInvoker.invoke(spec, LearnQuestionServiceImpl::parseQuestions)
                 .orElse(List.of());
         if (items.isEmpty()) {
