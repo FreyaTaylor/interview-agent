@@ -32,4 +32,14 @@ public interface ProjectMapper {
             FROM project WHERE id = #{id}
             """)
     Optional<Project> findById(@Param("id") long id);
+
+    /** 列出该 user 的全部项目，按创建时间倒序（最新在前）。供 S7 拷打 projects-list 使用。 */
+    @Select("""
+            SELECT id, user_id, name, description,
+                   tech_stack::text AS tech_stack,
+                   role, highlights, root_node_id, created_at
+            FROM project WHERE user_id = #{userId}
+            ORDER BY created_at DESC, id DESC
+            """)
+    java.util.List<Project> listByUser(@Param("userId") long userId);
 }

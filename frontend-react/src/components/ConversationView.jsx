@@ -1,13 +1,16 @@
 /**
  * ConversationView — 渲染一次作答 (question_attempt) 的完整对话 + 最终评分。
  *
- * 与后端 qa_engine 的 dialog 协议对应（每条 {role, type, content, covered?}）：
- *   - agent / question     主问题
- *   - user  / answer       用户回答
- *   - agent / feedback     单轮范例反馈（含 covered 标记）
- *   - agent / follow_up    追问
+ * 与后端 dialog 协议对应（每条 {role, type, ...}）：
+ *   - agent / question     主问题（content）
+ *   - user  / answer       用户回答（content）
+ *   - agent / feedback     v1 study/项目：covered + content（范例回答，默认收起）
+ *                          v2 项目拷打：note + gaps_found + signals（面试官点评，默认展开）
+ *   - agent / follow_up    追问（content）
  *
- * status === 'finished' 时会额外渲染：rubric_result、overall_summary、design_issues（仅项目）。
+ * v2 vs v1 通过 feedback 项是否含 `note` 字段自动判别；不需要 mode prop。
+ *
+ * status === 'finished' 时会额外渲染：rubric_result、overall_summary、design_issues。
  *
  * Props:
  *   attempt: 见 useQAFlow 返回的 attempt 对象
@@ -53,6 +56,11 @@ function DialogItem({ m }) {
     )
   }
   if (type === 'feedback') {
+    // v2 项目拷打：有 note 字段 → 面试官点评 + 漏洞
+    if (m.note !== undefined && m.note !== null) {
+      return <FeedbackBubbleV2 note={m.note} gapsFound={m.gaps_found || []} />
+    }
+    // v1 兼容：covered + content（范例回答，默认收起）
     const covered = !!m.covered
     return (
       <FeedbackBubble covered={covered} content={m.content} />
@@ -65,7 +73,43 @@ function DialogItem({ m }) {
   )
 }
 
-// 范例回答气泡：默认收起（避免用户偷看答案），点击标题展开
+// v2 面试官点评气泡：note 一段自然语言 + 本轮发现的漏洞（默认展开）
+function FeedbackBubbleV2({ note, gapsFound }) {
+  const [open, setOpen] = useState(true)
+  return (
+    <div className={`qa-msg qa-msg-feedback qa-msg-feedback-v2 ${open ? 'is-open' : 'is-collapsed'}`}>
+      <button
+        type="button"
+        className="qa-msg-tag qa-feedback-toggle"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+      >
+        <span>面试官点评</span>
+        <span className="qa-feedback-toggle-hint">{open ? '收起 ▲' : '展开 ▼'}</span>
+      </button>
+      {open && (
+        <div className="qa-msg-body qa-feedback-v2-body">
+          {note && <div className="qa-feedback-note">{note}</div>}
+          {gapsFound.length > 0 && (
+            <div className="qa-feedback-gaps">
+              <div className="qa-feedback-gaps-title">本轮发现的漏洞</div>
+              <ul className="qa-feedback-gaps-list">
+                {gapsFound.map((g, i) => (
+                  <li key={i}>
+                    <span className="qa-feedback-gap-tag">[{g.category || '其他'}]</span>
+                    <span className="qa-feedback-gap-point">{g.point}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// 范例回答气泡（v1）：默认收起（避免用户偷看答案），点击标题展开
 function FeedbackBubble({ covered, content }) {
   const [open, setOpen] = useState(false)
   return (

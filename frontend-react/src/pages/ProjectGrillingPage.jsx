@@ -35,14 +35,17 @@ export default function ProjectGrillingPage() {
   const [historyLoading, setHistoryLoading] = useState(false)
   const [historyCollapsed, setHistoryCollapsed] = useState(false)
 
-  const qa = useQAFlow(API_PROJECT_GRILLING)
+  const qa = useQAFlow(API_PROJECT_GRILLING, { style: 'java' })
   const bottomRef = useRef(null)
-  const autoSelectedRef = useRef(false)  // 每次切项目后自动选题只做一次
 
   // ---- 项目列表 ----
   const fetchProjects = useCallback(async () => {
     try {
-      const r = await fetch(`${API_PROJECT_GRILLING}/projects`)
+      const r = await fetch(`${API_PROJECT_GRILLING}/projects-list`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      })
       const d = await r.json()
       if (d.code === 0) {
         setProjects(d.data || [])
@@ -69,7 +72,7 @@ export default function ProjectGrillingPage() {
     if (n && n !== activeProjectId) setActiveProjectId(n)
   }, [urlProjectId])
 
-  // ---- 项目切换 → 拉画像 + 话题 + 重置 ----
+  // ---- 项目切换 → 拉画像 + 话题 + 重置（不自动选话题/题目）----
   useEffect(() => {
     if (!activeProjectId) return
     qa.reset()
@@ -78,56 +81,21 @@ export default function ProjectGrillingPage() {
     setTopicQuestions({})
     setHistory([])
     setHistoryCollapsed(false)
-    autoSelectedRef.current = false
     loadProjectMeta(activeProjectId)
   }, [activeProjectId])
-
-  // ---- 话题加载完 → 自动展开并选中「第一个未作答」题目（与 ExamPage 行为一致）----
-  useEffect(() => {
-    if (autoSelectedRef.current) return
-    if (!topics.length) return
-    if (activeQuestionId) return
-    autoSelectedRef.current = true
-    ;(async () => {
-      const fetchQuestions = async (topicId) => {
-        try {
-          const r = await fetch(`${API_PROJECT_GRILLING}/topics/${topicId}/questions`)
-          const d = await r.json()
-          const qs = d.code === 0 ? (d.data.questions || []) : []
-          setTopicQuestions(prev => ({ ...prev, [topicId]: qs }))
-          return qs
-        } catch (_) {
-          setTopicQuestions(prev => ({ ...prev, [topicId]: [] }))
-          return []
-        }
-      }
-      // 顺序扫描，命中第一个未答即停
-      for (const t of topics) {
-        const qs = await fetchQuestions(t.id)
-        const target = qs.find(q => !q.attempt_count)
-        if (target) {
-          setOpenTopicId(t.id)
-          await selectQuestion(t.id, target)
-          return
-        }
-      }
-      // 全部已答 → 展开第一个话题第一题
-      const t0 = topics[0]
-      const qs0 = topicQuestions[t0.id] || await fetchQuestions(t0.id)
-      if (qs0.length) {
-        setOpenTopicId(t0.id)
-        await selectQuestion(t0.id, qs0[0])
-      }
-    })()
-  }, [topics])
 
   async function loadProjectMeta(pid) {
     setLoadingMeta(true)
     setError(null)
+    const postBody = (path) => fetch(`${API_PROJECT_GRILLING}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ project_id: pid }),
+    }).then(r => r.json())
     try {
       const [pRes, dRes] = await Promise.all([
-        fetch(`${API_PROJECT_GRILLING}/projects/${pid}/profile`).then(r => r.json()),
-        fetch(`${API_PROJECT_GRILLING}/projects/${pid}/dimensions`).then(r => r.json()),
+        postBody('/profile-detail'),
+        postBody('/dimensions-list'),
       ])
       if (pRes.code === 0) {
         setProfile({
@@ -145,28 +113,36 @@ export default function ProjectGrillingPage() {
     }
   }
 
+  async function fetchTopicQs(topicId) {
+    return fetch(`${API_PROJECT_GRILLING}/topic-questions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ topic_id: topicId }),
+    }).then(r => r.json())
+  }
+
   async function toggleTopic(t) {
     if (openTopicId === t.id) {
       setOpenTopicId(null)
       return
     }
     setOpenTopicId(t.id)
-    if (topicQuestions[t.id]) return
-    try {
-      const r = await fetch(`${API_PROJECT_GRILLING}/topics/${t.id}/questions`)
-      const d = await r.json()
-      if (d.code === 0) {
-        setTopicQuestions(prev => ({ ...prev, [t.id]: d.data.questions || [] }))
+    // 展开话题：只加载题目列表，不自动选题（等用户点击具体题目才进入答题）
+    if (!topicQuestions[t.id]) {
+      try {
+        const d = await fetchTopicQs(t.id)
+        if (d.code === 0) {
+          setTopicQuestions(prev => ({ ...prev, [t.id]: d.data.questions || [] }))
+        }
+      } catch (_) {
+        setTopicQuestions(prev => ({ ...prev, [t.id]: [] }))
       }
-    } catch (_) {
-      setTopicQuestions(prev => ({ ...prev, [t.id]: [] }))
     }
   }
 
   async function refreshTopicQuestions(topicId) {
     try {
-      const r = await fetch(`${API_PROJECT_GRILLING}/topics/${topicId}/questions`)
-      const d = await r.json()
+      const d = await fetchTopicQs(topicId)
       if (d.code === 0) {
         setTopicQuestions(prev => ({ ...prev, [topicId]: d.data.questions || [] }))
       }
@@ -182,9 +158,13 @@ export default function ProjectGrillingPage() {
     setHistoryLoading(true)
     let prior = []
     try {
-      const resp = await fetch(`${API_PROJECT_GRILLING}/questions/${q.id}/attempts`)
+      const resp = await fetch(`${API_PROJECT_GRILLING}/attempts-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: q.id }),
+      })
       const data = await resp.json()
-      if (data.code === 0) prior = data.data || []
+      if (data.code === 0) prior = (data.data && data.data.attempts) || []
       setHistory(prior)
     } catch (_) {}
     finally { setHistoryLoading(false) }
@@ -197,6 +177,7 @@ export default function ProjectGrillingPage() {
     if (prior.length === 0) {
       try { await qa.start(q.id) } catch (_) {}
     }
+    // 有 finished 历史但无 in_progress → 什么都不做，右栏展示历史 + 「再来一轮」
   }
 
   async function startNewAttempt() {
@@ -208,9 +189,13 @@ export default function ProjectGrillingPage() {
   async function refreshHistory() {
     if (!activeQuestionId) return
     try {
-      const resp = await fetch(`${API_PROJECT_GRILLING}/questions/${activeQuestionId}/attempts`)
+      const resp = await fetch(`${API_PROJECT_GRILLING}/attempts-history`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question_id: activeQuestionId }),
+      })
       const data = await resp.json()
-      if (data.code === 0) setHistory(data.data || [])
+      if (data.code === 0) setHistory((data.data && data.data.attempts) || [])
     } catch (_) {}
   }
 
@@ -249,6 +234,12 @@ export default function ProjectGrillingPage() {
   }, [qa.attempt])
 
   const activeProject = projects.find(p => p.id === activeProjectId)
+  // 过滤掉名字为空的话题（数据脏值，不应展示）
+  const visibleTopics = topics.filter(t => t.name && t.name.trim())
+  // 当前打开的话题（用于右栏标题「项目名 / 话题名」）
+  const activeTopic = visibleTopics.find(t => t.id === openTopicId)
+  const topicNameForTitle = qa.attempt?.topic_name || activeTopic?.name || ''
+  const mainTitle = [activeProject?.name, topicNameForTitle].filter(Boolean).join(' / ') || '项目拷打'
 
   return (
     <div className="qa-page">
@@ -280,40 +271,29 @@ export default function ProjectGrillingPage() {
             )}
           </div>
 
-          <div className="qa-profile-section">
-            <div className="qa-profile-title">薄弱点</div>
-            {profile.weak_points.length === 0 ? (
-              <div className="qa-profile-empty">暂无</div>
-            ) : (
-              profile.weak_points.map((w, i) => (
-                <span key={i} className="qa-profile-tag weak">
-                  {typeof w === 'string' ? w : (w.topic || w.point || JSON.stringify(w))}
-                </span>
-              ))
-            )}
-          </div>
         </div>
       </aside>
 
       {/* 中：话题手风琴 */}
       <section className="qa-side-middle">
         <div className="qa-side-header">
-          <span>{activeProject?.name ? `${activeProject.name} 话题` : '话题'}</span>
-          {topics.length > 0 && (
+          <span>{activeProject?.name ? `「${activeProject.name}」话题` : '话题'}</span>
+          {visibleTopics.length > 0 && (
             <span style={{ fontSize: 12, color: '#999', fontWeight: 400 }}>
-              {topics.length} 个
+              {visibleTopics.length} 个
             </span>
           )}
         </div>
         <div className="qa-side-body">
           {loadingMeta && <div className="qa-loading-wrap"><Skeleton lines={3} hasTitle={false} hasBlock={false} /></div>}
           {error && <div className="qa-error">{error}</div>}
-          {!loadingMeta && topics.length === 0 && (
+          {!loadingMeta && visibleTopics.length === 0 && (
             <div className="qa-empty">还没有话题</div>
           )}
-          {topics.map(t => {
+          {visibleTopics.map(t => {
             const open = openTopicId === t.id
-            const qs = topicQuestions[t.id]
+            // 过滤掉内容为空的题目（数据脏值）
+            const qs = topicQuestions[t.id]?.filter(q => q.content && q.content.trim())
             return (
               <div key={t.id} className="qa-topic-group">
                 <div
@@ -350,14 +330,25 @@ export default function ProjectGrillingPage() {
       <section className="qa-main">
         {!qa.attempt && history.length === 0 && (
           <div className="qa-empty">
-            {activeProjectId ? (historyLoading ? '加载历史中…' : '👈 展开话题，选择一道题目开始拷打') : '请选择项目'}
+            {!activeProjectId
+              ? '请先选择一个项目'
+              : historyLoading
+                ? '加载历史中…'
+                : qa.loading === 'starting'
+                  ? '正在准备题目…'
+                  : !openTopicId
+                    ? '👈 请从左侧展开一个话题'
+                    : !activeQuestionId
+                      ? '👈 请从话题中点选一道题目开始拷打'
+                      : '👈 请从话题中点选一道题目开始拷打'
+            }
           </div>
         )}
         {!qa.attempt && history.length > 0 && (
           <>
             <div className="qa-main-header">
               <PageHeader
-                title={activeProject?.name || '历史拷打记录'}
+                title={mainTitle}
                 subtitle={`共 ${history.length} 次拷打记录`}
                 right={
                   <button
@@ -379,7 +370,7 @@ export default function ProjectGrillingPage() {
           <>
             <div className="qa-main-header">
               <PageHeader
-                title={activeProject?.name || qa.attempt.topic_name || '项目拷打'}
+                title={mainTitle}
                 subtitle={qa.isFinished ? '已完成 · 综合评分如下' : stepInfo}
                 right={
                   qa.canAnswer ? (

@@ -49,6 +49,19 @@ public interface ProjectNodeMapper {
     @Select("SELECT EXISTS(SELECT 1 FROM project_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
+    /** 取某父节点下指定 level 的子节点列表，按 sort_order, id 排序。S7 用：root→L2 话题、L2→L3 题目。 */
+    @Select("SELECT " + COLS + " FROM project_node"
+            + " WHERE parent_id = #{parentId} AND level = #{level}"
+            + " ORDER BY sort_order, id")
+    List<ProjectNode> findChildrenByLevel(@Param("parentId") long parentId,
+                                          @Param("level") short level);
+
+    /** 数某根（L1）下所有 L3 叶子题目数。供 projects-list real_question_count 使用。 */
+    @Select("SELECT COUNT(*) FROM project_node leaf"
+            + " JOIN project_node topic ON leaf.parent_id = topic.id"
+            + " WHERE topic.parent_id = #{rootId} AND topic.level = 2 AND leaf.level = 3")
+    int countLeavesUnderRoot(@Param("rootId") long rootId);
+
     /**
      * 取以 rootId 为根的整棵子树（含 root 自身）最深 level；空树或仅 root 返回 root 自身 level。
      * 用于跨父移动时校验"移动后是否超过项目树 3 层硬限"。

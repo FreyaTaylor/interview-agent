@@ -50,6 +50,18 @@ public final class PromptKeys {
     /** 项目名同名/语义去重判断。V15 seed。 */
     public static final String PROJECT_DUP_CHECK = "project/dup-check";
 
+    // ===== project grilling 域（S7 项目拷打）=====
+    /** 项目拷打 — 异步画像抽取：仅 facts_patch。V16/V19 seed。 */
+    public static final String PROJECT_EXTRACT_PROFILE = "project/extract-profile";
+    /** 项目拷打 v1 — 单轮评分与追问决策。V16 seed。 */
+    public static final String PROJECT_PER_TURN = "project/per-turn";
+    /** 项目拷打 v1 — 最终综合评分。V16 seed。 */
+    public static final String PROJECT_FINAL_SCORE = "project/final-score";
+    /** 项目拷打 v2「面试官自由追问」— 单轮：interviewer_note + gaps_found + signals + next_question/wrap_up_reason。V17 seed。 */
+    public static final String PROJECT_PER_TURN_V2 = "project/per-turn-v2";
+    /** 项目拷打 v2 — 综合评分：dimensions (4维) + overall_summary + design_issues + extension_qa。V17 seed。 */
+    public static final String PROJECT_FINAL_SCORE_V2 = "project/final-score-v2";
+
     // ===== text 域（通用工具）=====
     /** ASR / 输入文本纠错。V14 seed。 */
     public static final String TEXT_CORRECT = "text/correct";

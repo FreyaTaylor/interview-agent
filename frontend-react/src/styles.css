@@ -1878,6 +1878,51 @@ body {
 }
 .qa-msg-feedback.is-collapsed { padding-bottom: 10px; }
 
+/* v2 面试官点评（项目拷打 v2）：中性蓝色调，默认展开，无 ✗/✓ 标签 */
+.qa-msg-feedback-v2 {
+  background: #f0f7ff;
+  border-color: #adc6ff;
+}
+.qa-msg-feedback-v2 .qa-msg-tag,
+.qa-msg-feedback-v2 .qa-feedback-toggle {
+  color: #1d39c4;
+}
+.qa-feedback-v2-body {
+  padding-top: 8px;
+}
+.qa-feedback-note {
+  color: #262626;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+.qa-feedback-gaps {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed #adc6ff;
+}
+.qa-feedback-gaps-title {
+  font-size: 12px; font-weight: 600; color: #1d39c4;
+  margin-bottom: 6px;
+}
+.qa-feedback-gaps-list {
+  margin: 0; padding-left: 0; list-style: none;
+}
+.qa-feedback-gaps-list li {
+  display: flex; gap: 8px; align-items: flex-start;
+  padding: 4px 0;
+  font-size: 13px; line-height: 1.55;
+}
+.qa-feedback-gap-tag {
+  flex-shrink: 0;
+  color: #cf1322;
+  font-weight: 500;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.qa-feedback-gap-point {
+  color: #595959;
+}
+
 /* ---- 最终评分块 ---- */
 .qa-final {
   margin-top: 8px;
@@ -2097,6 +2142,7 @@ body {
   flex: 1; min-width: 420px;
   display: flex; flex-direction: column; overflow: hidden;
   background: #fff;
+  position: relative; /* 为 .qa-weak-overlay 提供定位上下文 */
 }
 
 .qa-side-header {
