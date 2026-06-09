@@ -7,19 +7,28 @@ import com.interview.agent.admin.dto.CreateTreeFromTextReq;
 import com.interview.agent.admin.dto.TreeGenResp;
 import com.interview.agent.admin.dto.TreeNodeJson;
 import com.interview.agent.admin.service.TreeGenService;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.infra.llm.EmbeddingService;
+import com.interview.agent.infra.llm.QwenVisionClient;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.prompts.PromptKeys;
+import com.interview.agent.prompts.PromptService;
 import com.interview.agent.user.mapper.UserMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.w3c.dom.Element;
+import org.w3c.dom.Node;
+import org.w3c.dom.NodeList;
 
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import java.io.ByteArrayInputStream;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -56,11 +65,12 @@ public class TreeGenServiceImpl implements TreeGenService {
     private static final Logger log = LoggerFactory.getLogger(TreeGenServiceImpl.class);
     private static final int LLM_RETRY = 3;
     private static final short DEFAULT_WEIGHT = 3;
-    private static final long DEFAULT_USER_ID = 1L;
     /** LLM 单次最大输出 token；Python 端 8192，避免大树被截断。 */
     private static final int LLM_MAX_TOKENS = 8192;
     /** 文本解析温度（与 Python create_tree_from_text 对齐）：低温防止 LLM 改写原文。 */
     private static final double TEMP_PARSE_TEXT = 0.1;
+    /** 截图视觉解析温度（与 Python create_tree_from_image 对齐）：低温严守原文。 */
+    private static final double TEMP_PARSE_IMAGE = 0.1;
     /** 树生成温度（与 Python create_tree_from_generate 对齐）：中温保留发散性。 */
     private static final double TEMP_GENERATE = 0.3;
     /** 语义去重温度（与 Python _check_duplicate_by_name 对齐）：零温要确定答案。 */
@@ -70,15 +80,21 @@ public class TreeGenServiceImpl implements TreeGenService {
     private final UserMapper userMapper;
     private final EmbeddingService embeddingService;
     private final LlmInvoker llmInvoker;
+    private final QwenVisionClient visionClient;
+    private final PromptService promptService;
 
     public TreeGenServiceImpl(KnowledgeNodeMapper repo,
                               UserMapper userMapper,
                               EmbeddingService embeddingService,
-                              LlmInvoker llmInvoker) {
+                              LlmInvoker llmInvoker,
+                              QwenVisionClient visionClient,
+                              PromptService promptService) {
         this.repo = repo;
         this.userMapper = userMapper;
         this.embeddingService = embeddingService;
         this.llmInvoker = llmInvoker;
+        this.visionClient = visionClient;
+        this.promptService = promptService;
     }
 
     // ============================================================
@@ -154,8 +170,8 @@ public class TreeGenServiceImpl implements TreeGenService {
         // Step 2: 先去重（避免白调一次 LLM 再报重复）
         checkDuplicateByName(treeName);
 
-        // Step 3: 读用户画像（一期 user_id=1）；缺失时塞占位文案
-        String profileText = userMapper.findProfileText(DEFAULT_USER_ID)
+        // Step 3: 读用户画像（当前登录用户）；缺失时塞占位文案
+        String profileText = userMapper.findProfileText(CurrentUser.id())
                 .map(String::strip)
                 .filter(s -> !s.isEmpty())
                 .orElse("（未设置用户画像）");
@@ -172,6 +188,159 @@ public class TreeGenServiceImpl implements TreeGenService {
         SaveResult sr = saveRecursive(root, null, (short) 1, List.of());
         log.info("[TreeGen] from-generate done root={} name='{}' leaves={}", sr.rootId, treeName, sr.leafCount);
         return new TreeGenResp(sr.rootId, treeName, sr.leafCount);
+    }
+
+    // ============================================================
+    // 入口 3：from-image（截图 → qwen-vl 视觉解析）
+    // ============================================================
+
+    /**
+     * 上传截图（思维导图 / 大纲）→ 多模态 LLM 视觉识别为知识树并落库。
+     *
+     * <p>与文本入口的差异仅在「取数据」一步：这里走 {@link QwenVisionClient}（DashScope qwen-vl-max），
+     * prompt 直接 {@link PromptService#load} 取原文（无占位符，不渲染）。拿到 JSON 后的去重 / 落库
+     * 与 from-text 完全一致。视觉调用最多重试 {@value #LLM_RETRY} 次。
+     *
+     * @param imageBase64 图片 base64（不含 data: 前缀）
+     * @param mediaType   图片 MIME（如 image/png）
+     * @throws BizException 40901 同名树已存在；50000 视觉解析失败
+     */
+    @Override
+    @Transactional
+    public TreeGenResp createFromImage(String imageBase64, String mediaType) {
+        // Step 1: 取视觉 prompt（无占位符，load 原文即可）
+        String prompt = promptService.load(PromptKeys.TREE_PARSE_IMAGE);
+
+        // Step 2: 调视觉模型，重试 + 容错抽 JSON
+        TreeNodeJson tree = null;
+        for (int attempt = 1; attempt <= LLM_RETRY; attempt++) {
+            try {
+                String raw = visionClient.parseImage(imageBase64, mediaType, prompt, TEMP_PARSE_IMAGE);
+                tree = JsonUtil.extractJson(raw, TreeNodeJson.class);
+                if (tree != null) {
+                    break;
+                }
+            } catch (Exception e) {
+                log.warn("[TreeGen] from-image 第{}/{}次解析失败: {}", attempt, LLM_RETRY, e.getMessage());
+            }
+        }
+        if (tree == null) {
+            throw new BizException(50000, "截图解析失败，请重试");
+        }
+
+        // Step 3: 去重
+        String treeName = tree.name() == null ? "" : tree.name().strip();
+        if (!treeName.isEmpty()) {
+            checkDuplicateByName(treeName);
+        }
+
+        // Step 4: 递归落库
+        SaveResult sr = saveRecursive(tree, null, (short) 1, List.of());
+        log.info("[TreeGen] from-image done root={} name='{}' leaves={}", sr.rootId, treeName, sr.leafCount);
+        return new TreeGenResp(sr.rootId, treeName, sr.leafCount);
+    }
+
+    // ============================================================
+    // 入口 4：from-mm（FreeMind/幕布 .mm 文件 → XML 解析，无 LLM）
+    // ============================================================
+
+    /**
+     * 导入 FreeMind / 幕布导出的 .mm（XML）思维导图，直接映射为知识节点。
+     *
+     * <p>纯结构搬运、不走 LLM：按 {@code <node TEXT="...">} 的嵌套递归建树，所有节点
+     * interview_weight 统一给 3（与 Python {@code _parse_mm_node} 对齐）。根节点 TEXT 为空时
+     * 兜底命名「导入的知识树」。
+     *
+     * <p>安全：XML 解析关闭 DTD / 外部实体（防 XXE）。
+     *
+     * @param content .mm 文件原始字节
+     * @throws BizException 40901 同名树已存在；50000 XML 非法 / 无有效节点
+     */
+    @Override
+    @Transactional
+    public TreeGenResp createFromMm(byte[] content) {
+        // Step 1: 安全解析 XML，定位根 <node>
+        Element rootNodeEl = parseMmRootNode(content);
+
+        // Step 2: 递归把 XML 转成 TreeNodeJson
+        TreeNodeJson tree = parseMmNode(rootNodeEl);
+
+        // Step 3: 根名兜底
+        String name = tree.name() == null ? "" : tree.name().strip();
+        if (name.isEmpty()) {
+            name = "导入的知识树";
+            tree = new TreeNodeJson(name, tree.children(), tree.interviewWeight());
+        }
+
+        // Step 4: 去重 + 落库
+        checkDuplicateByName(name);
+        SaveResult sr = saveRecursive(tree, null, (short) 1, List.of());
+        log.info("[TreeGen] from-mm done root={} name='{}' leaves={}", sr.rootId, name, sr.leafCount);
+        return new TreeGenResp(sr.rootId, name, sr.leafCount);
+    }
+
+    /**
+     * 安全解析 .mm 字节流，返回根 {@code <node>} 元素。
+     *
+     * <p>FreeMind 顶层是 {@code <map>} 包一个根 {@code <node>}；幕布等也可能直接给 {@code <node>}。
+     * 两种都兼容：文档根若本身是 node 直接用，否则取文档里第一个 {@code <node>}（document order
+     * 下即最外层那个）。
+     */
+    private Element parseMmRootNode(byte[] content) {
+        try {
+            DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+            // 关闭 DTD / 外部实体，防 XXE（.mm 是纯结构 XML，无需任何外部解析能力）
+            dbf.setFeature("http://apache.org/xml/features/disallow-doctype-decl", true);
+            dbf.setFeature("http://xml.org/sax/features/external-general-entities", false);
+            dbf.setFeature("http://xml.org/sax/features/external-parameter-entities", false);
+            dbf.setXIncludeAware(false);
+            dbf.setExpandEntityReferences(false);
+            DocumentBuilder builder = dbf.newDocumentBuilder();
+
+            Element docRoot = builder.parse(new ByteArrayInputStream(content)).getDocumentElement();
+            if (docRoot == null) {
+                throw new BizException(50000, ".mm 文件中未找到有效节点");
+            }
+            if ("node".equalsIgnoreCase(docRoot.getTagName())) {
+                return docRoot;
+            }
+            NodeList nodes = docRoot.getElementsByTagName("node");
+            for (int i = 0; i < nodes.getLength(); i++) {
+                if (nodes.item(i) instanceof Element el) {
+                    return el;
+                }
+            }
+            throw new BizException(50000, ".mm 文件中未找到有效节点");
+        } catch (BizException e) {
+            throw e;
+        } catch (Exception e) {
+            throw new BizException(50000, ".mm 文件解析失败: " + e.getMessage(), e);
+        }
+    }
+
+    /**
+     * 递归把 .mm 的 {@code <node>} 元素转成 {@link TreeNodeJson}。
+     *
+     * <p>只读直接子 {@code <node>}；TEXT 属性即节点名。空名且无子的节点会在上层被过滤
+     * （与 Python {@code if parsed["name"] or parsed.get("children")} 一致）。
+     */
+    private TreeNodeJson parseMmNode(Element element) {
+        String text = element.getAttribute("TEXT");
+        text = text == null ? "" : text.strip();
+
+        List<TreeNodeJson> children = new ArrayList<>();
+        NodeList kids = element.getChildNodes();
+        for (int i = 0; i < kids.getLength(); i++) {
+            Node n = kids.item(i);
+            if (n instanceof Element el && "node".equalsIgnoreCase(el.getTagName())) {
+                TreeNodeJson parsed = parseMmNode(el);
+                boolean hasName = parsed.name() != null && !parsed.name().isEmpty();
+                if (hasName || !parsed.isLeaf()) {
+                    children.add(parsed);
+                }
+            }
+        }
+        return new TreeNodeJson(text, children.isEmpty() ? null : children, (short) 3);
     }
 
     // ============================================================
@@ -226,9 +395,10 @@ public class TreeGenServiceImpl implements TreeGenService {
         String embeddingLiteral = safeEmbed(embedText);
 
         // Step 4: INSERT（带 / 不带 embedding 两个分支）
+        long userId = CurrentUser.id();
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(parentId, name, level, nodeType, weight, 0, false)
-                : repo.insertWithEmbedding(parentId, name, level, nodeType, weight, 0, false, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(userId, parentId, name, level, nodeType, weight, 0, false)
+                : repo.insertWithEmbedding(userId, parentId, name, level, nodeType, weight, 0, false, embeddingLiteral);
 
         // Step 5: 叶子终止递归，计数 +1
         if (isLeaf) {
@@ -245,7 +415,7 @@ public class TreeGenServiceImpl implements TreeGenService {
             TreeNodeJson child = children.get(i);
             SaveResult childRes = saveRecursive(child, newId, (short) (level + 1), nextAncestors);
             // sort_order 后置 UPDATE（insertWithEmbedding/WithoutEmbedding 当前都写死 0）
-            repo.updateSortOrder(childRes.rootId, i);
+            repo.updateSortOrder(childRes.rootId, CurrentUser.id(), i);
             leafCount += childRes.leafCount;
         }
         return new SaveResult(newId, leafCount);
@@ -297,7 +467,7 @@ public class TreeGenServiceImpl implements TreeGenService {
      */
     private void checkDuplicateByName(String name) {
         // Step 1: 拉所有根节点
-        List<KnowledgeNode> roots = repo.findRoots();
+        List<KnowledgeNode> roots = repo.findRoots(CurrentUser.id());
         if (roots.isEmpty()) {
             return;
         }

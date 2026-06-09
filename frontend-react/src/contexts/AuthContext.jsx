@@ -21,9 +21,22 @@ export function AuthProvider({ children }) {
       window.history.replaceState({}, '', window.location.pathname)
     }
 
-    // 一期 Mock：Java 后端 /api/auth/me 永远返回固定 user_id=1，无需 token
-    const token = urlToken || localStorage.getItem('token') || 'dev'
+    const token = urlToken || localStorage.getItem('token')
+    if (!token) {
+      // 无 token → 直接进登录页，不打 /me
+      setLoading(false)
+      return
+    }
     fetchUser(token)
+  }, [])
+
+  // 全局 fetch 拦截器在收到 401 时广播；这里据此退回登录页
+  useEffect(() => {
+    function onUnauthorized() {
+      setUser(null)
+    }
+    window.addEventListener('auth:unauthorized', onUnauthorized)
+    return () => window.removeEventListener('auth:unauthorized', onUnauthorized)
   }, [])
 
   async function fetchUser(token) {

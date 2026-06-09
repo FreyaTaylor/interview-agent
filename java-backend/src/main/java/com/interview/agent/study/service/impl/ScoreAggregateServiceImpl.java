@@ -1,5 +1,6 @@
 package com.interview.agent.study.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.study.mapper.QuestionAttemptMapper;
 import com.interview.agent.study.service.ScoreAggregateService;
@@ -40,7 +41,7 @@ public class ScoreAggregateServiceImpl implements ScoreAggregateService {
         // Step 1: 算最新掌握度
         Integer mastery = kpMastery(kpId);
         // Step 2: 写回（mastery 为 null 也允许，前端按 null 渲染"未学过"）
-        nodeMapper.updateMastery(kpId, mastery);
+        nodeMapper.updateMastery(kpId, CurrentUser.id(), mastery);
         return mastery;
     }
 }

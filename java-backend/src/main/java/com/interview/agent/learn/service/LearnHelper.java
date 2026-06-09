@@ -1,5 +1,6 @@
 package com.interview.agent.learn.service;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import org.springframework.stereotype.Service;
@@ -38,7 +39,7 @@ public class LearnHelper {
      */
     public String categoryPath(long kpId) {
         // Step 1
-        List<KnowledgeNode> all = nodeMapper.findAllOrdered();
+        List<KnowledgeNode> all = nodeMapper.findAllOrdered(CurrentUser.id());
         Map<Long, KnowledgeNode> byId = new HashMap<>(all.size() * 2);
         for (KnowledgeNode n : all) {
             byId.put(n.id(), n);

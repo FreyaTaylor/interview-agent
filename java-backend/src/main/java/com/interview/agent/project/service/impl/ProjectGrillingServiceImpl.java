@@ -1,6 +1,7 @@
 package com.interview.agent.project.service.impl;
 
 import com.interview.agent.project.dto.DimensionItem;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.project.dto.ProfileResponse;
 import com.interview.agent.project.dto.ProjectListItem;
 import com.interview.agent.project.dto.TopicQuestionsResponse;
@@ -36,8 +37,6 @@ import java.util.Optional;
 @Service
 public class ProjectGrillingServiceImpl implements ProjectGrillingService {
 
-    private static final long USER_ID = 1L;
-
     private final ProjectMapper projectMapper;
     private final ProjectNodeMapper nodeMapper;
     private final ProjectUserProfileMapper profileMapper;
@@ -55,7 +54,7 @@ public class ProjectGrillingServiceImpl implements ProjectGrillingService {
 
     @Override
     public List<ProjectListItem> listProjects() {
-        List<Project> projects = projectMapper.listByUser(USER_ID);
+        List<Project> projects = projectMapper.listByUser(CurrentUser.id());
         List<ProjectListItem> result = new ArrayList<>(projects.size());
         for (Project p : projects) {
             int qCount = p.rootNodeId() == null ? 0 : nodeMapper.countLeavesUnderRoot(p.rootNodeId());
@@ -77,10 +76,11 @@ public class ProjectGrillingServiceImpl implements ProjectGrillingService {
     @Override
     @Transactional
     public ProfileResponse profileDetail(long projectId) {
-        Optional<ProjectUserProfile> opt = profileMapper.findByProjectUser(projectId, USER_ID);
+        long userId = CurrentUser.id();
+        Optional<ProjectUserProfile> opt = profileMapper.findByProjectUser(projectId, userId);
         if (opt.isEmpty()) {
-            profileMapper.ensureRowExists(projectId, USER_ID);
-            opt = profileMapper.findByProjectUser(projectId, USER_ID);
+            profileMapper.ensureRowExists(projectId, userId);
+            opt = profileMapper.findByProjectUser(projectId, userId);
         }
         ProjectUserProfile p = opt.orElseThrow(() -> new IllegalStateException(
                 "ensureRowExists 后仍读不到 project_user_profile：project_id=" + projectId));

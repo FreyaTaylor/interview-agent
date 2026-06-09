@@ -24,24 +24,56 @@ public interface InterviewRecordMapper {
     @Select("SELECT " + COLS + " FROM interview_record WHERE id = #{id}")
     Optional<InterviewRecord> findById(@Param("id") long id);
 
-    @Select("SELECT " + COLS + " FROM interview_record ORDER BY created_at DESC, id DESC LIMIT #{limit}")
-    List<InterviewRecord> findRecent(@Param("limit") int limit);
+    @Select("SELECT " + COLS + " FROM interview_record WHERE user_id = #{userId} ORDER BY created_at DESC, id DESC LIMIT #{limit}")
+    List<InterviewRecord> findRecent(@Param("userId") long userId, @Param("limit") int limit);
 
-        @Select("SELECT " + COLS + " FROM interview_record WHERE text_hash = #{textHash} ORDER BY id DESC LIMIT 1")
-        Optional<InterviewRecord> findByTextHash(@Param("textHash") String textHash);
+        @Select("SELECT " + COLS + " FROM interview_record WHERE user_id = #{userId} AND text_hash = #{textHash} ORDER BY id DESC LIMIT 1")
+        Optional<InterviewRecord> findByTextHash(@Param("userId") long userId, @Param("textHash") String textHash);
+
+    /**
+     * 语义查重：pgvector 余弦最近邻取 1 条（仅当前用户、embedding 非空）。
+     * 复刻 knowledge_node 的 {@code (embedding <=> :vec) AS distance} 升序，距离越小越相似。
+     */
+    @Select("""
+            SELECT id, company, position, avg_score, created_at, (embedding <=> #{vec}::vector) AS distance
+            FROM interview_record
+            WHERE user_id = #{userId} AND embedding IS NOT NULL
+            ORDER BY embedding <=> #{vec}::vector
+            LIMIT 1
+            """)
+    Optional<InterviewDuplicateMatch> findNearestByEmbedding(@Param("userId") long userId, @Param("vec") String vec);
+
+    /** finalize 落库后回写整段面试文本的 embedding（语义查重用）。 */
+    @Update("UPDATE interview_record SET embedding = #{embeddingLiteral}::vector WHERE id = #{id}")
+    int updateEmbedding(@Param("id") long id, @Param("embeddingLiteral") String embeddingLiteral);
+
+    /**
+     * 语义查重懒回填：取当前用户尚未生成 embedding 的历史记录（仅 id + raw_text）。
+     * 用于在 checkDuplicate 时按需补算老数据的 embedding（feature 上线前落库的记录无 embedding，
+     * 否则永远无法被最近邻召回 → 查重对老数据失效）。
+     */
+    @Select("""
+            SELECT id, raw_text
+            FROM interview_record
+            WHERE user_id = #{userId} AND embedding IS NULL AND raw_text IS NOT NULL AND raw_text <> ''
+            ORDER BY id DESC
+            LIMIT #{limit}
+            """)
+    List<InterviewEmbeddingBackfillRow> findMissingEmbedding(@Param("userId") long userId, @Param("limit") int limit);
 
     @Select("""
             INSERT INTO interview_record
-              (raw_text, company, position, text_hash, parsed_questions, cluster_result, summary_report)
+              (user_id, raw_text, company, position, text_hash, parsed_questions, cluster_result, summary_report)
             VALUES
-              (#{rawText}, #{company}, #{position}, #{textHash},
+              (#{userId}, #{rawText}, #{company}, #{position}, #{textHash},
                #{parsedQuestions,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                #{clusterResult,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                #{summaryReport})
             RETURNING id
             """)
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
-    long insert(@Param("rawText") String rawText,
+    long insert(@Param("userId") long userId,
+                @Param("rawText") String rawText,
                 @Param("company") String company,
                 @Param("position") String position,
                 @Param("textHash") String textHash,
@@ -67,16 +99,17 @@ public interface InterviewRecordMapper {
 
     @Select("""
             INSERT INTO interview_record
-              (raw_text, company, position, text_hash, parsed_questions, cluster_result, summary_report, draft_turns, draft_groups)
+              (user_id, raw_text, company, position, text_hash, parsed_questions, cluster_result, summary_report, draft_turns, draft_groups)
             VALUES
-              (#{rawText}, #{company}, #{position}, #{textHash},
+              (#{userId}, #{rawText}, #{company}, #{position}, #{textHash},
                NULL, NULL, NULL,
                #{draftTurns,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                #{draftGroups,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER})
             RETURNING id
             """)
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
-    long insertDraft(@Param("rawText") String rawText,
+    long insertDraft(@Param("userId") long userId,
+                     @Param("rawText") String rawText,
                      @Param("company") String company,
                      @Param("position") String position,
                      @Param("textHash") String textHash,

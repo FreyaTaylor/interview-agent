@@ -6,15 +6,6 @@ import { useInterviewBusy } from '../contexts/InterviewBusyContext'
 import { TypingDots } from '../components/Loading'
 import { formatBeijingDate } from '../utils/datetime'
 
-// SHA-256 hash（浏览器原生）
-async function sha256(text) {
-  const encoder = new TextEncoder()
-  const data = encoder.encode(text.trim())
-  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
-  const hashArray = Array.from(new Uint8Array(hashBuffer))
-  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
-}
-
 // 小定位按钮：放在卡片标题后
 function LocateBtn({ onClick }) {
   return (
@@ -369,14 +360,13 @@ export default function InterviewPage() {
   async function handleParse(forceNew = false, mode = 'direct') {
     if (!text.trim() || loading) return
 
-    // 重复检测
+    // 重复检测（语义查重：后端 embed 整段文本做最近邻）
     if (!forceNew) {
       try {
-        const hash = await sha256(text)
         const checkResp = await fetch(`${API_INTERVIEW}/check-duplicate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text_hash: hash }),
+          body: JSON.stringify({ text }),
         }).then(r => r.json())
         if (checkResp.code === 0 && checkResp.data.duplicate) {
           setDuplicateInfo({ ...checkResp.data, _mode: mode })

@@ -11,6 +11,7 @@ import com.interview.agent.admin.dto.ProjectNodeView;
 import com.interview.agent.admin.dto.TreeNodeJson;
 import com.interview.agent.admin.dto.UpdateProjectNodeReq;
 import com.interview.agent.admin.service.ProjectAdminService;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
@@ -50,7 +51,6 @@ import java.util.stream.Collectors;
 public class ProjectAdminServiceImpl implements ProjectAdminService {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectAdminServiceImpl.class);
-    private static final long DEFAULT_USER_ID = 1L;
 
     /** 项目树固定三层；超过此 level 的节点强制 leaf。 */
     private static final int MAX_LEVEL = 3;
@@ -141,8 +141,8 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
 
         // Step 5: INSERT
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(DEFAULT_USER_ID, req.parentId(), name, level, nodeType, 0)
-                : repo.insertWithEmbedding(DEFAULT_USER_ID, req.parentId(), name, level, nodeType, 0, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(CurrentUser.id(), req.parentId(), name, level, nodeType, 0)
+                : repo.insertWithEmbedding(CurrentUser.id(), req.parentId(), name, level, nodeType, 0, embeddingLiteral);
 
         log.info("[ProjectAdmin] create id={} name='{}' level={} parent={}", newId, name, level, req.parentId());
         return Map.of("id", newId, "name", name, "level", (int) level);
@@ -309,7 +309,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         SaveResult sr = saveRecursive(tree, null, (short) 1, List.of());
 
         // Step 5: 同步建 project 元数据行
-        long projectId = projectRepo.insertReturningId(DEFAULT_USER_ID, projectName, text, sr.rootId);
+        long projectId = projectRepo.insertReturningId(CurrentUser.id(), projectName, text, sr.rootId);
 
         log.info("[ProjectAdmin] from-text done root={} project={} name='{}' leaves={}",
                 sr.rootId, projectId, projectName, sr.leafCount);
@@ -352,8 +352,8 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
 
         // Step 4: INSERT
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(DEFAULT_USER_ID, parentId, name, level, nodeType, 0)
-                : repo.insertWithEmbedding(DEFAULT_USER_ID, parentId, name, level, nodeType, 0, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(CurrentUser.id(), parentId, name, level, nodeType, 0)
+                : repo.insertWithEmbedding(CurrentUser.id(), parentId, name, level, nodeType, 0, embeddingLiteral);
 
         // Step 5: 终止条件 —— 叶子计 1
         if (!hasKids) {

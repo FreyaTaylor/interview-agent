@@ -78,6 +78,13 @@ iagent:
   cors:
     # 逗号分隔的允许来源模式；本地开发放行 localhost/127.0.0.1 任意端口
     allowed-origins: ${IAGENT_CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
+  auth:
+    # JWT 密钥必须与 Python 端 JWT_SECRET 相同，两端 token 才能互通
+    jwt-secret: ${JWT_SECRET:}
+    jwt-expire-days: ${JWT_EXPIRE_DAYS:30}
+    github-client-id: ${GITHUB_CLIENT_ID:}
+    github-client-secret: ${GITHUB_CLIENT_SECRET:}
+    frontend-url: ${FRONTEND_URL:http://localhost:5173}
 
 management:
   endpoints:

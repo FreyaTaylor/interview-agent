@@ -1,5 +1,6 @@
 package com.interview.agent.project.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.project.entity.Project;
 import com.interview.agent.project.entity.ProjectNode;
 import com.interview.agent.project.mapper.ProjectAttemptMapper;
@@ -27,8 +28,6 @@ import java.util.Optional;
 @Service
 public class ProjectScoreAggregateServiceImpl implements ProjectScoreAggregateService {
 
-    private static final long USER_ID = 1L;
-
     private final ProjectAttemptMapper attemptMapper;
     private final ProjectNodeMapper nodeMapper;
     private final ProjectMapper projectMapper;
@@ -49,7 +48,7 @@ public class ProjectScoreAggregateServiceImpl implements ProjectScoreAggregateSe
 
     @Override
     public int questionAttemptCount(long questionId) {
-        return attemptMapper.countFinishedAttempts(USER_ID, questionId);
+        return attemptMapper.countFinishedAttempts(CurrentUser.id(), questionId);
     }
 
     @Override

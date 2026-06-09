@@ -1,5 +1,6 @@
 package com.interview.agent.study.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.learn.entity.StudyQuestion;
 import com.interview.agent.learn.mapper.StudyQuestionMapper;
@@ -24,7 +25,7 @@ import java.util.Map;
 /**
  * {@link StudyAttemptService} 实现 —— Study attempt 状态机编排。
  *
- * <p>用户固定 user_id=1（一期，{@link #USER_ID}）；多用户接入时改成上下文注入即可。
+ * <p>用户从登录上下文注入（{@link CurrentUser}）。
  *
  * <p>事务边界：start / turn / finish 每个端点一个事务；finish 内含写 attempt + 刷 KP mastery。
  * dialog 是 {@code List<Map<String,Object>>}（来自 JsonbTypeHandler），原地累加后 UPDATE 整段 JSONB。
@@ -32,7 +33,6 @@ import java.util.Map;
 @Service
 public class StudyAttemptServiceImpl implements StudyAttemptService {
 
-    private static final long USER_ID = 1L;
     private static final int DEFAULT_HISTORY_LIMIT = 10;
 
     private final QuestionAttemptMapper attemptMapper;
@@ -70,14 +70,15 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
 
         // Step 2
-        attemptMapper.findInProgress(USER_ID, questionId).ifPresent(existing -> {
+        long userId = CurrentUser.id();
+        attemptMapper.findInProgress(userId, questionId).ifPresent(existing -> {
             throw new BizException(40901, "该题已有进行中的作答（attempt_id=" + existing.id() + "）");
         });
 
         // Step 3
         List<Object> dialog = new ArrayList<>();
         dialog.add(turnItem("agent", "question", q.content(), null));
-        long attemptId = attemptMapper.insertStudyInProgress(USER_ID, questionId, dialog);
+        long attemptId = attemptMapper.insertStudyInProgress(userId, questionId, dialog);
 
         return new AttemptStartResponse(attemptId, questionId, q.content(), dialog, 1, MAX_STEPS);
     }

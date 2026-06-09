@@ -1,5 +1,6 @@
 package com.interview.agent.interview.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.interview.dto.CheckDuplicateResponse;
 import com.interview.agent.interview.dto.DeleteResponse;
@@ -9,9 +10,13 @@ import com.interview.agent.interview.dto.InterviewHistoryItem;
 import com.interview.agent.interview.dto.SaveDraftResponse;
 import com.interview.agent.interview.dto.UpdateMetaResponse;
 import com.interview.agent.interview.entity.InterviewRecord;
+import com.interview.agent.interview.mapper.InterviewEmbeddingBackfillRow;
 import com.interview.agent.interview.mapper.InterviewRecordMapper;
 import com.interview.agent.interview.service.InterviewBasicService;
 import com.interview.agent.interview.service.InterviewParseService;
+import com.interview.agent.infra.llm.EmbeddingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,6 +30,7 @@ import static com.interview.agent.interview.service.impl.InterviewServiceSupport
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.blankToNull;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.buildRawText;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.buildStats;
+import static com.interview.agent.interview.service.impl.InterviewServiceSupport.dedupText;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.hasParsedGroups;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.sha256Hex;
 
@@ -36,21 +42,31 @@ import static com.interview.agent.interview.service.impl.InterviewServiceSupport
 @Service
 public class InterviewBasicServiceImpl implements InterviewBasicService {
 
+    private static final Logger log = LoggerFactory.getLogger(InterviewBasicServiceImpl.class);
+
     private static final int HISTORY_LIMIT = 200;
+    /** 语义查重余弦相似度阈值：≥ 此值判为同一场面试（pgvector 距离 ≤ 1 - 阈值）。 */
+    private static final double DEDUP_SIM_THRESHOLD = 0.90;
+    /** 单次查重最多懒回填多少条历史 embedding（控制首次调用的额外耗时）。 */
+    private static final int BACKFILL_MAX_PER_CALL = 50;
 
     private final InterviewRecordMapper recordMapper;
     /** 继续校准复用解析编排的后解析（finalize）流水。 */
     private final InterviewParseService parseService;
+    /** 整段面试文本向量化（语义查重）。 */
+    private final EmbeddingService embeddingService;
 
     public InterviewBasicServiceImpl(InterviewRecordMapper recordMapper,
-                                     InterviewParseService parseService) {
+                                     InterviewParseService parseService,
+                                     EmbeddingService embeddingService) {
         this.recordMapper = recordMapper;
         this.parseService = parseService;
+        this.embeddingService = embeddingService;
     }
 
     @Override
     public List<InterviewHistoryItem> historyList() {
-        List<InterviewRecord> rows = recordMapper.findRecent(HISTORY_LIMIT);
+        List<InterviewRecord> rows = recordMapper.findRecent(CurrentUser.id(), HISTORY_LIMIT);
         List<InterviewHistoryItem> out = new ArrayList<>(rows.size());
         for (InterviewRecord r : rows) {
             Map<String, Object> parsed = asMap(r.parsedQuestions());
@@ -105,20 +121,54 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
     }
 
     @Override
-    public CheckDuplicateResponse checkDuplicate(String textHash) {
-        if (textHash == null || textHash.isBlank()) {
-            throw new BizException(40001, "text_hash 不能为空");
+    public CheckDuplicateResponse checkDuplicate(String text) {
+        if (text == null || text.isBlank()) {
+            throw new BizException(40001, "面试文本不能为空");
         }
-        return recordMapper.findByTextHash(textHash)
-                .map(r -> new CheckDuplicateResponse(
+        long userId = CurrentUser.id();
+        // 懒回填：feature 上线前落库的老记录无 embedding，先按需补算，否则查重对历史数据失效
+        backfillMissingEmbeddings(userId);
+        String vec;
+        try {
+            vec = embeddingService.embedToLiteral(dedupText(text));
+        } catch (Exception e) {
+            // embedding 不可用时不阻塞提交，视为不重复
+            log.warn("语义查重 embedding 失败，跳过查重: {}", e.getMessage());
+            return CheckDuplicateResponse.notDuplicate();
+        }
+        return recordMapper.findNearestByEmbedding(userId, vec)
+                .filter(m -> (1.0 - m.distance()) >= DEDUP_SIM_THRESHOLD)
+                .map(m -> new CheckDuplicateResponse(
                         true,
-                        r.id(),
-                        r.company(),
-                        r.position(),
-                        r.createdAt() == null ? null : r.createdAt().toString(),
-                        r.avgScore()
+                        m.id(),
+                        m.company(),
+                        m.position(),
+                        m.createdAt() == null ? null : m.createdAt().toString(),
+                        m.avgScore()
                 ))
                 .orElseGet(CheckDuplicateResponse::notDuplicate);
+    }
+
+    /**
+     * 按需为当前用户尚未生成 embedding 的历史记录补算（每次最多 {@link #BACKFILL_MAX_PER_CALL} 条）。
+     * 补算用 raw_text（与 finalize 写入侧一致地走 dedupText 归一化），单条失败不影响整体。
+     */
+    private void backfillMissingEmbeddings(long userId) {
+        List<InterviewEmbeddingBackfillRow> rows;
+        try {
+            rows = recordMapper.findMissingEmbedding(userId, BACKFILL_MAX_PER_CALL);
+        } catch (Exception e) {
+            log.warn("查询待回填 embedding 记录失败，跳过回填: {}", e.getMessage());
+            return;
+        }
+        for (InterviewEmbeddingBackfillRow row : rows) {
+            try {
+                String literal = embeddingService.embedToLiteral(dedupText(row.rawText()));
+                recordMapper.updateEmbedding(row.id(), literal);
+            } catch (Exception e) {
+                log.warn("回填面试记录 embedding 失败（不影响查重）record_id={}: {}", row.id(), e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -157,6 +207,7 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
 
         String rawText = buildRawText(turns);
         long newId = recordMapper.insertDraft(
+                CurrentUser.id(),
                 rawText,
                 blankToNull(company),
                 blankToNull(position),

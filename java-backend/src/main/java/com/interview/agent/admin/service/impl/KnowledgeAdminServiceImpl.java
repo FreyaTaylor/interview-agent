@@ -6,6 +6,7 @@ import com.interview.agent.admin.dto.DeleteNodeReq;
 import com.interview.agent.admin.dto.KnowledgeNodeView;
 import com.interview.agent.admin.dto.UpdateKnowledgeNodeReq;
 import com.interview.agent.admin.service.KnowledgeAdminService;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.infra.llm.EmbeddingService;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
@@ -64,7 +65,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
     public List<KnowledgeNodeView> listAll() {
         // 1. 从 DB 拉整表（按 parent + sort_order 有序）
         // 2. entity → view，脱敏（去掉 embedding / created_at 等底层字段）
-        return repo.findAllOrdered().stream()
+        return repo.findAllOrdered(CurrentUser.id()).stream()
                 .map(n -> new KnowledgeNodeView(
                         n.id(), n.parentId(), n.name(), n.level(), n.nodeType(),
                         n.interviewWeight(), n.sortOrder()))
@@ -117,13 +118,14 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         String embeddingLiteral = name.isEmpty() ? null : safeEmbed(name);
 
         // Step 5: INSERT（两个 SQL 变体：带 / 不带 embedding）—— 避免 MyBatis 绑 NULL 到 ::vector 出错
+        long userId = CurrentUser.id();
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(req.parentId(), name, level, nodeType, weight, 0, false)
-                : repo.insertWithEmbedding(req.parentId(), name, level, nodeType, weight, 0, false, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false)
+                : repo.insertWithEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false, embeddingLiteral);
 
         // Step 6: 父节点升级——原本是 leaf 且现在多了个孩子 → 升为 category
         if (parent != null && "leaf".equals(parent.nodeType())) {
-            repo.updateNodeType(parent.id(), "category");
+            repo.updateNodeType(parent.id(), userId, "category");
         }
 
         log.info("[KnowledgeAdmin] create id={} name='{}' level={} parent={}", newId, name, level, req.parentId());
@@ -159,8 +161,9 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
 
         // Step 2: 部分更新基础字段（Mapper 里用 COALESCE，null 保持原值）
+        long userId = CurrentUser.id();
         String newName = req.name() == null ? null : req.name().strip();
-        repo.updateBasic(id, newName, req.interviewWeight(), req.sortOrder());
+        repo.updateBasic(id, userId, newName, req.interviewWeight(), req.sortOrder());
 
         // Step 3: 仅在显式 movingParent=true 时才动 parent（避免“漏传 parentId”被误解为“挂到根”）
         if (req.isMovingParent()) {
@@ -179,12 +182,12 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
             // Step 3.2: nodeType 按 "是否有子节点" 重评，与 level 解耦
             String newNodeType = repo.hasChildren(id) ? "category" : "leaf";
             // Step 3.3: 一句 SQL 同时改 parent / level / nodeType
-            repo.moveParent(id, req.parentId(), newLevel, newNodeType);
+            repo.moveParent(id, userId, req.parentId(), newLevel, newNodeType);
             // Step 3.4: 把整棵子树的 level 跟着平移 delta —— 否则前端按 level 算缩进会"打扁"
             //          （Python 端历史 bug：跨父移动一个有子节点的分类后，子孙仍保留旧 level）
             int delta = newLevel - node.level();
             if (delta != 0) {
-                int shifted = repo.shiftDescendantLevels(id, delta);
+                int shifted = repo.shiftDescendantLevels(id, userId, delta);
                 log.info("[KnowledgeAdmin] move id={} -> parent={} level={}(delta={}) type={} subtree_shifted={}",
                         id, req.parentId(), newLevel, delta, newNodeType, shifted);
             } else {
@@ -220,9 +223,10 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
     @Transactional
     public Map<String, Object> batchSort(BatchSortReq req) {
         // 逐条 UPDATE，累加影响行数（不存在的 id 返 0，不报错）
+        long userId = CurrentUser.id();
         int count = 0;
         for (BatchSortReq.Item it : req.updates()) {
-            count += repo.updateSortOrder(it.id(), it.sortOrder());
+            count += repo.updateSortOrder(it.id(), userId, it.sortOrder());
         }
         return Map.of("updated", count);
     }
@@ -269,12 +273,13 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         }
 
         // Step 4: 批量 DELETE knowledge_node（CASCADE 表会自动跟走）
-        int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(allIds);
+        long userId = CurrentUser.id();
+        int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(userId, allIds);
 
         // Step 5: 父节点降级——现在没娃了 → 变 leaf（与 create 中“leaf 加孩 → category”对称）
         Long parentId = node.parentId();
         if (parentId != null && !repo.hasChildren(parentId)) {
-            repo.updateNodeType(parentId, "leaf");
+            repo.updateNodeType(parentId, userId, "leaf");
         }
 
         log.info("[KnowledgeAdmin] delete id={} (cascade {} nodes)", id, deleted);

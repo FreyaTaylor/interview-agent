@@ -1,5 +1,6 @@
 package com.interview.agent.interview.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.interview.dto.FinalizeResponse;
 import com.interview.agent.interview.dto.PreviewParseResponse;
@@ -10,7 +11,10 @@ import com.interview.agent.interview.matcher.InterviewNodeMatcher;
 import com.interview.agent.interview.service.InterviewParseService;
 import com.interview.agent.interview.service.InterviewParserService;
 import com.interview.agent.interview.service.InterviewScorerService;
+import com.interview.agent.infra.llm.EmbeddingService;
 import com.interview.agent.project.mapper.InterviewProjectQuestionMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -23,6 +27,7 @@ import static com.interview.agent.interview.service.impl.InterviewServiceSupport
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.blankToNull;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.buildRawText;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.buildStats;
+import static com.interview.agent.interview.service.impl.InterviewServiceSupport.dedupText;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.defaultTag;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.firstQuestion;
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.normalizeGroups;
@@ -40,6 +45,8 @@ import static com.interview.agent.interview.service.impl.InterviewServiceSupport
 @Service
 public class InterviewParseServiceImpl implements InterviewParseService {
 
+    private static final Logger log = LoggerFactory.getLogger(InterviewParseServiceImpl.class);
+
     /** 底层 LLM 解析引擎（原始文本 → turns/groups），非本编排服务自身。 */
     private final InterviewParserService parserService;
     private final InterviewScorerService scorerService;
@@ -48,6 +55,8 @@ public class InterviewParseServiceImpl implements InterviewParseService {
     private final InterviewKnowledgeQuestionMapper knowledgeQuestionMapper;
     private final InterviewProjectQuestionMapper projectQuestionMapper;
     private final InterviewOtherQuestionMapper otherQuestionMapper;
+    /** 整段面试文本向量化（语义查重）。 */
+    private final EmbeddingService embeddingService;
 
     public InterviewParseServiceImpl(InterviewParserService parserService,
                                      InterviewScorerService scorerService,
@@ -55,7 +64,8 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                                      InterviewRecordMapper recordMapper,
                                      InterviewKnowledgeQuestionMapper knowledgeQuestionMapper,
                                      InterviewProjectQuestionMapper projectQuestionMapper,
-                                     InterviewOtherQuestionMapper otherQuestionMapper) {
+                                     InterviewOtherQuestionMapper otherQuestionMapper,
+                                     EmbeddingService embeddingService) {
         this.parserService = parserService;
         this.scorerService = scorerService;
         this.nodeMatcher = nodeMatcher;
@@ -63,6 +73,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
         this.knowledgeQuestionMapper = knowledgeQuestionMapper;
         this.projectQuestionMapper = projectQuestionMapper;
         this.otherQuestionMapper = otherQuestionMapper;
+        this.embeddingService = embeddingService;
     }
 
     // ============================================================
@@ -150,6 +161,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
         clusterResult.put("summary", "");
 
         long recordId = recordMapper.insert(
+                CurrentUser.id(),
                 rawText,
                 blankToNull(company),
                 blankToNull(position),
@@ -166,6 +178,13 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                 parsedQuestions,
                 asString(scoreBundle.overallAnalysis().get("comment"))
         );
+
+        // 语义查重：整段面试文本向量化回写（失败不影响主流程）
+        try {
+            recordMapper.updateEmbedding(recordId, embeddingService.embedToLiteral(dedupText(rawText)));
+        } catch (Exception e) {
+            log.warn("面试记录 embedding 写入失败（不影响主流程）record_id={}: {}", recordId, e.getMessage());
+        }
 
         // Step 4: 子表分流
         for (Map<String, Object> g : scoredGroups) {

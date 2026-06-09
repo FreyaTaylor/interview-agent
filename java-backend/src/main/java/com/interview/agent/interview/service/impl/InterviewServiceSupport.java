@@ -286,4 +286,13 @@ final class InterviewServiceSupport {
             throw new BizException(50000, "计算文本 hash 失败", e);
         }
     }
+
+    /** 语义查重的归一化文本：strip 后截断到固定长度，写入端与检测端必须用同一口径才可比。 */
+    static final int DEDUP_TEXT_MAX_CHARS = 2000;
+
+    /** 整段面试文本 → 查重用 embedding 输入（截断防超 token 上限，两端口径一致）。 */
+    static String dedupText(String text) {
+        String t = text == null ? "" : text.strip();
+        return t.length() > DEDUP_TEXT_MAX_CHARS ? t.substring(0, DEDUP_TEXT_MAX_CHARS) : t;
+    }
 }

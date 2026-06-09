@@ -1,5 +1,6 @@
 package com.interview.agent.knowledge.service;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.knowledge.dto.KnowledgeTreeNodeView;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
@@ -31,7 +32,7 @@ public class KnowledgeService {
     }
 
     public List<KnowledgeTreeNodeView> buildTree() {
-        List<KnowledgeNode> all = mapper.findAllOrdered();
+        List<KnowledgeNode> all = mapper.findAllOrdered(CurrentUser.id());
 
         // 用可变 List 暂存 children，最后整体作为 Record 字段返回
         Map<Long, List<KnowledgeTreeNodeView>> childrenBuckets = new HashMap<>(all.size() * 2);

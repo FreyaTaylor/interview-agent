@@ -1,6 +1,7 @@
 package com.interview.agent.interview.matcher;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.infra.llm.EmbeddingService;
@@ -154,7 +155,7 @@ public class InterviewNodeMatcher {
             return null;
         }
 
-        List<NodeMatch> rows = knowledgeMapper.findNearestLeaves(vec, KNOWLEDGE_TOP_K);
+        List<NodeMatch> rows = knowledgeMapper.findNearestLeaves(CurrentUser.id(), vec, KNOWLEDGE_TOP_K);
         if (rows.isEmpty()) {
             return null;
         }
@@ -209,16 +210,18 @@ public class InterviewNodeMatcher {
 
     /** 懒创建/复用「未命名知识点」根节点（level=1, category, sort_order=9999）。 */
     private long getOrCreateUnnamedKnowledgeRoot() {
-        return knowledgeMapper.findIdByLevelAndName((short) 1, UNNAMED_KNOWLEDGE)
+        long userId = CurrentUser.id();
+        return knowledgeMapper.findIdByLevelAndName((short) 1, UNNAMED_KNOWLEDGE, userId)
                 .orElseGet(() -> knowledgeMapper.insertWithoutEmbedding(
-                        null, UNNAMED_KNOWLEDGE, (short) 1, "category",
+                        userId, null, UNNAMED_KNOWLEDGE, (short) 1, "category",
                         DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false));
     }
 
     /** 在「未命名知识点」根下新建占位叶子；同名复用。 */
     private long createOrphanLeaf(String name) {
+        long userId = CurrentUser.id();
         long rootId = getOrCreateUnnamedKnowledgeRoot();
-        Optional<Long> existing = knowledgeMapper.findChildIdByName(rootId, name);
+        Optional<Long> existing = knowledgeMapper.findChildIdByName(rootId, name, userId);
         if (existing.isPresent()) {
             return existing.get();
         }
@@ -230,11 +233,11 @@ public class InterviewNodeMatcher {
         }
         if (emb != null) {
             return knowledgeMapper.insertWithEmbedding(
-                    rootId, name, (short) 2, "leaf",
+                    userId, rootId, name, (short) 2, "leaf",
                     DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false, emb);
         }
         return knowledgeMapper.insertWithoutEmbedding(
-                rootId, name, (short) 2, "leaf",
+                userId, rootId, name, (short) 2, "leaf",
                 DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false);
     }
 
@@ -248,9 +251,10 @@ public class InterviewNodeMatcher {
         if (name.isEmpty()) {
             return getOrCreateUnnamedProjectRoot();
         }
-        // 所有项目根（user_id=1, level=1）
+        // 所有项目根（当前用户, level=1）
+        long userId = CurrentUser.id();
         List<ProjectNode> roots = projectMapper.findRoots().stream()
-                .filter(r -> r.userId() != null && r.userId() == 1L)
+                .filter(r -> r.userId() != null && r.userId() == userId)
                 .toList();
 
         // 1) 精确匹配
@@ -285,7 +289,7 @@ public class InterviewNodeMatcher {
     private long getOrCreateUnnamedProjectRoot() {
         return projectMapper.findIdByLevelAndName((short) 1, UNNAMED_PROJECT)
                 .orElseGet(() -> projectMapper.insertWithoutEmbedding(
-                        1L, null, UNNAMED_PROJECT, (short) 1, "category", ORPHAN_SORT_ORDER));
+                        CurrentUser.id(), null, UNNAMED_PROJECT, (short) 1, "category", ORPHAN_SORT_ORDER));
     }
 
     /** Step 2: 话题 —— 精确名匹配 → LLM 语义匹配 → 新建 level=2。 */
@@ -318,7 +322,7 @@ public class InterviewNodeMatcher {
             }
         }
         // 3) 新建
-        return projectMapper.insertWithoutEmbedding(1L, rootId, topic, (short) 2, "category", 0);
+        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), rootId, topic, (short) 2, "category", 0);
     }
 
     /** Step 3: 问题叶子 —— embedding 相似度匹配；命中累积表述，未命中新建 level=3。 */
@@ -346,7 +350,7 @@ public class InterviewNodeMatcher {
             return hit.id();
         }
         // 未命中：新建 leaf（带 embedding）
-        return projectMapper.insertWithEmbedding(1L, topicId, text, (short) 3, "leaf", 0, vec);
+        return projectMapper.insertWithEmbedding(CurrentUser.id(), topicId, text, (short) 3, "leaf", 0, vec);
     }
 
     /** embedding 不可用时的兜底：精确名匹配，否则新建（无 embedding）。 */
@@ -357,7 +361,7 @@ public class InterviewNodeMatcher {
                 return s.id();
             }
         }
-        return projectMapper.insertWithoutEmbedding(1L, topicId, text, (short) 3, "leaf", 0);
+        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), topicId, text, (short) 3, "leaf", 0);
     }
 
     // ============================================================
@@ -370,7 +374,7 @@ public class InterviewNodeMatcher {
             if ("knowledge".equals(str(g.get("type")))) {
                 Long nodeId = toLong(g.get("matched_node_id"));
                 if (nodeId != null) {
-                    knowledgeMapper.bumpInterviewWeight(nodeId);
+                    knowledgeMapper.bumpInterviewWeight(nodeId, CurrentUser.id());
                 }
             }
         }

@@ -25,8 +25,8 @@ public interface InterviewBasicService {
     /** 历史详情：某条面试的完整快照（turns / groups / rubric / overall）。 */
     InterviewHistoryDetailResponse historyDetail(long recordId);
 
-    /** 文本 hash 重复检测：命中返回旧记录信息供用户选择覆盖。 */
-    CheckDuplicateResponse checkDuplicate(String textHash);
+    /** 语义重复检测：embed 整段面试文本 → pgvector 余弦最近邻；命中返回旧记录信息供用户选择覆盖。 */
+    CheckDuplicateResponse checkDuplicate(String text);
 
     /** 覆盖记录：删除 record + 子表（用户随后重走 finalize）。 */
     DeleteResponse overwrite(long recordId);

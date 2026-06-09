@@ -1,5 +1,6 @@
 package com.interview.agent.project.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.project.dto.AttemptDetailResponse;
 import com.interview.agent.project.dto.AttemptFinishResponse;
@@ -33,7 +34,7 @@ import java.util.Map;
 /**
  * {@link ProjectAttemptService} 实现 —— 项目拷打 attempt 状态机编排（v2「面试官自由追问」模式）。
  *
- * <p>USER_ID 固定 1（一期单用户）。事务边界：start / turn / finish 每端点一个事务。
+ * <p>用户从登录上下文注入（{@link com.interview.agent.auth.CurrentUser}）。事务边界：start / turn / finish 每端点一个事务。
  *
  * <p>实现要点（详见 S7-project-grilling.md §8）：
  * <ol>
@@ -48,7 +49,6 @@ import java.util.Map;
 public class ProjectAttemptServiceImpl implements ProjectAttemptService {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectAttemptServiceImpl.class);
-    private static final long USER_ID = 1L;
     private static final int DEFAULT_HISTORY_LIMIT = 10;
 
     private final ProjectAttemptMapper attemptMapper;
@@ -90,13 +90,14 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
         ProjectNode leaf = loadLeaf(questionId);
         String topicName = loadTopicName(leaf.parentId());
 
-        attemptMapper.findInProgress(USER_ID, questionId).ifPresent(existing -> {
+        long userId = CurrentUser.id();
+        attemptMapper.findInProgress(userId, questionId).ifPresent(existing -> {
             throw new BizException(40901, "该题已有进行中的作答（attempt_id=" + existing.id() + "）");
         });
 
         List<Object> dialog = new ArrayList<>();
         dialog.add(turnItem("agent", "question", leaf.name(), null));
-        long attemptId = attemptMapper.insertProjectInProgress(USER_ID, questionId, dialog);
+        long attemptId = attemptMapper.insertProjectInProgress(userId, questionId, dialog);
 
         return new AttemptStartResponse(attemptId, questionId, leaf.name(), topicName, dialog, 1, MAX_STEPS);
     }
@@ -235,9 +236,10 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
 
         // S7.3 fire-and-forget 异步抽取画像：注册 afterCommit 钩子，保证 @Async
         // 线程读到的是已提交的 attempt 状态（避免脏读 / 与画像表的 version 冲突）。
+        // 注意：在请求线程上提前捕获 userId，@Async 线程拿不到 ThreadLocal。
         if (project != null) {
             String firstAnswer = extractFirstAnswer(dialog);
-            scheduleProfileExtract(project.id(), topicName, leaf.name(), firstAnswer,
+            scheduleProfileExtract(CurrentUser.id(), project.id(), topicName, leaf.name(), firstAnswer,
                     fs.overallSummary(), List.of());
         }
 
@@ -249,12 +251,12 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
     }
 
     /** 在事务提交后异步触发画像抽取；若已无事务上下文则立即同步触发（@Async 自身仍异步）。 */
-    private void scheduleProfileExtract(long projectId, String topic, String question, String answer,
+    private void scheduleProfileExtract(long userId, long projectId, String topic, String question, String answer,
                                         String summary, List<String> missedKeyPoints) {
         Runnable task = () -> {
             try {
                 profileService.extractAndApply(projectId, topic, question, answer,
-                        summary, missedKeyPoints, USER_ID);
+                        summary, missedKeyPoints, userId);
             } catch (Exception e) {
                 log.warn("画像异步抽取触发失败 project={}: {}", projectId, e.getMessage());
             }
@@ -381,7 +383,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
         // root → project 反查：listByUser 全表扫一遍，挑 root_node_id 命中那条。
         // 项目数量级 < 50，扫表代价可忽略；省去单独写一条 SQL。
         long rootId = topic.parentId();
-        for (Project p : projectMapper.listByUser(USER_ID)) {
+        for (Project p : projectMapper.listByUser(CurrentUser.id())) {
             if (p.rootNodeId() != null && p.rootNodeId() == rootId) {
                 return p;
             }
@@ -394,9 +396,10 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
         if (project == null) {
             return null;
         }
-        return profileMapper.findByProjectUser(project.id(), USER_ID).orElseGet(() -> {
-            profileMapper.ensureRowExists(project.id(), USER_ID);
-            return profileMapper.findByProjectUser(project.id(), USER_ID).orElse(null);
+        long userId = CurrentUser.id();
+        return profileMapper.findByProjectUser(project.id(), userId).orElseGet(() -> {
+            profileMapper.ensureRowExists(project.id(), userId);
+            return profileMapper.findByProjectUser(project.id(), userId).orElse(null);
         });
     }
 

@@ -22,4 +22,19 @@ public interface TreeGenService {
 
     /** LLM 一次性生成完整树并落库。 */
     TreeGenResp createFromGenerate(CreateTreeFromGenerateReq req);
+
+    /**
+     * 截图 → qwen-vl 视觉解析 → 落库。
+     *
+     * @param imageBase64 图片 base64（不含 data: 前缀）
+     * @param mediaType   图片 MIME（如 image/png）
+     */
+    TreeGenResp createFromImage(String imageBase64, String mediaType);
+
+    /**
+     * FreeMind/幕布 .mm 文件 → 解析 XML → 落库（不走 LLM）。
+     *
+     * @param content .mm 文件原始字节
+     */
+    TreeGenResp createFromMm(byte[] content);
 }

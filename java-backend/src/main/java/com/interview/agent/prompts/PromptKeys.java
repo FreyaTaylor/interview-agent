@@ -43,6 +43,8 @@ public final class PromptKeys {
     public static final String TREE_GENERATE = "tree/generate";
     /** 知识树根节点同名/语义去重判断。V3 seed。 */
     public static final String TREE_DUPLICATE_CHECK = "tree/duplicate-check";
+    /** 截图（思维导图/大纲）视觉解析为知识树（qwen-vl-max）。V28 seed。 */
+    public static final String TREE_PARSE_IMAGE = "tree/parse-image";
 
     // ===== project 域（项目树 admin）=====
     /** 把项目描述解析为「项目→话题→问题」三层树。V15 seed。 */

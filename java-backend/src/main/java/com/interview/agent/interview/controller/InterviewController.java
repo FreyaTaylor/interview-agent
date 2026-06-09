@@ -89,7 +89,7 @@ public class InterviewController {
 
     @PostMapping("/check-duplicate")
     public ApiResponse<CheckDuplicateResponse> checkDuplicate(@Valid @RequestBody CheckDuplicateRequest req) {
-        return ApiResponse.success(basicService.checkDuplicate(req.textHash()));
+        return ApiResponse.success(basicService.checkDuplicate(req.text()));
     }
 
     @PostMapping("/overwrite")
