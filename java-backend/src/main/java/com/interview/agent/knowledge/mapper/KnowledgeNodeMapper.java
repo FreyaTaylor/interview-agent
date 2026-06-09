@@ -50,6 +50,38 @@ public interface KnowledgeNodeMapper {
     @Select("SELECT EXISTS(SELECT 1 FROM knowledge_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
+    // ===== S8 面试匹配（embedding 召回 + 占位叶子 get_or_create）=====
+
+    /** 按 level + name 取一个节点 id（复刻 get_or_create「未命名知识点」根的 filter_by）。 */
+    @Select("SELECT id FROM knowledge_node WHERE level = #{level} AND name = #{name} ORDER BY id LIMIT 1")
+    java.util.Optional<Long> findIdByLevelAndName(@Param("level") short level, @Param("name") String name);
+
+    /** 在指定父下按 name 取子节点 id（复刻 _create_orphan_leaf 的同名复用）。 */
+    @Select("SELECT id FROM knowledge_node WHERE parent_id = #{parentId} AND name = #{name} ORDER BY id LIMIT 1")
+    java.util.Optional<Long> findChildIdByName(@Param("parentId") long parentId, @Param("name") String name);
+
+    /**
+     * pgvector 召回 top_k 最近叶子（仅 node_type='leaf' 且 embedding 非空）。
+     * 复刻 embedding_match_skill：{@code (embedding <=> :vec) AS distance} 升序。
+     */
+    @Select("""
+            SELECT id, name, (embedding <=> #{vec}::vector) AS distance
+            FROM knowledge_node
+            WHERE node_type = 'leaf' AND embedding IS NOT NULL
+            ORDER BY embedding <=> #{vec}::vector
+            LIMIT #{k}
+            """)
+    List<com.interview.agent.interview.matcher.NodeMatch> findNearestLeaves(
+            @Param("vec") String vec, @Param("k") int k);
+
+    /** interview_weight +1（上限 5）；复刻 update_knowledge_weights。仅当未达上限时生效。 */
+    @Update("""
+            UPDATE knowledge_node
+            SET interview_weight = LEAST(5, interview_weight + 1), updated_at = NOW()
+            WHERE id = #{id} AND interview_weight < 5
+            """)
+    int bumpInterviewWeight(@Param("id") long id);
+
     // ===== 插入 =====
     //
     // 用 @Select 承载 INSERT ... RETURNING id —— PG 驱动支持 executeQuery 取 ResultSet。

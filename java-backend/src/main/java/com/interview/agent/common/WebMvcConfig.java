@@ -9,7 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * Web MVC 横切配置：当前只开 CORS（给本地前端联调用）。
  *
  * <p>允许来源从 {@code iagent.cors.allowed-origins}（逗号分隔）读取，
- * 默认放行 Vite 默认端口 5173（含 localhost / 127.0.0.1 两种写法）。
+ * 使用 origin pattern 以支持本地任意端口（如 Vite 自动切到 5174/5175）。
  *
  * <p>生产环境务必收紧 allowed-origins，并考虑去掉 {@code allowCredentials=true}
  * 或换成显式 origin 列表（{@code *} + credentials 是非法组合）。
@@ -32,7 +32,7 @@ public class WebMvcConfig implements WebMvcConfigurer {
             return;
         }
         registry.addMapping("/api/**")
-                .allowedOrigins(origins)
+            .allowedOriginPatterns(origins)
                 .allowedMethods("GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true)

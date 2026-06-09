@@ -34,7 +34,7 @@ spring:
   # Spring AI 会自动追加 /v1/chat/completions，再带 /v1 会变成 /v1/v1/...
   ai:
     openai:
-      api-key: ${DEEPSEEK_API_KEY:}
+      api-key: ${DEEPSEEK_API_KEY:dummy-local-key}
       base-url: https://api.deepseek.com
       chat:
         options:
@@ -50,6 +50,12 @@ spring:
   jackson:
     property-naming-strategy: SNAKE_CASE
     default-property-inclusion: NON_NULL
+
+  servlet:
+    multipart:
+      # 与前端文案对齐：语音上传支持至 300MB
+      max-file-size: 300MB
+      max-request-size: 300MB
 
 # MyBatis 全局配置：snake_case 列 → camelCase 字段；启用结果缓存
 mybatis:
@@ -70,8 +76,8 @@ iagent:
     model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}
     dimension: 1024
   cors:
-    # 逗号分隔的允许来源；前端 Vite 默认 5173
-    allowed-origins: ${IAGENT_CORS_ORIGINS:http://localhost:5173,http://127.0.0.1:5173}
+    # 逗号分隔的允许来源模式；本地开发放行 localhost/127.0.0.1 任意端口
+    allowed-origins: ${IAGENT_CORS_ORIGINS:http://localhost:*,http://127.0.0.1:*}
 
 management:
   endpoints:

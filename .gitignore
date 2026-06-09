@@ -23,3 +23,7 @@ Thumbs.db
 # Database
 *.db
 *.sqlite3
+
+# Java backend runtime artifacts
+java-backend/logs/
+*.pid

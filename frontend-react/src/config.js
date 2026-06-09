@@ -2,7 +2,7 @@
  * 统一 API 基础 URL 配置
  * 修改此处即可切换后端地址
  */
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8000/api'
+const API_BASE = import.meta.env.VITE_API_BASE || 'http://127.0.0.1:8080/api'
 
 export const API_STUDY = `${API_BASE}/study`
 export const API_KNOWLEDGE = `${API_BASE}/knowledge`

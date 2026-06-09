@@ -49,6 +49,30 @@ public interface ProjectNodeMapper {
     @Select("SELECT EXISTS(SELECT 1 FROM project_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
+    // ===== S8 面试匹配（get_or_create + embedding 召回）=====
+
+    /** 按 level + name 取 user_id=1 的节点 id（复刻 get_or_create「未命名项目」根的 filter_by）。 */
+    @Select("SELECT id FROM project_node WHERE user_id = 1 AND level = #{level} AND name = #{name} ORDER BY id LIMIT 1")
+    Optional<Long> findIdByLevelAndName(@Param("level") short level, @Param("name") String name);
+
+    /**
+     * 在指定 topic 下召回最相似的 level=3 叶子（embedding 非空）。
+     * 复刻 match_or_create_question：{@code (embedding <=> :vec) AS distance} 取最近一条。
+     */
+    @Select("""
+            SELECT id, name, (embedding <=> #{vec}::vector) AS distance
+            FROM project_node
+            WHERE parent_id = #{topicId} AND node_type = 'leaf' AND embedding IS NOT NULL
+            ORDER BY embedding <=> #{vec}::vector
+            LIMIT 1
+            """)
+    Optional<com.interview.agent.interview.matcher.NodeMatch> findNearestLeafUnderTopic(
+            @Param("topicId") long topicId, @Param("vec") String vec);
+
+    /** 累积问题表述：name = 旧 \\ 新（复刻 match_or_create_question 命中分支）。 */
+    @Update("UPDATE project_node SET name = #{name}, updated_at = NOW() WHERE id = #{id}")
+    int updateName(@Param("id") long id, @Param("name") String name);
+
     /** 取某父节点下指定 level 的子节点列表，按 sort_order, id 排序。S7 用：root→L2 话题、L2→L3 题目。 */
     @Select("SELECT " + COLS + " FROM project_node"
             + " WHERE parent_id = #{parentId} AND level = #{level}"

@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.multipart.MaxUploadSizeExceededException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -60,6 +61,14 @@ public class GlobalExceptionHandler {
         log.warn("[BadRequest] {}", ex.getMessage());
         return ResponseEntity.status(HttpStatus.OK)
                 .body(ApiResponse.error(40001, "请求体解析失败"));
+    }
+
+    /** multipart 上传体过大（例如音频文件超过上限） */
+    @ExceptionHandler(MaxUploadSizeExceededException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMaxUploadSize(MaxUploadSizeExceededException ex) {
+        log.warn("[UploadTooLarge] {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.OK)
+                .body(ApiResponse.error(40001, "上传文件过大，当前最大支持 300MB"));
     }
 
     /** 兜底 — 未知异常按 50000 返回，并打 stack trace */

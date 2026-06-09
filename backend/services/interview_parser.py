@@ -463,13 +463,14 @@ def _regroup_by_answer_anchors(groups: list[dict], turns: list[dict]) -> list[di
 
 
 def _absorb_orphan_interviewer_groups(groups: list[dict], turns: list[dict]) -> list[dict]:
-    """合并"纯面试官且紧贴下一组"的孤儿 group 到下一组。
+    """合并"纯面试官且位于下一组之前"的孤儿 group 到下一组。
 
-    场景：LLM 把面试官的过渡性话语（"嗯了解了，那再问下一题…"）单独成组，
-    没有任何"我"的回答。anchor 算法不会触碰这种组，但实际上它属于下一题的"题面/前言"，
-    应当合并入下一组。判定条件：
+    场景：LLM 把面试官的过渡性话语（"嗯了解了，那再问下一题…"）或某道题的题面
+    单独成组，没有任何"我"的回答；甚至该题的回答被 LLM 误划进了后一个话题，导致
+    题面 turn 与下一组首 turn 之间不严格相邻。anchor 算法不会触碰这种纯面试官组，
+    但它实际属于下一题的"题面/前言"，应当合并入下一组（把问题挂到后组）。判定条件：
       - 当前 group 所有 turn 都是面试官；
-      - 当前 group 的最大 turn_id + 1 == 下一组的最小 turn_id（紧邻）。
+      - 当前 group 的最大 turn_id < 下一组的最小 turn_id（整体位于下一组之前）。
     被吸收的组保留下一组的 category/tag。
     """
     if not groups:
@@ -493,7 +494,7 @@ def _absorb_orphan_interviewer_groups(groups: list[dict], turns: list[dict]) -> 
         next_ids = next_g.get("turn_ids") or []
         if not next_ids:
             continue
-        if max(ids) + 1 != min(next_ids):
+        if max(ids) >= min(next_ids):
             continue
         next_g["turn_ids"] = sorted(set(next_ids + ids))
         drop.add(gi)

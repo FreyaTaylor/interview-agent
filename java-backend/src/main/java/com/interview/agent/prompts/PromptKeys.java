@@ -62,6 +62,36 @@ public final class PromptKeys {
     /** 项目拷打 v2 — 综合评分：dimensions (4维) + overall_summary + design_issues + extension_qa。V17 seed。 */
     public static final String PROJECT_FINAL_SCORE_V2 = "project/final-score-v2";
 
+    // ===== interview 域（S8 面试复盘，完全复刻 Python）=====
+    /** 面试复盘：原始文本解析为 turns + groups。V20/V22/V23 seed（V23 复刻 Python 全文）。 */
+    public static final String INTERVIEW_PARSE = "interview/parse";
+    /** 面试复盘：ASR 纠错 + 删噪声 turn（复刻 ASR_CORRECTION_PROMPT，占位符 {dialogue}）。V23 seed。 */
+    public static final String INTERVIEW_ASR_CORRECT = "interview/asr-correct";
+    /** 面试复盘：knowledge 类评分（复刻 INTERVIEW_SCORE_PROMPT）。V23 seed。 */
+    public static final String INTERVIEW_SCORE_KNOWLEDGE = "interview/score-knowledge";
+    /** 面试复盘：project 类评分（复刻 INTERVIEW_PROJECT_SCORE_PROMPT）。V23 seed。 */
+    public static final String INTERVIEW_SCORE_PROJECT = "interview/score-project";
+    /** 面试复盘：algorithm 类评分（复刻 INTERVIEW_ALGORITHM_SCORE_PROMPT）。V23 seed。 */
+    public static final String INTERVIEW_SCORE_ALGORITHM = "interview/score-algorithm";
+    /** 面试复盘：hr 类评分（复刻 INTERVIEW_HR_SCORE_PROMPT）。V23 seed。 */
+    public static final String INTERVIEW_SCORE_HR = "interview/score-hr";
+    /** 面试复盘：单个 group 固定 DTO 评分（旧版，保留兼容）。V20 seed。 */
+    public static final String INTERVIEW_SCORE_GROUP = "interview/score-group";
+    /** 面试复盘：整场总体分析（复刻 INTERVIEW_OVERALL_ANALYSIS_PROMPT）。V20/V23 seed。 */
+    public static final String INTERVIEW_OVERALL_ANALYSIS = "interview/overall-analysis";
+    /** 面试复盘：同项目话题合并（复刻 parser 内联 prompt，占位符 {proj_name}{topic_list}）。V23 seed。 */
+    public static final String INTERVIEW_MERGE_PROJECT_TOPICS = "interview/merge-project-topics";
+    /** 面试复盘：单段遗漏问题二次检查（复刻 parser 内联 prompt）。V23 seed。 */
+    public static final String INTERVIEW_MISSED_CHECK = "interview/missed-check";
+    /** 面试复盘：ASR 说话人角色归一化（说话人X -> 面试官/我）。V21 seed。 */
+    public static final String INTERVIEW_ASR_ROLE_NORMALIZE = "interview/asr-role-normalize";
+    /** 面试复盘：知识点 embedding 召回后 LLM rerank（复刻 RERANK_PROMPT，占位符 {text}{candidates}）。V25 seed。 */
+    public static final String INTERVIEW_MATCH_KNOWLEDGE_RERANK = "interview/match-knowledge-rerank";
+    /** 面试复盘：项目根 LLM 语义匹配（复刻 match_or_create_project_root 内联，占位符 {catalog}{name}）。V25 seed。 */
+    public static final String INTERVIEW_MATCH_PROJECT_ROOT = "interview/match-project-root";
+    /** 面试复盘：项目话题 LLM 语义匹配（复刻 match_or_create_topic 内联，占位符 {catalog}{topic}）。V25 seed。 */
+    public static final String INTERVIEW_MATCH_PROJECT_TOPIC = "interview/match-project-topic";
+
     // ===== text 域（通用工具）=====
     /** ASR / 输入文本纠错。V14 seed。 */
     public static final String TEXT_CORRECT = "text/correct";
