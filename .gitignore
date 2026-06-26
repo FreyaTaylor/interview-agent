@@ -27,3 +27,9 @@ Thumbs.db
 # Java backend runtime artifacts
 java-backend/logs/
 *.pid
+
+# Personal resume files
+resumes/
+
+# Private internal docs (design / planning / ADR — not for open-source distribution)
+_private/
