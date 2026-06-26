@@ -6,6 +6,7 @@
 
 - [产品设计 v2](docs/DESIGN_v2.md)
 - [技术设计](docs/TECH_DESIGN.md)
+- [Azure 自动部署](docs/AZURE_DEPLOYMENT.md)
 - [开发规范](CONVENTIONS.md)
 
 ## 快速开始

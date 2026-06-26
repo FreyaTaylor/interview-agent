@@ -1,0 +1,7 @@
+target/
+.mvn/
+logs/
+*.pid
+.env
+.env.*
+!.env.example
