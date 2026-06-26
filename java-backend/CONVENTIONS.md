@@ -1,13 +1,7 @@
 # Java Backend — 开发规范
 
-> 本文件是 Java 端 AI 辅助编码的核心指引。所有 AI 助手在生成 Java 代码前**必须**先阅读：
-> 1. 本文件
-> 2. [docs/TECH_DESIGN.md](../docs/TECH_DESIGN.md) — 产品 / 数据模型 / API 契约（与 Python 端共享）
-> 3. [docs/JAVA_REWRITE_PLAN.md](../docs/JAVA_REWRITE_PLAN.md) — 模块清单与映射
-> 4. [java-backend/docs/ADR.md](docs/ADR.md) — 技术选型决策记录（为什么选 MyBatis @注解 / Flyway 等）
-> 5. Python 原版实现（同语义参考）：[backend/](../backend/)
->
-> 根目录的 [CONVENTIONS.md](../CONVENTIONS.md) 是 **Python 端**规范，仅业务规则部分对 Java 通用，技术栈部分**不要照搬**。
+> 本文件是 Java 后端开发的核心指引。
+> 跨语言通用的技术栈总览、API/DB 约定与业务规则见根目录 [CONVENTIONS.md](../CONVENTIONS.md)。
 
 ---
 
@@ -154,7 +148,7 @@ xxx/
 
 - 文件名：`V{递增编号}__{说明}.sql`，如 `V1__init_schema.sql`、`V2__add_xxx_col.sql`
 - **永不修改**已发布的 V 文件；新增列 / 改约束写新 V 文件
-- 初始 schema 按 [docs/TECH_DESIGN.md](../docs/TECH_DESIGN.md) 重新建一遍（不复用 Python Alembic 输出）
+- 初始 schema 在 `V1` 里建全；后续变更追加新的 V 文件
 - `CREATE EXTENSION IF NOT EXISTS vector;` 必须在 V1 里
 
 ### 3.6 异步 / 并发
@@ -264,19 +258,3 @@ xxx/
 - 不直接推 `main`；本地 commit 即可
 - Commit 信息中文 OK，**前缀加模块**：`[Study] 实现首次学习自动出题`
 - PR 描述需列：变动模块、API 变更、DB 变更（Flyway V 文件）、测试覆盖
-
----
-
-## 7. 与 Python 端对照速查
-
-| Python | Java |
-|---|---|
-| `async def` route | 同步方法（虚拟线程承载） |
-| `AsyncSession` (SQLAlchemy) | MyBatis `@Mapper` 接口 |
-| `await llm_client.chat(...)` | `chatClient.prompt(...).call().content()` |
-| `Pydantic BaseModel` | Java Record |
-| `JSONB` (SQLAlchemy) | `PGobject("jsonb", json)` + Jackson |
-| `pgvector` (SQLAlchemy) | `?::vector` + `toPgVectorLiteral` |
-| `asyncio.gather(*tasks, return_exceptions=True)` | `StructuredTaskScope.ShutdownOnFailure` |
-| `logging.getLogger(__name__)` | `LoggerFactory.getLogger(XxxService.class)` |
-| Alembic | Flyway |

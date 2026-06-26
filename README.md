@@ -70,7 +70,9 @@ IAGENT_INVITE_REQUIRED=false
 ### 3. 启动后端（:8080）
 
 ```bash
-./dev-run.sh
+./dev-run.sh        # 前台启动（占用当前终端）
+# 或后台启动（日志写入 java-backend/logs/）：
+./dev-run-bg.sh
 # 等价于：cd java-backend && mvn spring-boot:run
 ```
 

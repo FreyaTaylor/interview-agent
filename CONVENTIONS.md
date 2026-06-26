@@ -1,28 +1,25 @@
 # 面试备考 Agent 系统 — 开发规范
 
-> 本文件是 AI 辅助编码（vibe coding）的核心指引。
-> 所有 AI 助手在生成代码前**必须**阅读本文件和 docs/ 目录下的设计文档。
+> 本文件是项目的核心开发指引，涵盖技术栈、目录结构、通用编码约定与业务规则。
+> Java 后端的详细分层 / 命名 / Mapper / Prompt 等规范见 [java-backend/CONVENTIONS.md](java-backend/CONVENTIONS.md)。
 
 ---
 
 ## 项目概述
 
-面试备考 Agent 系统：用 LangGraph 实现个性化面试知识学习，核心是"以考代学"的对话流程。
-详细设计见 `docs/DESIGN_v2.md` 和 `docs/TECH_DESIGN.md`。
+面试备考 Agent 系统，核心是"以考代学"的对话闭环：持续出题 → 按 Rubric 评分 → 追踪掌握度 → 反向定位薄弱知识点。
 
 ---
 
 ## 技术栈
 
-- **语言**: Python 3.11+
-- **后端**: FastAPI (async)
-- **Agent**: LangGraph（状态图 + ReAct 模式）
-- **数据库**: PostgreSQL 16 + pgvector
-- **ORM**: SQLAlchemy 2.0 (async, 使用 asyncpg 驱动)
-- **LLM**: DeepSeek Chat API (OpenAI 兼容格式)
-- **Embedding**: DashScope text-embedding-v3
-- **前端 Phase 0**: Streamlit
-- **部署**: Docker Compose
+- **后端**: Java 21（虚拟线程）· Spring Boot 3.3 · Spring MVC
+- **持久化**: MyBatis（@注解 Mapper，不写 XML）· HikariCP · Flyway 迁移
+- **数据库**: PostgreSQL 16 + pgvector（DB `interview_agent_java` / user `iagent_java`）
+- **LLM**: Spring AI `ChatClient`（OpenAI 兼容 → DeepSeek Chat）
+- **Embedding / 视觉 / ASR**: LangChain4j + DashScope（`text-embedding-v3` / `qwen-vl-max` / Paraformer）
+- **前端**: React 19 · Vite · react-router-dom 7
+- **本地依赖**: Docker Compose（PostgreSQL）
 
 ---
 
@@ -30,35 +27,21 @@
 
 ```
 interview-agent/
-├── docs/                        # 设计文档（只读参考，不要修改）
-│   ├── DESIGN.md                # v1 产品设计
-│   ├── DESIGN_v2.md             # v2 产品设计（当前版本）
-│   └── TECH_DESIGN.md           # 技术设计（数据模型+页面+技术选型）
-├── backend/
-│   ├── main.py                  # FastAPI 启动入口
-│   ├── config.py                # 配置管理（环境变量）
-│   ├── database.py              # 数据库连接 + session
-│   ├── agents/                  # LangGraph Agent 定义
-│   │   ├── study_agent.py       # 学习对话 Agent（ReAct 核心）
-│   │   └── tree_agent.py        # 知识树生成 Agent（Planning）
-│   ├── models/                  # SQLAlchemy ORM 模型
-│   ├── schemas/                 # Pydantic 请求/响应模型
-│   ├── api/                     # FastAPI 路由
-│   │   ├── knowledge.py         # 知识树 CRUD
-│   │   ├── study.py             # 学习对话
-│   │   ├── review.py            # 面试复盘
-│   │   └── admin.py             # 管理（初始化、画像）
-│   ├── services/                # 业务逻辑
-│   │   ├── mastery.py           # 掌握度 + 遗忘曲线
-│   │   ├── recommendation.py    # 推荐算法
-│   │   └── rubric.py            # Rubric 评分逻辑
-│   └── prompts/                 # Prompt 模板（.txt 或 .py）
-├── frontend/                    # Streamlit 前端
-├── tests/                       # 测试
-├── docker-compose.yml
-├── requirements.txt
+├── java-backend/                # Spring Boot 后端
+│   ├── pom.xml
+│   ├── CONVENTIONS.md           # 后端详细规范（分层 / 命名 / Mapper / Prompt）
+│   ├── scripts/                 # dev-run.sh（前台）/ dev-run-bg.sh（后台）/ init-db.sql
+│   └── src/main/
+│       ├── java/com/interview/agent/   # 按业务模块分包（knowledge/study/learn/project/interview/...）
+│       └── resources/
+│           ├── application.yml
+│           ├── prompts/         # *.txt，中文，禁止硬编码
+│           └── db/migration/    # Flyway V*.sql
+├── frontend-react/              # React + Vite 前端
+│   └── src/{pages,components,contexts,hooks}
+├── docker-compose.yml           # 本地 PostgreSQL (pgvector/pg16)
+├── dev-run.sh / dev-run-bg.sh   # 根目录快捷入口（转发到 java-backend/scripts/）
 ├── .env.example                 # 环境变量模板
-├── .gitignore
 └── CONVENTIONS.md               # 本文件
 ```
 
@@ -66,91 +49,40 @@ interview-agent/
 
 ## 编码规范
 
-### Python 风格
-
-- 使用 Python 3.11+ 语法
-- 遵循 PEP 8，行宽 120 字符
-- 类型注解：所有函数签名必须有参数和返回值类型注解
-- 字符串用双引号 `"`
-- import 顺序：stdlib → 第三方 → 本项目，之间空行分隔
-- 不用 `print` 调试，用 `logging`
-
-### 异步规范
-
-- FastAPI 路由函数统一用 `async def`
-- 数据库操作用 `async session`
-- LLM 调用用 `await`，不要用同步阻塞
-- Agent 内部通过 LangGraph 的异步接口调用
-
-### 命名规范
-
-| 类型 | 规范 | 示例 |
-|------|------|------|
-| 文件名 | snake_case | `study_agent.py` |
-| 类名 | PascalCase | `KnowledgeNode` |
-| 函数/方法 | snake_case | `get_mastery_record()` |
-| 常量 | UPPER_SNAKE | `MAX_EXPLORE_ROUNDS = 5` |
-| Pydantic 模型 | PascalCase + 后缀 | `KnowledgeNodeCreate`, `KnowledgeNodeResponse` |
-| SQLAlchemy 模型 | PascalCase | `KnowledgeNode`（映射表 `knowledge_node`） |
-| API 路由前缀 | 复数名词 | `/api/knowledge-nodes`, `/api/conversations` |
+> 后端具体的分层、命名、MyBatis Mapper、异常处理、Prompt 等细则以 [java-backend/CONVENTIONS.md](java-backend/CONVENTIONS.md) 为准。
+> 以下为跨语言通用、且前后端共同遵守的约定。
 
 ### API 设计
 
-- RESTful 风格，路径用 kebab-case
-- 统一响应格式：
-  ```python
-  {"code": 0, "data": {...}, "message": "success"}
-  ```
-- 错误响应：
-  ```python
-  {"code": 40001, "data": null, "message": "知识点不存在"}
-  ```
-- 分页参数：`?page=1&size=20`
-- API 路由分组注册，每个文件一个 `APIRouter`
+- RESTful 风格，路径用 kebab-case，资源名用复数：`/api/knowledge-nodes`
+- 统一成功响应：`{"code": 0, "data": {...}, "message": "success"}`
+- 统一错误响应：`{"code": 40001, "data": null, "message": "知识点不存在"}`
+- HTTP 字段统一 snake_case（与前端约定一致）
 
 ### 数据库规范
 
 - 表名 snake_case 单数：`knowledge_node`（不是 `knowledge_nodes`）
-- 主键统一 `id BIGSERIAL`
-- 时间字段统一 `TIMESTAMP DEFAULT NOW()`
-- 外键字段命名：`{关联表}_id`，如 `knowledge_point_id`
-- 预留 `user_id` 字段，一期默认值 1，不做校验
-- 不手写 SQL 建表，通过 SQLAlchemy 模型 + Alembic 迁移管理
+- 主键统一 `id BIGSERIAL`，时间字段统一 `created_at TIMESTAMP DEFAULT NOW()`
+- 外键字段命名：`{关联表}_id`
+- 关键表预留 `user_id BIGINT DEFAULT 1`，一期默认单用户、不做校验
+- Schema 变更走 Flyway 迁移（`db/migration/V*.sql`），不手写散落 SQL
 - JSONB 字段用于半结构化数据（如 `rubric_result`）
-
-### LangGraph Agent 规范
-
-- 每个 Agent 一个文件，文件内定义 `StateGraph`
-- State 用 `TypedDict` 定义，字段有类型注解
-- 节点函数命名：动词开头，如 `generate_question()`, `score_answer()`
-- 条件边函数命名：`should_xxx()`，如 `should_explore()`
-- Prompt 模板放 `prompts/` 目录，不要硬编码在 Agent 代码里
-- Tool 定义用 `@tool` 装饰器，docstring 作为 tool description
 
 ### Prompt 规范
 
 - 所有 prompt 用中文（系统面向中文用户）
-- prompt 中包含 `"用户输入可能含错别字，请按语义理解"`
-- Rubric 打分 prompt 要求 LLM 输出结构化 JSON
-- 用户画像（profile_text）在需要时注入 prompt，作为上下文
-
-### 错误处理
-
-- API 层用 FastAPI 的 `HTTPException`
-- Service 层抛自定义业务异常
-- Agent 内部错误要 catch 并返回友好提示，不能让对话中断
-- 数据库操作用 try/except，失败时 rollback
+- prompt 中说明"用户输入可能含错别字，请按语义理解"
+- Rubric 打分要求 LLM 输出结构化 JSON
+- prompt 放 `resources/prompts/`，禁止硬编码在代码里
 
 ### Git 规范
 
-- **不直接 push 到 main**，先创建 feature 分支
-- **只 commit 到本地分支**，不自动 push，由用户自己 push
-- **每次 commit 前检查当前分支**，如果在 main 上必须先 `checkout -b`
+- 不直接在 `main` 上开发，先创建 feature 分支
 - commit message 格式：`type: description`
-  - `feat: 添加知识树初始化 Agent`
+  - `feat: 添加知识树初始化`
   - `fix: 修复 Rubric 打分 JSON 解析`
   - `refactor: 重构推荐算法`
-  - `docs: 更新设计文档`
+  - `docs: 更新文档`
 
 ---
 
@@ -224,20 +156,20 @@ interview-agent/
 
 ## 环境变量
 
+完整模板见 [.env.example](.env.example)。本地自用至少需要：
+
 ```env
-# .env
-DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:5432/interview_agent
-DEEPSEEK_API_KEY=sk-xxx
-DEEPSEEK_BASE_URL=https://api.deepseek.com/v1
-DASHSCOPE_API_KEY=sk-xxx
+DEEPSEEK_API_KEY=sk-your-deepseek-api-key-here
+DASHSCOPE_API_KEY=sk-your-dashscope-api-key-here
 ```
+
+数据库默认连接 `interview_agent_java` / `iagent_java`（见 `java-backend/scripts/init-db.sql`），本地无需额外配置。
 
 ---
 
 ## 开发流程
 
-1. 阅读 `docs/TECH_DESIGN.md` 了解数据模型和页面交互
-2. 阅读本文件了解编码规范
-3. 按 Phase 顺序开发，Phase 0 先跑通对话
-4. 每个功能先写 service 层，再写 API 层，最后接前端
-5. Agent 代码先用硬编码数据测试，再接数据库
+1. 阅读本文件与 [java-backend/CONVENTIONS.md](java-backend/CONVENTIONS.md) 了解编码规范
+2. `docker compose up -d` 起库，执行 `java-backend/scripts/init-db.sql` 初始化
+3. 后端 `./dev-run.sh`（前台）或 `./dev-run-bg.sh`（后台），前端 `cd frontend-react && npm run dev`
+4. 每个功能先写 service 层，再写 controller 层，最后接前端
