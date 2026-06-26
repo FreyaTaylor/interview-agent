@@ -10,24 +10,12 @@ const AuthContext = createContext(null)
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [authConfig, setAuthConfig] = useState(null)
+  const [authError, setAuthError] = useState('')
 
   // 启动时：检查 URL 中的 token（GitHub 回调）或 localStorage
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search)
-    const urlToken = params.get('token')
-    if (urlToken) {
-      localStorage.setItem('token', urlToken)
-      // 清理 URL 参数
-      window.history.replaceState({}, '', window.location.pathname)
-    }
-
-    const token = urlToken || localStorage.getItem('token')
-    if (!token) {
-      // 无 token → 直接进登录页，不打 /me
-      setLoading(false)
-      return
-    }
-    fetchUser(token)
+    bootstrapAuth()
   }, [])
 
   // 全局 fetch 拦截器在收到 401 时广播；这里据此退回登录页
@@ -54,13 +42,50 @@ export function AuthProvider({ children }) {
     setLoading(false)
   }
 
+  async function bootstrapAuth() {
+    try {
+      const configResp = await fetch(`${API_ROOT}/auth/config`)
+      const configData = await configResp.json()
+      const config = configData.code === 0 ? configData.data : null
+      setAuthConfig(config)
+
+      const params = new URLSearchParams(window.location.search)
+      const urlToken = params.get('token')
+      const urlError = params.get('error')
+      if (urlError) {
+        setAuthError(urlError === 'invalid_invite' ? '邀请码无效或已被使用' : '登录失败，请重试')
+      }
+      if (urlToken) {
+        localStorage.setItem('token', urlToken)
+      }
+      if (urlToken || urlError) {
+        window.history.replaceState({}, '', window.location.pathname)
+      }
+
+      if (config?.auth_mode === 'single_user') {
+        await fetchUser('')
+        return
+      }
+
+      const token = urlToken || localStorage.getItem('token')
+      if (!token) {
+        setLoading(false)
+        return
+      }
+      await fetchUser(token)
+    } catch {
+      localStorage.removeItem('token')
+      setLoading(false)
+    }
+  }
+
   function logout() {
     localStorage.removeItem('token')
     setUser(null)
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, logout }}>
+    <AuthContext.Provider value={{ user, loading, authConfig, authError, logout }}>
       {children}
     </AuthContext.Provider>
   )

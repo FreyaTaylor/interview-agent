@@ -40,6 +40,19 @@ public interface UserMapper {
     @Select("SELECT " + COLS + " FROM \"user\" WHERE id = #{id}")
     Optional<User> findById(@Param("id") long id);
 
+    /** self-hosted 模式下确保固定本地用户存在。 */
+    @Select("""
+            INSERT INTO "user" (id, username, role)
+            VALUES (1, 'local', 'admin')
+            ON CONFLICT (id) DO NOTHING
+            RETURNING id
+            """)
+    Long ensureLocalUser();
+
+    /** 插入 id=1 后同步序列，避免后续自增 id 冲突。 */
+    @Select("SELECT setval(pg_get_serial_sequence('\"user\"', 'id'), GREATEST((SELECT MAX(id) FROM \"user\"), 1))")
+    Long syncUserIdSequence();
+
     /** 按 GitHub 数字 id 取用户（OAuth 回调判断查找或创建）。 */
     @Select("SELECT " + COLS + " FROM \"user\" WHERE github_id = #{githubId}")
     Optional<User> findByGithubId(@Param("githubId") long githubId);

@@ -13,8 +13,8 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
  * <p>允许来源从 {@code iagent.cors.allowed-origins}（逗号分隔）读取，
  * 使用 origin pattern 以支持本地任意端口（如 Vite 自动切到 5174/5175）。
  *
- * <p>{@link AuthInterceptor} 拦截 {@code /api/**}，放行 {@code /api/auth/**}（登录链路）
- * 与 actuator 健康检查；其余接口必须携带有效 JWT。
+ * <p>{@link AuthInterceptor} 拦截 {@code /api/**}，仅放行公开登录链路；
+ * 邀请码管理等接口仍必须携带有效 JWT。single_user 模式下拦截器固定写入 user_id=1。
  *
  * <p>生产环境务必收紧 allowed-origins，并考虑去掉 {@code allowCredentials=true}
  * 或换成显式 origin 列表（{@code *} + credentials 是非法组合）。
@@ -38,7 +38,11 @@ public class WebMvcConfig implements WebMvcConfigurer {
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(authInterceptor)
                 .addPathPatterns("/api/**")
-                .excludePathPatterns("/api/auth/**");
+                .excludePathPatterns(
+                        "/api/auth/config",
+                        "/api/auth/github",
+                        "/api/auth/github/callback",
+                        "/api/auth/me");
     }
 
     @Override

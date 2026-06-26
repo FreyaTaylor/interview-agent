@@ -10,6 +10,31 @@
 
 ## 快速开始
 
+当前 Java 后端支持两种部署模式：
+
+- `self_hosted`：默认开源自用模式，固定本地用户 `id=1`，不需要 GitHub OAuth / 邀请码。
+- `hosted`：对外部署模式，启用 GitHub OAuth；可通过邀请码限制新用户注册。
+
+开发者本地自用时只需要复制 `.env.example`，填自己的 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`，保持：
+
+```bash
+IAGENT_DEPLOY_MODE=self_hosted
+IAGENT_AUTH_MODE=single_user
+IAGENT_INVITE_REQUIRED=false
+```
+
+对外部署时改为：
+
+```bash
+IAGENT_DEPLOY_MODE=hosted
+IAGENT_AUTH_MODE=github
+IAGENT_INVITE_REQUIRED=true
+JWT_SECRET=please-use-a-long-random-secret-at-least-32-bytes
+GITHUB_CLIENT_ID=xxx
+GITHUB_CLIENT_SECRET=xxx
+FRONTEND_URL=https://your-frontend.example.com
+```
+
 ```bash
 # 1. 启动 PostgreSQL
 docker run -d --name interview-pg \

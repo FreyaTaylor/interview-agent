@@ -32,13 +32,17 @@ public class JwtService {
     private final SecretKey key;
     private final int expireDays;
 
-    public JwtService(AuthProperties props) {
-        if (props.jwtSecret() == null || props.jwtSecret().isBlank()) {
+    public JwtService(AuthProperties props, AppModeProperties mode) {
+        String secret = props.jwtSecret();
+        if ((secret == null || secret.isBlank()) && mode.singleUser()) {
+            secret = "local-dev-secret-at-least-32-bytes";
+        }
+        if (secret == null || secret.isBlank()) {
             throw new IllegalStateException("iagent.auth.jwt-secret 未配置，无法签发/校验 JWT");
         }
         // HS256 要求密钥 ≥ 256 bit；Python 用任意字符串做 secret，这里按 UTF-8 字节构造，
         // 与 PyJWT 的 HMAC(key.encode()) 字节一致，保证两端 token 互通。
-        this.key = Keys.hmacShaKeyFor(props.jwtSecret().getBytes(StandardCharsets.UTF_8));
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.expireDays = props.jwtExpireDays();
     }
 

@@ -32,12 +32,12 @@
 | 6 | Project Grilling 项目拷打 | `project/` | `/api/project-grilling` | `project`、`project_node`、`question_attempt`、`project_user_profile` | P1 |
 | 7 | Interview 面试复盘 | `interview/` | `/api/interview` | `interview_record`、`interview_{knowledge,project,other}_question` | P1 |
 | 8 | User Profile 用户画像 | `user/` | `/api/user` | `user` | P2 |
-| 9 | Auth（GitHub OAuth） | `auth/` | `/api/auth` | `user` | P3（一期可跳过） |
+| 9 | Auth / 部署模式 / 邀请码 | `auth/` | `/api/auth` | `user`、`invite_code` | P3（一期可跳过；部署前补齐） |
 | 10 | ASR 录音上传 | `interview/`（子能力） | `/api/interview/upload-audio` | — | P3（一期可跳过） |
 
 ---
 
-> **模块章节排列说明**：以下章节按**推荐实现顺序**编排（S0 → S10），模块编号保留原值便于交叉引用（mermaid / 模块清单 / Python 对照）。物理顺序为：**2 → 1 → 5 → 4 → 3 → 6 → 7 → 8 → 9 → 10**。其中模块 2（知识树 Admin）实现上拆为 S1（CRUD）与 S5（树生成）两阶段，文档内仍合并展示。
+> **模块章节排列说明**：以下章节按**推荐实现顺序**编排（S0 → S11），模块编号保留原值便于交叉引用（mermaid / 模块清单 / Python 对照）。物理顺序为：**2 → 1 → 5 → 4 → 3 → 6 → 7 → 8 → 9 → 10**。其中模块 2（知识树 Admin）实现上拆为 S1（CRUD）与 S5（树生成）两阶段，文档内仍合并展示。
 
 ## 2. 知识树管理模块（`admin/` — knowledge 部分）
 
@@ -261,21 +261,74 @@
 
 ---
 
-## 9. Auth 模块（`auth/`）— P3 可推迟
+## 9. Auth / 部署模式 / 邀请码（`auth/`）— 部署前补齐
 
-**目标**：GitHub OAuth 登录。
+**目标**：同一套代码支持两种运行模式：
+
+- **Self-hosted / 开发者自用版**：开源给开发者 clone 后本地运行，默认单用户 `user_id=1`，不强制 GitHub OAuth / 邀请码；开发者在 `.env` 中填自己的 `DEEPSEEK_API_KEY` / `DASHSCOPE_API_KEY`。
+- **Hosted / 运营版**：自己部署给外部用户使用，启用 GitHub OAuth + JWT + 邀请码，首次创建用户必须消耗一个未使用邀请码。
+
+**推荐开发顺序**（先模式，后邀请码，最后运营工具）：
+
+1. **S10a：部署模式配置**
+   - 增加配置：`IAGENT_DEPLOY_MODE=self_hosted|hosted`、`IAGENT_AUTH_MODE=single_user|github`、`IAGENT_INVITE_REQUIRED=true|false`。
+   - `self_hosted` 模式：启动时确保本地用户 `id=1` 存在；认证拦截器直接写入 `CurrentUser=1`；前端跳过登录页直接进入应用。
+   - `hosted` 模式：保持 JWT 鉴权，所有业务从 `CurrentUser` 取真实用户 id。
+   - 更新 `.env.example` / README，分别写清自托管和运营部署步骤。
+
+2. **S10b：GitHub OAuth 注册准入 + 邀请码**
+   - 新增 `invite_code` 表：邀请码只存 hash，支持 `used_by_user_id`、`used_at`、`expires_at`、`created_at`。
+   - 登录页在 `hosted + invite_required` 时展示邀请码输入框。
+   - `GET /api/auth/github` 接收邀请码，把邀请码校验状态放入签名 `state`；callback 校验 `state` 防篡改。
+   - OAuth callback 中：已存在 GitHub 用户直接登录；新 GitHub 用户必须在同一事务内创建用户并原子消耗邀请码。
+   - 邀请码消耗必须由数据库原子更新保证“一码一人”，不能只靠代码先查后改。
+
+3. **S10c：邀请码运营能力**
+   - 提供本地脚本或 Admin API 批量生成邀请码。
+   - 支持查看邀请码是否已使用、被谁使用、何时使用、是否过期。
+   - 只在 `hosted` 模式开放运营能力；`self_hosted` 模式不需要邀请码管理。
 
 | API | 说明 |
 |---|---|
-| `GET /api/auth/github` | 跳转 GitHub 授权 |
+| `GET /api/auth/github` | 跳转 GitHub 授权；Hosted 且启用邀请时接收邀请码并写入签名 state |
 | `GET /api/auth/github/callback` | OAuth 回调（建立 session / 发 token） |
 | `GET /api/auth/me` | 当前用户信息 |
+| `POST /api/auth/invite-codes/create` | 生成邀请码（可先用脚本替代；Hosted 管理能力） |
+| `POST /api/auth/invite-codes/list` | 查看邀请码状态（可先用脚本替代；Hosted 管理能力） |
 
 | 类 | Python 对照 |
 |---|---|
 | `AuthController` / `AuthService` | `api/auth.py` |
+| `InviteCodeService` / `InviteCodeMapper` | 新增 |
 
-**注意**：一期 `user_id=1` 写死可跳过本模块。
+**邀请码表建议**：
+
+```sql
+CREATE TABLE invite_code (
+   id BIGSERIAL PRIMARY KEY,
+   code_hash VARCHAR(128) NOT NULL UNIQUE,
+   note VARCHAR(200),
+   created_by BIGINT,
+   used_by_user_id BIGINT UNIQUE,
+   used_at TIMESTAMP,
+   expires_at TIMESTAMP,
+   created_at TIMESTAMP NOT NULL DEFAULT NOW()
+);
+```
+
+**原子消耗规则**：
+
+```sql
+UPDATE invite_code
+SET used_by_user_id = #{userId}, used_at = NOW()
+WHERE code_hash = #{codeHash}
+  AND used_at IS NULL
+  AND (expires_at IS NULL OR expires_at > NOW())
+```
+
+更新行数为 1 才算成功；为 0 表示邀请码不存在、过期或已被使用。
+
+**注意**：本模块不再只是“可跳过的登录”。项目对外部署前必须完成 S10a + S10b；只做开源自用版则完成 S10a 即可。
 
 ---
 
@@ -320,7 +373,10 @@ graph LR
 | **S8b** | Interview（7）— finalize / check-duplicate / overwrite + 落库 + 副作用 | scorer / storage + `interview_weight += 1` | S8a |
 | **S8c** | Interview（7）— recalibrate / draft / 详情 / 删除 / PATCH | 边角能力 | S8b |
 | **S9** | User Profile（8）| 2 API，随时插队 | S0 |
-| **S10**（可推迟）| Auth（9）+ ASR（10）| 一期 `user_id=1` 写死可不做 | — |
+| **S10a** | 部署模式（9）— self-hosted / hosted 开关 | 一套代码同时支持开源自用和运营部署 | S0 |
+| **S10b** | Auth（9）— GitHub OAuth 注册准入 + 邀请码 | 对外部署时控制注册入口，一码一人 | S10a |
+| **S10c**（可推迟） | 邀请码运营能力（9）| 批量生成 / 查看 / 过期管理 | S10b |
+| **S11**（可推迟）| ASR（10）| 录音上传能力 | — |
 
 **MVP 定义**：`S0 → S1 → S2 → S3 → S4` 完成即"以考代学"最小闭环，可交付使用。
 
@@ -329,7 +385,7 @@ graph LR
 - Study 提前到 Learn 之前（S3 先于 S4）— Study 才是核心闭环，且 Learn 依赖 `study_question` 表，原本就应该紧跟 Study
 - 知识树 Admin 拆为 S1（CRUD）+ S5（树生成）— 树生成依赖 LLM/视觉更重，不应阻塞核心闭环
 - Interview 拆为 S8a/b/c 三步走 — 原本是单模块里链路最长的，一次性做风险大
-- from-image / ASR / Auth 均标为 P3 可推迟，不进核心路径
+- from-image / ASR 均标为 P3 可推迟，不进核心路径；Auth 若仅本地自用可推迟，但对外部署前必须完成 S10a + S10b
 
 **跨阶段并行性**
 - S1 与 S2 可合并（CRUD 写完顺手做查询）

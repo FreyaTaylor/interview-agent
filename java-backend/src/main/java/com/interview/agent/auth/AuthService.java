@@ -7,10 +7,13 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClient;
 
 import java.net.InetSocketAddress;
 import java.net.Proxy;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 
 /**
@@ -18,8 +21,8 @@ import java.util.Map;
  *
  * <p>与 Python {@code backend/services/user.py} 一一对应：
  * <ol>
- *   <li>{@link #githubAuthorizeUrl()} —— 拼授权页 URL（scope=read:user）</li>
- *   <li>{@link #oauthCallback(String)} —— code 换 token → 拉资料 → 落库 → 签发 JWT</li>
+ *   <li>{@link #githubAuthorizeUrl(String)} —— 拼授权页 URL（scope=read:user，可带邀请 state）</li>
+ *   <li>{@link #oauthCallback(String, String)} —— code 换 token → 拉资料 → 落库 → 签发 JWT</li>
  *   <li>{@link #currentUser(long)} —— /me 取当前用户信息</li>
  * </ol>
  */
@@ -29,15 +32,26 @@ public class AuthService {
     private static final Logger log = LoggerFactory.getLogger(AuthService.class);
 
     private final AuthProperties props;
+    private final AppModeProperties mode;
     private final JwtService jwtService;
     private final UserMapper userMapper;
+    private final InviteCodeService inviteCodeService;
+    private final TransactionTemplate transactionTemplate;
     // GitHub 出站调用专用客户端：国内直连 github.com 易被 RST，若配置了代理则走代理（仅作用于此处）。
     private final RestClient github = buildGithubClient();
 
-    public AuthService(AuthProperties props, JwtService jwtService, UserMapper userMapper) {
+    public AuthService(AuthProperties props,
+                       AppModeProperties mode,
+                       JwtService jwtService,
+                       UserMapper userMapper,
+                       InviteCodeService inviteCodeService,
+                       TransactionTemplate transactionTemplate) {
         this.props = props;
+        this.mode = mode;
         this.jwtService = jwtService;
         this.userMapper = userMapper;
+        this.inviteCodeService = inviteCodeService;
+        this.transactionTemplate = transactionTemplate;
     }
 
     /**
@@ -113,10 +127,15 @@ public class AuthService {
     }
 
     /** GitHub 授权页 URL（用户点击后跳回 /github/callback）。 */
-    public String githubAuthorizeUrl() {
-        return "https://github.com/login/oauth/authorize"
-                + "?client_id=" + props.githubClientId()
+    public String githubAuthorizeUrl(String inviteCode) {
+        String state = mode.inviteRequiredForSignup() ? inviteCodeService.createSignedState(inviteCode) : null;
+        String url = "https://github.com/login/oauth/authorize"
+                + "?client_id=" + encode(props.githubClientId())
                 + "&scope=read:user";
+        if (state != null) {
+            url += "&state=" + encode(state);
+        }
+        return url;
     }
 
     /** 回调成功/失败后重定向回的前端地址。 */
@@ -129,7 +148,7 @@ public class AuthService {
      *
      * @return 签发的 JWT；任一步失败返回 {@code null}
      */
-    public String oauthCallback(String code) {
+    public String oauthCallback(String code, String state) {
         Map<String, Object> ghUser = exchangeCode(code);
         if (ghUser == null || ghUser.get("id") == null) {
             return null;
@@ -147,7 +166,20 @@ public class AuthService {
             userId = user.id();
             username = user.username();
         } else {
-            userId = userMapper.insertGithubUser(githubId, login, avatar);
+            String inviteHash = mode.inviteRequiredForSignup() ? inviteCodeService.parseSignedState(state) : null;
+            if (mode.inviteRequiredForSignup() && inviteHash == null) {
+                return null;
+            }
+            userId = transactionTemplate.execute(status -> {
+                long insertedId = userMapper.insertGithubUser(githubId, login, avatar);
+                if (mode.inviteRequiredForSignup()) {
+                    inviteCodeService.consume(inviteHash, insertedId);
+                }
+                return insertedId;
+            });
+            if (userId == 0L) {
+                return null;
+            }
             username = login;
         }
         return jwtService.create(userId, username);
@@ -164,6 +196,21 @@ public class AuthService {
         m.put("avatar_url", u.avatarUrl());
         m.put("profile_text", u.profileText() == null ? "" : u.profileText());
         return m;
+    }
+
+    /** 当前认证配置，供前端决定是否展示登录页 / 邀请码输入。 */
+    public Map<String, Object> publicConfig() {
+        return Map.of(
+                "deploy_mode", mode.deployMode(),
+                "auth_mode", mode.authMode(),
+                "invite_required", mode.inviteRequiredForSignup(),
+                "single_user", mode.singleUser()
+        );
+    }
+
+    /** single_user 模式下返回本地用户。 */
+    public Map<String, Object> localUser() {
+        return currentUser(1L);
     }
 
     /**
@@ -201,5 +248,9 @@ public class AuthService {
             log.error("GitHub OAuth 调用异常: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    private static String encode(String value) {
+        return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8);
     }
 }

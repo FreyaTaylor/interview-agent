@@ -20,7 +20,7 @@ import java.nio.charset.StandardCharsets;
  * </ol>
  *
  * <p>放行清单由 {@link com.interview.agent.common.WebMvcConfig} 的
- * {@code excludePathPatterns} 控制（/api/auth/**、/actuator/**）。
+ * {@code excludePathPatterns} 控制（公开登录链路）。
  * 走到本拦截器的都是受保护接口：无有效 token 直接返回 401 统一包裹体。
  */
 @Component
@@ -30,10 +30,12 @@ public class AuthInterceptor implements HandlerInterceptor {
     public static final int CODE_UNAUTHORIZED = 40100;
 
     private final JwtService jwtService;
+    private final AppModeProperties mode;
     private final ObjectMapper objectMapper;
 
-    public AuthInterceptor(JwtService jwtService, ObjectMapper objectMapper) {
+    public AuthInterceptor(JwtService jwtService, AppModeProperties mode, ObjectMapper objectMapper) {
         this.jwtService = jwtService;
+        this.mode = mode;
         this.objectMapper = objectMapper;
     }
 
@@ -42,6 +44,11 @@ public class AuthInterceptor implements HandlerInterceptor {
             throws Exception {
         // CORS 预检直接放行
         if ("OPTIONS".equalsIgnoreCase(request.getMethod())) {
+            return true;
+        }
+
+        if (mode.singleUser()) {
+            CurrentUser.set(1L);
             return true;
         }
 

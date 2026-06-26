@@ -68,6 +68,9 @@ mybatis:
 
 # 业务自定义配置（LlmProperties / EmbeddingProperties / CorsProperties）
 iagent:
+  deploy-mode: ${IAGENT_DEPLOY_MODE:self_hosted}
+  auth-mode: ${IAGENT_AUTH_MODE:single_user}
+  invite-required: ${IAGENT_INVITE_REQUIRED:false}
   llm:
     chat-temperature-score: 0.0
     chat-temperature-generate: 0.6
