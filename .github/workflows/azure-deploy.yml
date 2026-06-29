@@ -3,7 +3,7 @@ name: Deploy to Azure
 on:
   push:
     branches:
-      - feat/phase0-study-agent
+      - main
   workflow_dispatch:
 
 permissions:
