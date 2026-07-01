@@ -16,4 +16,7 @@ public interface LearnQuestionService {
 
     /** 幂等保证：若叶子节点无题则生成；非叶子节点直接跳过。 */
     void ensureQuestions(long kpId);
+
+    /** 删除单道题（需校验属于本 KP），连带清理其作答记录。 */
+    void deleteQuestion(long kpId, long questionId);
 }

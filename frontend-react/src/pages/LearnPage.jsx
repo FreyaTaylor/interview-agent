@@ -9,7 +9,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { API_LEARN, API_TEXT } from '../config'
-import { findAncestorIds, SidebarNode, useKnowledgeTree } from '../components/KnowledgeSidebar'
+import { findAncestorIds, SidebarNode, useKnowledgeTree, refreshKnowledgeTree } from '../components/KnowledgeSidebar'
 import AnswerInput from '../components/AnswerInput'
 import { Skeleton, StagePulse, TypingDots } from '../components/Loading'
 
@@ -22,6 +22,13 @@ async function postLearn(path, body) {
   })
   return resp.json()
 }
+
+// 自评掌握度三档（值与后端 clamp 保持 0-100；与答题派生掌握度相互独立）
+const SELF_LEVELS = [
+  { label: '了解', value: 40 },
+  { label: '掌握', value: 75 },
+  { label: '熟练', value: 100 },
+]
 
 // Markdown 渲染：在中文句号 / 问号 / 感叹号后插入硬换行（"  \n"），跳过代码块/标题/表格/引用
 // 两种情况都要处理：
@@ -280,6 +287,48 @@ export default function LearnPage() {
     }
   }
 
+  async function handleDeleteQuestion(q) {
+    if (!activeKpId) return
+    if (!window.confirm(`确定删除题目「${q.question}」？该题的作答记录也会一并删除。`)) return
+    try {
+      const resp = await postLearn('/question-delete', {
+        kp_id: Number(activeKpId), question_id: q.id,
+      })
+      if (resp.code !== 0) {
+        alert('删除失败: ' + (resp.message || '未知错误'))
+        return
+      }
+      const next = questions.filter(item => item.id !== q.id)
+      questionsCacheRef.current[activeKpId] = next
+      setQuestions(next)
+    } catch (e) {
+      alert('删除失败: ' + e.message)
+    }
+  }
+
+  // 设置/清除自评掌握度（再点当前档位 = 取消）
+  async function handleSetSelfMastery(value) {
+    if (!activeKpId) return
+    const next = content?.self_mastery === value ? null : value
+    try {
+      const resp = await postLearn('/self-mastery', { kp_id: Number(activeKpId), self_mastery: next })
+      if (resp.code !== 0) {
+        alert('设置失败: ' + (resp.message || '未知错误'))
+        return
+      }
+      setContent(prev => {
+        if (!prev) return prev
+        const updated = { ...prev, self_mastery: resp.data ?? null }
+        contentCacheRef.current[activeKpId] = updated
+        return updated
+      })
+      // 刷新左侧/知识树掌握度圆环（有效掌握度 = max(答题, 自评)）
+      refreshKnowledgeTree()
+    } catch (e) {
+      alert('设置失败: ' + e.message)
+    }
+  }
+
   // 发送对话
   async function handleSendChat(msg) {
     const text = (msg || '').trim()
@@ -347,7 +396,6 @@ export default function LearnPage() {
   const m = content?.mastery_level || 0
   const mColor = m >= 80 ? '#52c41a' : m >= 40 ? '#faad14' : m > 0 ? '#ff4d4f' : '#e0e0e0'
   const subtopics = content?.subtopics || []
-
   return (
     <div className="learn-container">
       {/* 左侧目录 */}
@@ -386,7 +434,19 @@ export default function LearnPage() {
               <h2 className="learn-title">{content.knowledge_point_name}</h2>
               <div className="learn-meta">
                 <span className="learn-mastery">
-                  掌握度 <span style={{ color: mColor, fontWeight: 600 }}>{m}%</span>
+                  答题掌握度 <span style={{ color: mColor, fontWeight: 600 }}>{m}%</span>
+                </span>
+                <span className="learn-self-mastery">
+                  <span className="lsm-label" title="看完讲解觉得掌握了？手动自评一下（与答题掌握度分开计）">自评</span>
+                  {SELF_LEVELS.map(lv => (
+                    <button
+                      key={lv.value}
+                      type="button"
+                      className={`lsm-chip ${content?.self_mastery === lv.value ? 'active' : ''}`}
+                      title={`自评为「${lv.label}」（再点一次取消）`}
+                      onClick={() => handleSetSelfMastery(lv.value)}
+                    >{lv.label}</button>
+                  ))}
                 </span>
               </div>
             </div>
@@ -475,7 +535,18 @@ export default function LearnPage() {
                     </div>
                     {questions.map((q, i) => (
                       <div key={q.id ?? i} className="learn-question-card">
-                        <div className="learn-q-title">Q{i + 1}: {q.question}</div>
+                        <div className="learn-q-title-row">
+                          <div className="learn-q-title">Q{i + 1}: {q.question}</div>
+                          {q.id != null && (
+                            <button
+                              type="button"
+                              className="learn-q-del-btn"
+                              title="删除该题"
+                              aria-label="删除该题"
+                              onClick={() => handleDeleteQuestion(q)}
+                            >×</button>
+                          )}
+                        </div>
                         {Array.isArray(q.recommended_answer) && q.recommended_answer.length > 0 ? (
                           <ul className="learn-q-answer">
                             {q.recommended_answer.map((line, j) => (<li key={j}>{line}</li>))}

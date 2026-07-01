@@ -67,6 +67,10 @@ public interface StudyQuestionMapper {
             """)
     int deleteUnattemptedByKpId(@Param("kpId") long kpId);
 
+    /** 按 id 删单题，带 kp_id 防越权；返回受影响行数（0 = 不存在或不属于该 KP）。 */
+    @Delete("DELETE FROM study_question WHERE id = #{id} AND knowledge_point_id = #{kpId}")
+    int deleteByIdAndKp(@Param("id") long id, @Param("kpId") long kpId);
+
     @Select("""
             SELECT COALESCE(MAX(sort_order), -1) FROM study_question
             WHERE knowledge_point_id = #{kpId}

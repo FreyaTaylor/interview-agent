@@ -16,6 +16,7 @@ import com.interview.agent.learn.mapper.StudyQuestionMapper;
 import com.interview.agent.learn.service.LearnHelper;
 import com.interview.agent.learn.service.LearnQuestionService;
 import com.interview.agent.prompts.PromptKeys;
+import com.interview.agent.study.mapper.QuestionAttemptMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -73,19 +74,22 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
     private final com.interview.agent.study.service.ScoreAggregateService scoreAggregate;
+    private final QuestionAttemptMapper attemptMapper;
 
     public LearnQuestionServiceImpl(KnowledgeNodeMapper nodeMapper,
                                     KnowledgeSubtopicMapper subtopicMapper,
                                     StudyQuestionMapper questionMapper,
                                     LearnHelper helper,
                                     LlmInvoker llmInvoker,
-                                    com.interview.agent.study.service.ScoreAggregateService scoreAggregate) {
+                                    com.interview.agent.study.service.ScoreAggregateService scoreAggregate,
+                                    QuestionAttemptMapper attemptMapper) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
         this.questionMapper = questionMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
         this.scoreAggregate = scoreAggregate;
+        this.attemptMapper = attemptMapper;
     }
 
     /**
@@ -110,6 +114,22 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     @Override
     public void ensureQuestions(long kpId) {
         fetchQuestions(kpId);
+    }
+
+    /**
+     * 删除单道题：校验题目存在且属于本 KP，先清其作答记录（多态逻辑外键）再删题。
+     * <p>question_attempt 是多态逻辑外键（无数据库 FK），必须应用层手动清理，否则产生孤儿作答行。
+     */
+    @Override
+    @Transactional
+    public void deleteQuestion(long kpId, long questionId) {
+        // Step 1: 校验题目存在且属于本 KP（防越权）
+        questionMapper.findById(questionId)
+                .filter(q -> q.knowledgePointId() != null && q.knowledgePointId() == kpId)
+                .orElseThrow(() -> new BizException(40400, "题目不存在或不属于该知识点"));
+        // Step 2: 先删作答记录，再删题
+        attemptMapper.deleteByStudyQuestion(questionId);
+        questionMapper.deleteByIdAndKp(questionId, kpId);
     }
 
     /**

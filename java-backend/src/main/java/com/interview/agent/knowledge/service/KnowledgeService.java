@@ -67,6 +67,7 @@ public class KnowledgeService {
                 n.sortOrder(),
                 n.masteryLevel() == null ? 0 : n.masteryLevel().intValue(),
                 n.studyCount(),
+                n.selfMastery() == null ? 0 : n.selfMastery().intValue(),
                 children
         );
     }

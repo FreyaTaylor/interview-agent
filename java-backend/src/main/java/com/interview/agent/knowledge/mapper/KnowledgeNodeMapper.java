@@ -29,7 +29,7 @@ public interface KnowledgeNodeMapper {
     String COLS = """
             id, parent_id, name, level, node_type, interview_weight,
             sort_order, is_user_created, mastery_level, study_count,
-            created_at, updated_at
+            self_mastery, created_at, updated_at
             """;
 
     // ===== 查询 =====
@@ -190,6 +190,10 @@ public interface KnowledgeNodeMapper {
             WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateMastery(@Param("id") long id, @Param("userId") long userId, @Param("mastery") Integer mastery);
+
+    /** 学习页手动设置/清除自评掌握度（selfMastery 为 null 表示清除；仅限当前用户）。 */
+    @Update("UPDATE knowledge_node SET self_mastery = #{selfMastery}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
+    int updateSelfMastery(@Param("id") long id, @Param("userId") long userId, @Param("selfMastery") Short selfMastery);
 
     // ===== 删除 + FK 兜底 =====
 

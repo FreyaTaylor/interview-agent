@@ -1,6 +1,7 @@
 package com.interview.agent.study.mapper;
 
 import com.interview.agent.study.entity.QuestionAttempt;
+import org.apache.ibatis.annotations.Delete;
 import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
@@ -127,4 +128,8 @@ public interface QuestionAttemptMapper {
                @Param("finalScore") int finalScore,
                @Param("rubricResult") Object rubricResult,
                @Param("overallSummary") String overallSummary);
+
+    /** 删除某 study 题的全部作答记录（多态逻辑外键，手动清理避免孤儿行）。返回删除条数。 */
+    @Delete("DELETE FROM question_attempt WHERE question_type = 'study' AND question_id = #{questionId}")
+    int deleteByStudyQuestion(@Param("questionId") long questionId);
 }

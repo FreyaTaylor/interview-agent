@@ -132,6 +132,29 @@ export default function ExamPage() {
     navigate(`/exam/${id}`, { replace: true })
   }
 
+  async function handleDeleteQuestion(q) {
+    if (!activeKpId) return
+    if (!window.confirm(`确定删除题目「${q.content}」？该题的作答记录也会一并删除。`)) return
+    try {
+      const resp = await fetch(`${API_LEARN}/question-delete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kp_id: activeKpId, question_id: q.id }),
+      })
+      const data = await resp.json()
+      if (data.code !== 0) throw new Error(data.message || '删除失败')
+      // 若删的是当前选中题 → 清空作答区（随后 auto-select effect 会自动选下一道）
+      if (q.id === activeQuestionId) {
+        setActiveQuestionId(null)
+        qa.reset()
+        setHistory([])
+      }
+      await loadQuestionsScores()
+    } catch (e) {
+      window.alert(e.message || '删除题目失败')
+    }
+  }
+
   async function selectQuestion(q) {
     if (q.id === activeQuestionId) return
     setActiveQuestionId(q.id)
@@ -276,6 +299,7 @@ export default function ExamPage() {
               items={questions}
               activeId={activeQuestionId}
               onSelect={selectQuestion}
+              onDelete={handleDeleteQuestion}
               emptyText="该知识点还没有题目"
             />
           )}

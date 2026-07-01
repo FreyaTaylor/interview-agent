@@ -14,6 +14,7 @@ public record ContentView(
         String knowledgePointName,
         List<SubtopicView> subtopics,
         int masteryLevel,
+        Integer selfMastery,
         String lastStudiedAt,
         boolean generated
 ) {

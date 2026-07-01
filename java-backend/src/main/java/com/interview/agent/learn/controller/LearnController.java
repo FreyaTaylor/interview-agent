@@ -7,7 +7,9 @@ import com.interview.agent.learn.dto.ChatRequest;
 import com.interview.agent.learn.dto.ContentView;
 import com.interview.agent.learn.dto.KpIdRequest;
 import com.interview.agent.learn.dto.LearnAssetRequest;
+import com.interview.agent.learn.dto.QuestionDeleteRequest;
 import com.interview.agent.learn.dto.QuestionsView;
+import com.interview.agent.learn.dto.SelfMasteryRequest;
 import com.interview.agent.learn.dto.SubtopicDeleteRequest;
 import com.interview.agent.learn.service.LearnChatService;
 import com.interview.agent.learn.service.LearnContentService;
@@ -25,9 +27,11 @@ import java.util.List;
  * <ul>
  *   <li>POST /api/learn/content       body {kp_id, action} — 讲解（fetch/regenerate）</li>
  *   <li>POST /api/learn/questions     body {kp_id, action} — 题目（fetch/regenerate）</li>
+ *   <li>POST /api/learn/question-delete body {kp_id, question_id} — 删除单道题</li>
  *   <li>POST /api/learn/chat          body ChatRequest      — 对话</li>
  *   <li>POST /api/learn/chat-history  body {kp_id}          — 历史对话</li>
  *   <li>POST /api/learn/subtopic-delete body {kp_id, subtopic_id} — 删除单个子话题</li>
+ *   <li>POST /api/learn/self-mastery   body {kp_id, self_mastery} — 设置/清除自评掌握度</li>
  * </ul>
  *
  * <p>本类严格薄层：每个方法体一行委托，逻辑全部下沉到三个职责单一的 Service
@@ -59,6 +63,12 @@ public class LearnController {
         return ApiResponse.success(questionService.resolveQuestions(req));
     }
 
+    @PostMapping("/question-delete")
+    public ApiResponse<Void> deleteQuestion(@Valid @RequestBody QuestionDeleteRequest req) {
+        questionService.deleteQuestion(req.kpId(), req.questionId());
+        return ApiResponse.success(null);
+    }
+
     @PostMapping("/chat")
     public ApiResponse<ChatReplyView> chat(@Valid @RequestBody ChatRequest req) {
         return ApiResponse.success(chatService.chat(req.knowledgePointId(), req.message(),
@@ -74,5 +84,10 @@ public class LearnController {
     public ApiResponse<Void> deleteSubtopic(@Valid @RequestBody SubtopicDeleteRequest req) {
         contentService.deleteSubtopic(req.kpId(), req.subtopicId());
         return ApiResponse.success(null);
+    }
+
+    @PostMapping("/self-mastery")
+    public ApiResponse<Integer> selfMastery(@Valid @RequestBody SelfMasteryRequest req) {
+        return ApiResponse.success(contentService.setSelfMastery(req.kpId(), req.selfMastery()));
     }
 }

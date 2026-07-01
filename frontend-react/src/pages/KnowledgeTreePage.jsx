@@ -27,7 +27,8 @@ function TreeNode({ node, depth }) {
   const isCat = depth === 0
 
   const weight = node.interview_weight || 0
-  const m = node.mastery_level
+  // 有效掌握度 = max(答题派生, 用户自评)；自评也能点亮圆环
+  const m = Math.max(node.mastery_level || 0, node.self_mastery || 0)
   const color = m >= 80 ? '#52c41a' : m >= 40 ? '#faad14' : m > 0 ? '#ff4d4f' : '#e0e0e0'
 
   return (

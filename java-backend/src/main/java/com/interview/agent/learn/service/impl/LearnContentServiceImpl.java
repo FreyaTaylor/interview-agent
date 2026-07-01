@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.interview.agent.common.BizException;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.learn.dto.ContentView;
@@ -107,6 +108,24 @@ public class LearnContentServiceImpl implements LearnContentService {
         if (n == 0) {
             throw new BizException(40400, "子话题不存在或不属于该知识点");
         }
+    }
+
+    /**
+     * 设置/清除自评掌握度（与答题派生掌握度 mastery_level 各自独立）。
+     * <p>selfMastery 为 null → 清除；非 null → clamp 到 [0,100] 后写库。
+     */
+    @Override
+    @Transactional
+    public Integer setSelfMastery(long kpId, Integer selfMastery) {
+        // Step 1: 校验节点存在
+        nodeMapper.findById(kpId)
+                .orElseThrow(() -> new BizException(40400, "知识点不存在"));
+        // Step 2: clamp + 写库（null 表示清除自评）
+        Short val = selfMastery == null
+                ? null
+                : (short) Math.max(0, Math.min(100, selfMastery));
+        nodeMapper.updateSelfMastery(kpId, CurrentUser.id(), val);
+        return val == null ? null : val.intValue();
     }
 
     /**
@@ -232,7 +251,8 @@ public class LearnContentServiceImpl implements LearnContentService {
         // 从未学过为 null → 视图按 0 渲染（前端"未掌握"色块）。
         // last_studied_at 暂未持久化（V12 未加列），统一返 null。
         int mastery = node.masteryLevel() == null ? 0 : node.masteryLevel().intValue();
-        return new ContentView(node.id(), node.name(), views, mastery, null, generated);
+        Integer self = node.selfMastery() == null ? null : node.selfMastery().intValue();
+        return new ContentView(node.id(), node.name(), views, mastery, self, null, generated);
     }
 
     static SubtopicView toView(KnowledgeSubtopic s) {

@@ -19,4 +19,11 @@ public interface LearnContentService {
 
     /** 删除单个子话题（需同时传 kpId 防越权）；记录不存在 → 抛 40400。 */
     void deleteSubtopic(long kpId, long subtopicId);
+
+    /**
+     * 设置/清除知识点自评掌握度（与答题派生掌握度独立）。
+     * @param selfMastery null=清除；非 null 时 clamp 到 [0,100]
+     * @return 落库后的自评值（null=已清除）
+     */
+    Integer setSelfMastery(long kpId, Integer selfMastery);
 }

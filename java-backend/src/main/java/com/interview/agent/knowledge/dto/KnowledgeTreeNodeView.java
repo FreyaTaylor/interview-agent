@@ -22,6 +22,7 @@ public record KnowledgeTreeNodeView(
         int sortOrder,
         int masteryLevel,
         int studyCount,
+        int selfMastery,
         List<KnowledgeTreeNodeView> children
 ) {
 }
