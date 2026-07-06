@@ -34,6 +34,15 @@ public interface KnowledgeSubtopicMapper {
     @Select("SELECT EXISTS(SELECT 1 FROM knowledge_subtopic WHERE kp_id = #{kpId})")
     boolean existsByKp(@Param("kpId") long kpId);
 
+    /**
+     * 取该 KP 的事务级 advisory 锁，序列化"生成子话题"这一临界区，防并发重复生成。
+     * <p>阻塞直到拿到锁；锁在**当前事务提交/回滚时自动释放**（xact 级）。
+     * 前一个生成事务提交后，本事务再查 {@link #findByKp} 即可看到已生成数据、直接返回，实现幂等。
+     * <p>子话题生成是唯一按 kp_id 加此类锁的地方，用单参 bigint 形式即可，无跨功能冲突风险。
+     */
+    @Select("SELECT 1 FROM (SELECT pg_advisory_xact_lock(#{kpId})) AS _lock")
+    Integer acquireGenLock(@Param("kpId") long kpId);
+
     /** 返回 max(sort_order)；KP 下无数据时返回 0。 */
     @Select("SELECT COALESCE(MAX(sort_order), 0) FROM knowledge_subtopic WHERE kp_id = #{kpId}")
     int maxSortOrder(@Param("kpId") long kpId);

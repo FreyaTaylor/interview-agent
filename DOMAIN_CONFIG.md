@@ -91,7 +91,7 @@ VITE_API_BASE = https://api.interview-agent.online/api
 | `GITHUB_CLIENT_ID` | （已配置） | GitHub OAuth App client id |
 | `GITHUB_CLIENT_SECRET` | （已配置，敏感） | GitHub OAuth App client secret |
 
-> 数据库、LLM/Embedding 等密钥同样以 Container App 环境变量 / secret 形式配置，详见 `_private/docs/AZURE_DEPLOYMENT.md`。
+> 数据库、LLM/Embedding 等密钥同样以 Container App 环境变量 / secret 形式配置，详见 `local/docs/AZURE_DEPLOYMENT.md`。
 
 ### 健康检查
 

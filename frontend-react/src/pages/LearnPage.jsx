@@ -164,6 +164,9 @@ export default function LearnPage() {
   }, [])
   const contentCacheRef = useRef({})
   const questionsCacheRef = useRef({})
+  // 记录正在请求中的 kp：防止 effect 依赖变化（如 tree.length 由 0→N）导致同一 kp 的 /content 被并发触发两次，
+  // 首次生成尚未返回时缓存挡不住 → 会在后端重复生成两批子话题。
+  const contentInflightRef = useRef({})
 
   useEffect(() => {
     if (kpId && tree.length > 0) {
@@ -204,22 +207,29 @@ export default function LearnPage() {
     }
     setLoading(true)
     setContent(null)
-    for (let attempt = 0; attempt < 2; attempt++) {
-      try {
-        const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
-        if (resp.code === 0) {
-          contentCacheRef.current[id] = resp.data
-          setContent(resp.data)
-          setLoading(false)
-          return
+    // 同一 kp 已有请求在飞 → 直接跳过，避免并发触发后端重复生成
+    if (contentInflightRef.current[id]) return
+    contentInflightRef.current[id] = true
+    try {
+      for (let attempt = 0; attempt < 2; attempt++) {
+        try {
+          const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
+          if (resp.code === 0) {
+            contentCacheRef.current[id] = resp.data
+            setContent(resp.data)
+            setLoading(false)
+            return
+          }
+          if (attempt === 1) setContent({ error: resp.message || '加载失败' })
+        } catch (e) {
+          if (attempt === 1) setContent({ error: '加载失败: ' + e.message })
+          else await new Promise(r => setTimeout(r, 1000))
         }
-        if (attempt === 1) setContent({ error: resp.message || '加载失败' })
-      } catch (e) {
-        if (attempt === 1) setContent({ error: '加载失败: ' + e.message })
-        else await new Promise(r => setTimeout(r, 1000))
       }
+      setLoading(false)
+    } finally {
+      delete contentInflightRef.current[id]
     }
-    setLoading(false)
   }, [])
 
   const loadChatHistory = useCallback(async (id) => {

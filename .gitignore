@@ -28,8 +28,5 @@ Thumbs.db
 java-backend/logs/
 *.pid
 
-# Personal resume files
-resumes/
-
-# Private internal docs (design / planning / ADR — not for open-source distribution)
-_private/
+# Local-only files (personal docs, resumes, interview prep — not for open-source distribution)
+local/
