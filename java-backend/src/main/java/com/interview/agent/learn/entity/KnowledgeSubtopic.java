@@ -11,6 +11,9 @@ import java.time.Instant;
  * 这里用 Object 保留与 StudyQuestion 同样的 typeHandler 适配宽容性。
  *
  * <p>{@code source}：{@code "initial"} = 初次讲解生成；{@code "chat"} = 探索对话期间新增。
+ *
+ * <p>{@code contentStatus}：{@code "pending"} = 仅有标题+目标题、正文待点击生成；{@code "ready"} = 正文已就绪。
+ * {@code masteryLevel}：子话题级掌握度（该子话题所有 study_question 最近 N 次 finished 均分再平均），未答为 null。
  */
 public record KnowledgeSubtopic(
         Long id,
@@ -21,6 +24,8 @@ public record KnowledgeSubtopic(
         Object followups,
         Integer sortOrder,
         String source,
+        String contentStatus,
+        Short masteryLevel,
         Long userId,
         Instant createdAt
 ) {

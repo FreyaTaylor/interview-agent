@@ -22,7 +22,7 @@ public interface KnowledgeSubtopicMapper {
 
     String COLS = """
             id, kp_id, title, body_md, importance, followups,
-            sort_order, source, user_id, created_at
+            sort_order, source, content_status, mastery_level, user_id, created_at
             """;
 
     @Select("SELECT " + COLS + " FROM knowledge_subtopic WHERE kp_id = #{kpId} ORDER BY sort_order, id")

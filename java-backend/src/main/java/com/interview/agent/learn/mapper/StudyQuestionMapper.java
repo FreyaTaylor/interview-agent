@@ -22,7 +22,7 @@ import java.util.List;
 public interface StudyQuestionMapper {
 
     String COLS = """
-            id, user_id, knowledge_point_id, content,
+            id, user_id, knowledge_point_id, subtopic_id, content,
             rubric_template, recommended_answer, sort_order, created_at
             """;
 

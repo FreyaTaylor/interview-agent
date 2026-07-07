@@ -12,11 +12,14 @@ import java.time.Instant;
  * </ul>
  *
  * <p>由 S4 Learn 模块（懒生成）写入；S3 Study 模块只读。
+ *
+ * <p>{@code subtopicId}：所属子话题（目标题归属）。历史题可能为 null；新流程必填。
  */
 public record StudyQuestion(
         Long id,
         Long userId,
         Long knowledgePointId,
+        Long subtopicId,
         String content,
         Object rubricTemplate,
         Object recommendedAnswer,
