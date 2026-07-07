@@ -10,7 +10,9 @@ import com.interview.agent.learn.dto.LearnAssetRequest;
 import com.interview.agent.learn.dto.QuestionDeleteRequest;
 import com.interview.agent.learn.dto.QuestionsView;
 import com.interview.agent.learn.dto.SelfMasteryRequest;
+import com.interview.agent.learn.dto.SubtopicContentRequest;
 import com.interview.agent.learn.dto.SubtopicDeleteRequest;
+import com.interview.agent.learn.dto.SubtopicView;
 import com.interview.agent.learn.service.LearnChatService;
 import com.interview.agent.learn.service.LearnContentService;
 import com.interview.agent.learn.service.LearnQuestionService;
@@ -56,6 +58,11 @@ public class LearnController {
     @PostMapping("/content")
     public ApiResponse<ContentView> content(@Valid @RequestBody LearnAssetRequest req) {
         return ApiResponse.success(contentService.resolveContent(req));
+    }
+
+    @PostMapping("/subtopic-content")
+    public ApiResponse<SubtopicView> subtopicContent(@Valid @RequestBody SubtopicContentRequest req) {
+        return ApiResponse.success(contentService.resolveSubtopicContent(req));
     }
 
     @PostMapping("/questions")

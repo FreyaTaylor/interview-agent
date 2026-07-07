@@ -2,6 +2,8 @@ package com.interview.agent.learn.service;
 
 import com.interview.agent.learn.dto.ContentView;
 import com.interview.agent.learn.dto.LearnAssetRequest;
+import com.interview.agent.learn.dto.SubtopicContentRequest;
+import com.interview.agent.learn.dto.SubtopicView;
 
 /**
  * Learn 模块 · 讲解（content）业务接口。
@@ -13,6 +15,9 @@ public interface LearnContentService {
 
     /** 总入口：根据 {@code action} 分发 fetch / regenerate。 */
     ContentView resolveContent(LearnAssetRequest req);
+
+    /** Step B：单子话题正文懒生成 / 重生（fetch 时 pending 才生，regenerate 强制重生）。 */
+    SubtopicView resolveSubtopicContent(SubtopicContentRequest req);
 
     /** 幂等保证：若讲解不存在则生成并落库（供 S3 串联调用）。 */
     void ensureContent(long kpId);

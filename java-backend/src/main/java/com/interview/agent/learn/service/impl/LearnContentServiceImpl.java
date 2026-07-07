@@ -9,6 +9,7 @@ import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.learn.dto.ContentView;
 import com.interview.agent.learn.dto.LearnAssetRequest;
+import com.interview.agent.learn.dto.SubtopicContentRequest;
 import com.interview.agent.learn.dto.SubtopicView;
 import com.interview.agent.learn.entity.KnowledgeSubtopic;
 import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
@@ -102,6 +103,74 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     public void ensureContent(long kpId) {
         fetchContent(kpId);
+    }
+
+    /**
+     * Step B：单子话题深度正文懒生成 / 重生。
+     * <ul>
+     *   <li>FETCH：{@code ready} 直接返；{@code pending} 则生成正文、置 ready。</li>
+     *   <li>REGENERATE：无论状态都重生正文（不动目标题）。</li>
+     * </ul>
+     * 事务级 advisory 锁（按 subtopicId）防并发重复生成。{@code @Transactional} 必须在公开入口。
+     */
+    @Override
+    @Transactional
+    public SubtopicView resolveSubtopicContent(SubtopicContentRequest req) {
+        LearnAssetRequest.Action action = req.resolvedAction();
+        KnowledgeSubtopic s = subtopicMapper.findById(req.subtopicId())
+                .orElseThrow(() -> new BizException(40400, "子话题不存在"));
+
+        // FETCH 且已 ready → 直接返
+        if (action == LearnAssetRequest.Action.FETCH && isReady(s)) {
+            return toViewWithQuestions(s);
+        }
+
+        // 取子话题级锁串行化；拿锁后重查（FETCH 下若已被并发生成则直接返）
+        subtopicMapper.acquireSubtopicContentLock(Math.toIntExact(s.id()));
+        s = subtopicMapper.findById(req.subtopicId())
+                .orElseThrow(() -> new BizException(40400, "子话题不存在"));
+        if (action == LearnAssetRequest.Action.FETCH && isReady(s)) {
+            return toViewWithQuestions(s);
+        }
+
+        // 生成正文 + 置 ready
+        String body = generateSubtopicBody(s);
+        subtopicMapper.updateBody(s.id(), s.kpId(), body);
+        return toViewWithQuestions(subtopicMapper.findById(s.id())
+                .orElseThrow(() -> new BizException(50000, "正文写入后回读失败")));
+    }
+
+    private static boolean isReady(KnowledgeSubtopic s) {
+        return "ready".equals(s.contentStatus()) && s.bodyMd() != null && !s.bodyMd().isBlank();
+    }
+
+    /** 调 LLM 产单子话题深度正文（输入 title + 目标题）。 */
+    private String generateSubtopicBody(KnowledgeSubtopic s) {
+        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
+        String targets = qs.isEmpty()
+                ? "（无）"
+                : qs.stream().map(q -> "- " + q.content()).collect(java.util.stream.Collectors.joining("\n"));
+        Map<String, Object> vars = Map.of(
+                "title", s.title(),
+                "category_path", helper.categoryPath(s.kpId()),
+                "target_questions", targets
+        );
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPIC_CONTENT, vars,
+                GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
+        return llmInvoker.invoke(spec, LearnContentServiceImpl::parseBody)
+                .orElseThrow(() -> new BizException(50000, "子话题正文生成失败，请重试"));
+    }
+
+    /** raw → 正文：去首尾空白与可能的 markdown 围栏；过短视为无效触发重试。 */
+    private static String parseBody(String raw) {
+        String body = raw == null ? "" : raw.strip();
+        if (body.startsWith("```")) {
+            body = body.replaceAll("^```[a-zA-Z]*\\s*", "").replaceAll("```\\s*$", "").strip();
+        }
+        if (body.length() < 20) {
+            throw new IllegalStateException("正文过短：" + body.length());
+        }
+        return body;
     }
 
     /**

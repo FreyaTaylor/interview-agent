@@ -43,6 +43,13 @@ public interface KnowledgeSubtopicMapper {
     @Select("SELECT 1 FROM (SELECT pg_advisory_xact_lock(#{kpId})) AS _lock")
     Integer acquireGenLock(@Param("kpId") long kpId);
 
+    /**
+     * 子话题级正文生成锁（Step B）：用**双参 advisory 锁**（namespace=1, subtopicId），
+     * 与单参的 KP 级锁（{@link #acquireGenLock}）处于**不同锁空间**，避免 id 碰撞。
+     */
+    @Select("SELECT 1 FROM (SELECT pg_advisory_xact_lock(1, #{subtopicId})) AS _lock")
+    Integer acquireSubtopicContentLock(@Param("subtopicId") int subtopicId);
+
     /** 返回 max(sort_order)；KP 下无数据时返回 0。 */
     @Select("SELECT COALESCE(MAX(sort_order), 0) FROM knowledge_subtopic WHERE kp_id = #{kpId}")
     int maxSortOrder(@Param("kpId") long kpId);
