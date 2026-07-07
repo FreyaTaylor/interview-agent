@@ -2,8 +2,12 @@ package com.interview.agent.study.service.impl;
 
 import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
+import com.interview.agent.common.JsonUtil;
+import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.learn.entity.StudyQuestion;
 import com.interview.agent.learn.mapper.StudyQuestionMapper;
+import com.interview.agent.learn.service.LearnHelper;
+import com.interview.agent.prompts.PromptKeys;
 import com.interview.agent.study.dto.AttemptDetailResponse;
 import com.interview.agent.study.dto.AttemptFinishResponse;
 import com.interview.agent.study.dto.AttemptStartResponse;
@@ -14,6 +18,7 @@ import com.interview.agent.study.mapper.QuestionAttemptMapper;
 import com.interview.agent.study.service.ScoreAggregateService;
 import com.interview.agent.study.service.StudyAttemptService;
 import com.interview.agent.study.service.StudyQaStrategy;
+import com.fasterxml.jackson.core.type.TypeReference;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,6 +26,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 /**
  * {@link StudyAttemptService} 实现 —— Study attempt 状态机编排。
@@ -35,19 +41,27 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
 
     private static final int DEFAULT_HISTORY_LIMIT = 10;
 
+    private static final TypeReference<Map<String, Object>> RUBRIC_RESP = new TypeReference<>() {};
+
     private final QuestionAttemptMapper attemptMapper;
     private final StudyQuestionMapper questionMapper;
     private final StudyQaStrategy strategy;
     private final ScoreAggregateService scoreAggregate;
+    private final LlmInvoker llmInvoker;
+    private final LearnHelper learnHelper;
 
     public StudyAttemptServiceImpl(QuestionAttemptMapper attemptMapper,
                                    StudyQuestionMapper questionMapper,
                                    StudyQaStrategy strategy,
-                                   ScoreAggregateService scoreAggregate) {
+                                   ScoreAggregateService scoreAggregate,
+                                   LlmInvoker llmInvoker,
+                                   LearnHelper learnHelper) {
         this.attemptMapper = attemptMapper;
         this.questionMapper = questionMapper;
         this.strategy = strategy;
         this.scoreAggregate = scoreAggregate;
+        this.llmInvoker = llmInvoker;
+        this.learnHelper = learnHelper;
     }
 
     // ============================================================
@@ -69,6 +83,9 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
         StudyQuestion q = questionMapper.findById(questionId)
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
 
+        // Step 1.5: rubric 懒生成 —— 目标题驱动重构后，Step A 产的题无 rubric，首次答题时补齐
+        q = ensureRubric(q);
+
         // Step 2
         long userId = CurrentUser.id();
         attemptMapper.findInProgress(userId, questionId).ifPresent(existing -> {
@@ -81,6 +98,49 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
         long attemptId = attemptMapper.insertStudyInProgress(userId, questionId, dialog);
 
         return new AttemptStartResponse(attemptId, questionId, q.content(), dialog, 1, MAX_STEPS);
+    }
+
+    /**
+     * Rubric 懒生成：题的 {@code rubric_template} 为空时，按题干调 LLM 补 rubric + 范例答案并落库。
+     * <p>目标题驱动重构后 Step A 只产题干、不产 rubric；答题前在此补齐，保证评分有依据。
+     * <p>生成失败降级：保持空 rubric（评分退化为自由打分，但不阻断答题）。
+     */
+    private StudyQuestion ensureRubric(StudyQuestion q) {
+        if (!rubricEmpty(q.rubricTemplate())) {
+            return q;
+        }
+        String categoryPath = q.knowledgePointId() == null ? "" : learnHelper.categoryPath(q.knowledgePointId());
+        Map<String, Object> vars = Map.of(
+                "question", q.content(),
+                "category_path", categoryPath
+        );
+        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.STUDY_RUBRIC_GEN, vars, 0.3, 2048, 3);
+        Optional<Map<String, Object>> res = llmInvoker.invoke(spec, raw -> {
+            Map<String, Object> m = JsonUtil.extractJson(raw, RUBRIC_RESP);
+            if (m == null || !(m.get("rubric") instanceof List<?> l) || l.isEmpty()) {
+                throw new IllegalStateException("rubric 生成为空");
+            }
+            return m;
+        });
+        if (res.isEmpty()) {
+            return q; // 降级：空 rubric
+        }
+        questionMapper.updateRubric(q.id(), res.get().get("rubric"), res.get().get("recommended_answer"));
+        return questionMapper.findById(q.id()).orElse(q);
+    }
+
+    /** rubric_template 是否为空（null / 空 JSON 数组）。 */
+    private static boolean rubricEmpty(Object r) {
+        if (r == null) {
+            return true;
+        }
+        if (r instanceof List<?> l) {
+            return l.isEmpty();
+        }
+        if (r instanceof String s) {
+            return s.isBlank() || s.strip().equals("[]");
+        }
+        return false;
     }
 
     // ============================================================

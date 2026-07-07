@@ -37,6 +37,8 @@ public final class PromptKeys {
     public static final String STUDY_PER_TURN = "study/per-turn";
     /** 答题最终汇总评分。V11 seed。 */
     public static final String STUDY_FINAL_SCORE = "study/final-score";
+    /** 给定题干懒生成 Rubric + 范例答案（题目目标题驱动重构后首次答题时补）。V39 seed。 */
+    public static final String STUDY_RUBRIC_GEN = "study/rubric-gen";
 
     // ===== tree 域（知识树 admin）=====
     /** 把粘贴文本解析为知识树（Markdown / 缩进文本 → 树 JSON）。V3 seed。 */

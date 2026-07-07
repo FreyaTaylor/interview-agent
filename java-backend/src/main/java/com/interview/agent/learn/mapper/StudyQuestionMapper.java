@@ -76,4 +76,17 @@ public interface StudyQuestionMapper {
             WHERE knowledge_point_id = #{kpId}
             """)
     int maxSortOrder(@Param("kpId") long kpId);
+
+    /** 懒生成：回填单题的 rubric_template + recommended_answer（首次答题时调）。
+     *  两个 JSONB 列走 JsonbTypeHandler；flushCache 保证同事务内后续 reload 拿到新值。 */
+    @org.apache.ibatis.annotations.Update("""
+            UPDATE study_question SET
+              rubric_template = #{rubricTemplate,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
+              recommended_answer = #{recommendedAnswer,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER}
+            WHERE id = #{id}
+            """)
+    @Options(flushCache = Options.FlushCachePolicy.TRUE)
+    int updateRubric(@Param("id") long id,
+                     @Param("rubricTemplate") Object rubricTemplate,
+                     @Param("recommendedAnswer") Object recommendedAnswer);
 }
