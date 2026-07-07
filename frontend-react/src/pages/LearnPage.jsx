@@ -89,14 +89,22 @@ function FollowupItem({ fu }) {
 }
 
 // 单个子话题卡片
-function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete }) {
+function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete, onGenerate }) {
   const cardRef = useRef(null)
+  const [generating, setGenerating] = useState(false)
+  const isPending = st.content_status === 'pending' || !st.body_md
+  const targets = Array.isArray(st.target_questions) ? st.target_questions : []
   function handleQuoteSelection() {
     const sel = window.getSelection()
     const text = sel?.toString().trim() || ''
     if (text && cardRef.current?.contains(sel.anchorNode)) {
       onQuote(st.id, text)
     }
+  }
+  async function handleGenerate() {
+    if (generating) return
+    setGenerating(true)
+    try { await onGenerate(st.id) } finally { setGenerating(false) }
   }
   return (
     <div
@@ -117,8 +125,22 @@ function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete }) {
         </div>
         <ImportanceStars value={st.importance} />
       </div>
+      {targets.length > 0 && (
+        <div className="learn-sub-targets">
+          <div className="learn-sub-targets-label">🎯 学完你应能回答：</div>
+          <ul className="learn-sub-targets-list">
+            {targets.map(q => <li key={q.id}>{q.content}</li>)}
+          </ul>
+        </div>
+      )}
       <div className="learn-sub-card-body">
-        <MarkdownContent content={st.body_md} />
+        {isPending ? (
+          <button className="learn-sub-gen-btn" disabled={generating} onClick={handleGenerate}>
+            {generating ? '⏳ 生成中…' : '📖 生成讲解'}
+          </button>
+        ) : (
+          <MarkdownContent content={st.body_md} />
+        )}
       </div>
       {Array.isArray(st.followups) && st.followups.length > 0 && (
         <div className="learn-fu-list">
@@ -267,6 +289,25 @@ export default function LearnPage() {
   function handleQuoteFromCard(subtopicId, text) {
     setQuotedSubtopicId(subtopicId)
     setQuotedText(text)
+  }
+
+  // Step B：点击 pending 子话题的"生成讲解" → 调 /subtopic-content 生成正文 → 就地替换该卡片 + 同步缓存
+  async function handleGenerateSubtopic(subtopicId) {
+    try {
+      const resp = await postLearn('/subtopic-content', { subtopic_id: subtopicId, action: 'fetch' })
+      if (resp.code !== 0) {
+        alert('生成讲解失败: ' + (resp.message || '未知错误'))
+        return
+      }
+      setContent(prev => {
+        if (!prev || !Array.isArray(prev.subtopics)) return prev
+        const next = { ...prev, subtopics: prev.subtopics.map(s => (s.id === subtopicId ? resp.data : s)) }
+        if (activeKpId) contentCacheRef.current[activeKpId] = next
+        return next
+      })
+    } catch (e) {
+      alert('生成讲解失败: ' + e.message)
+    }
   }
 
   // 删除某个子话题：二次确认 → 后端删 → 本地状态 + 缓存同步剔除
@@ -504,6 +545,7 @@ export default function LearnPage() {
                       isFlash={st.id === flashSubtopicId}
                       onQuote={handleQuoteFromCard}
                       onDelete={handleDeleteSubtopic}
+                      onGenerate={handleGenerateSubtopic}
                     />
                   ))}
                 </div>
