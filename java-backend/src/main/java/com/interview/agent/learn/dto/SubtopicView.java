@@ -11,6 +11,10 @@ public record SubtopicView(
         int importance,
         List<Map<String, Object>> followups,
         int sortOrder,
-        String source
+        String source,
+        String contentStatus,
+        List<TargetQuestion> targetQuestions
 ) {
+    /** 子话题目标面试题（= 考核题）的精简视图。 */
+    public record TargetQuestion(Long id, String content) {}
 }

@@ -74,10 +74,6 @@ iagent:
   llm:
     chat-temperature-score: 0.0
     chat-temperature-generate: 0.6
-  learn:
-    subtopics:
-      # 子话题生成策略：single（单次 LLM，默认）| two-step（生成+审校去重补全两步）
-      strategy: ${IAGENT_LEARN_SUBTOPICS_STRATEGY:single}
   embedding:
     dashscope-api-key: ${DASHSCOPE_API_KEY:}
     model: ${DASHSCOPE_EMBEDDING_MODEL:text-embedding-v3}

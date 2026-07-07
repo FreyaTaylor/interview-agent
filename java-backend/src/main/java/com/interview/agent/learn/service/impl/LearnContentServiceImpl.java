@@ -13,9 +13,10 @@ import com.interview.agent.learn.dto.SubtopicView;
 import com.interview.agent.learn.entity.KnowledgeSubtopic;
 import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
 import com.interview.agent.learn.mapper.LearnChatMapper;
+import com.interview.agent.learn.mapper.StudyQuestionMapper;
+import com.interview.agent.learn.entity.StudyQuestion;
 import com.interview.agent.learn.service.LearnContentService;
 import com.interview.agent.learn.service.LearnHelper;
-import com.interview.agent.learn.service.LearnSubtopicsProperties;
 import com.interview.agent.prompts.PromptKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -58,20 +59,20 @@ public class LearnContentServiceImpl implements LearnContentService {
     private final LearnChatMapper chatMapper;
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
-    private final LearnSubtopicsProperties subtopicsProps;
+    private final StudyQuestionMapper questionMapper;
 
     public LearnContentServiceImpl(KnowledgeNodeMapper nodeMapper,
                                    KnowledgeSubtopicMapper subtopicMapper,
                                    LearnChatMapper chatMapper,
                                    LearnHelper helper,
                                    LlmInvoker llmInvoker,
-                                   LearnSubtopicsProperties subtopicsProps) {
+                                   StudyQuestionMapper questionMapper) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
         this.chatMapper = chatMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
-        this.subtopicsProps = subtopicsProps;
+        this.questionMapper = questionMapper;
     }
 
     /**
@@ -198,40 +199,33 @@ public class LearnContentServiceImpl implements LearnContentService {
     // ============================================================
 
     /**
-     * 生成子话题并落库，返回 generated=true 的 view。
+     * Step A：生成【子话题 + 目标题】清单并落库，返回 generated=true 的 view。
      * <ol>
-     *   <li>Step 1: {@link #generateSubtopics} 调 LLM 产候选列表（旧逻辑）</li>
-     *   <li>Step 2（仅 two-step 策略）: {@link #refineSubtopics} 二次调 LLM 审校去重+补全，
-     *       再 {@link #dedupByTitle} 做 title 归一化精确去重兜底</li>
-     *   <li>Step 3: 批量落库</li>
+     *   <li>调 LLM 产 {@code [{title, importance, target_questions[]}]}（{@link #parseSubtopics} 校验）</li>
+     *   <li>title 归一化去重</li>
+     *   <li>逐条落 pending 子话题（body 空）+ 其目标题（{@code study_question}，带 subtopic_id、空 rubric）</li>
      * </ol>
-     * 策略由 {@link LearnSubtopicsProperties#twoStep()} 决定，默认 single 保持历史行为。
+     * 正文由 Step B 点击懒生成；rubric 由 study 首次答题懒生成。
      */
     private ContentView generateAndPersist(KnowledgeNode node) {
-        // Step 1: 生成候选
-        List<Map<String, Object>> items = generateSubtopics(node);
-
-        // Step 2: two-step 策略下审校去重 + 补全
-        if (subtopicsProps.twoStep()) {
-            items = refineSubtopics(node, items);
-            items = dedupByTitle(items);
-        }
-
-        // Step 3: 批量落库
+        List<Map<String, Object>> items = dedupByTitle(generateSubtopics(node));
         int sort = 1;
         for (Map<String, Object> it : items) {
             String title = it.get("title").toString().strip();
-            String body = String.valueOf(it.getOrDefault("body_md", "")).strip();
             int importance = clampImportance(it.get("importance"));
-            subtopicMapper.insert(node.id(), title, body, importance, sort, "initial");
+            long subtopicId = subtopicMapper.insertPending(node.id(), title, importance, sort, "initial");
+            int qsort = 1;
+            for (String q : dedupQuestions(targetQuestions(it))) {
+                questionMapper.insertForSubtopic(node.id(), subtopicId, q, qsort);
+                qsort++;
+            }
             sort++;
         }
-        List<KnowledgeSubtopic> inserted = subtopicMapper.findByKp(node.id());
-        return buildView(node, inserted, true);
+        return buildView(node, subtopicMapper.findByKp(node.id()), true);
     }
 
     /**
-     * Step 1：调 LLM 产 JSON 子话题候选列表。
+     * 调 LLM 产 JSON 子话题清单（含 target_questions）。
      * <p>parser 校验：必须是 list、长度 ≥ {@value #MIN_SUBTOPICS}、每项有 title 且非空。
      */
     private List<Map<String, Object>> generateSubtopics(KnowledgeNode node) {
@@ -243,22 +237,6 @@ public class LearnContentServiceImpl implements LearnContentService {
                 GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
         return llmInvoker.invoke(spec, this::parseSubtopics)
                 .orElseThrow(() -> new BizException(50000, "知识子话题生成失败，请重试"));
-    }
-
-    /**
-     * Step 2（two-step）：把第一步候选喂给审校 prompt，合并语义重复 + 补齐遗漏 + 输出最终清单。
-     * <p>审校失败（重试耗尽）时降级返回第一步结果，避免整体失败。
-     */
-    private List<Map<String, Object>> refineSubtopics(KnowledgeNode node, List<Map<String, Object>> firstPass) {
-        Map<String, Object> vars = Map.of(
-                "knowledge_point", node.name(),
-                "category_path", helper.categoryPath(node.id()),
-                "subtopics_json", JsonUtil.toJson(firstPass)
-        );
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPICS_REFINE, vars,
-                GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
-        // 审校失败不阻断：降级用第一步结果
-        return llmInvoker.invoke(spec, this::parseSubtopics).orElse(firstPass);
     }
 
     /** LLM raw → 子话题 list 的解析器：校验非空 list、长度 ≥ {@value #MIN_SUBTOPICS}、每项 title 非空。 */
@@ -275,6 +253,30 @@ public class LearnContentServiceImpl implements LearnContentService {
             }
         }
         return parsed;
+    }
+
+    /** 取一个子话题的 target_questions（字符串列表，空/非法返空）。 */
+    private static List<String> targetQuestions(Map<String, Object> it) {
+        if (!(it.get("target_questions") instanceof List<?> l)) {
+            return List.of();
+        }
+        List<String> out = new ArrayList<>(l.size());
+        for (Object o : l) {
+            if (o != null && !o.toString().isBlank()) {
+                out.add(o.toString().strip());
+            }
+        }
+        return out;
+    }
+
+    /** 目标题归一化精确去重（去空格/标点/大小写后相同的合并），保序。 */
+    private static List<String> dedupQuestions(List<String> qs) {
+        Map<String, String> seen = new LinkedHashMap<>();
+        for (String q : qs) {
+            String key = q.toLowerCase().replaceAll("[\\s\\p{Punct}\\u3000-\\u303F\\uFF00-\\uFFEF]", "");
+            seen.putIfAbsent(key, q);
+        }
+        return new ArrayList<>(seen.values());
     }
 
     /**
@@ -320,7 +322,7 @@ public class LearnContentServiceImpl implements LearnContentService {
     private ContentView buildView(KnowledgeNode node, List<KnowledgeSubtopic> rows, boolean generated) {
         List<SubtopicView> views = new ArrayList<>(rows.size());
         for (KnowledgeSubtopic s : rows) {
-            views.add(toView(s));
+            views.add(toViewWithQuestions(s));
         }
         // mastery_level 由 study/finish 钩子写到 knowledge_node.mastery_level，
         // 从未学过为 null → 视图按 0 渲染（前端"未掌握"色块）。
@@ -330,6 +332,27 @@ public class LearnContentServiceImpl implements LearnContentService {
         return new ContentView(node.id(), node.name(), views, mastery, self, null, generated);
     }
 
+    /** 带目标题的子话题视图：额外查该子话题的 study_question 作为 target_questions。 */
+    private SubtopicView toViewWithQuestions(KnowledgeSubtopic s) {
+        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
+        List<SubtopicView.TargetQuestion> targets = new ArrayList<>(qs.size());
+        for (StudyQuestion q : qs) {
+            targets.add(new SubtopicView.TargetQuestion(q.id(), q.content()));
+        }
+        return new SubtopicView(
+                s.id(),
+                s.title(),
+                s.bodyMd(),
+                s.importance() == null ? 3 : s.importance().intValue(),
+                followupsAsList(s.followups()),
+                s.sortOrder() == null ? 0 : s.sortOrder(),
+                s.source(),
+                s.contentStatus() == null ? "ready" : s.contentStatus(),
+                targets
+        );
+    }
+
+    /** 无目标题的精简视图（供 chat 新增子话题复用；chat 子话题不挂考核题）。 */
     static SubtopicView toView(KnowledgeSubtopic s) {
         return new SubtopicView(
                 s.id(),
@@ -338,7 +361,9 @@ public class LearnContentServiceImpl implements LearnContentService {
                 s.importance() == null ? 3 : s.importance().intValue(),
                 followupsAsList(s.followups()),
                 s.sortOrder() == null ? 0 : s.sortOrder(),
-                s.source()
+                s.source(),
+                s.contentStatus() == null ? "ready" : s.contentStatus(),
+                java.util.List.of()
         );
     }
 

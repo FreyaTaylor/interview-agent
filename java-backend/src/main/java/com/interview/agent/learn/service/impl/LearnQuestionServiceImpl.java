@@ -75,6 +75,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     private final LlmInvoker llmInvoker;
     private final com.interview.agent.study.service.ScoreAggregateService scoreAggregate;
     private final QuestionAttemptMapper attemptMapper;
+    private final com.interview.agent.learn.service.LearnContentService contentService;
 
     public LearnQuestionServiceImpl(KnowledgeNodeMapper nodeMapper,
                                     KnowledgeSubtopicMapper subtopicMapper,
@@ -82,7 +83,8 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
                                     LearnHelper helper,
                                     LlmInvoker llmInvoker,
                                     com.interview.agent.study.service.ScoreAggregateService scoreAggregate,
-                                    QuestionAttemptMapper attemptMapper) {
+                                    QuestionAttemptMapper attemptMapper,
+                                    com.interview.agent.learn.service.LearnContentService contentService) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
         this.questionMapper = questionMapper;
@@ -90,6 +92,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         this.llmInvoker = llmInvoker;
         this.scoreAggregate = scoreAggregate;
         this.attemptMapper = attemptMapper;
+        this.contentService = contentService;
     }
 
     /**
@@ -149,19 +152,11 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
             return new QuestionsView(node.id(), node.name(), node.nodeType(), List.of(), false);
         }
 
-        // Step 2: 命中即返
-        List<QuestionItemView> existing = loadLeafQuestions(node);
-        if (!existing.isEmpty()) {
-            return new QuestionsView(node.id(), node.name(), node.nodeType(), existing, false);
-        }
-
-        // Step 3: 生成并落库（失败 swallow，返空列表给前端）
-        try {
-            generateAndPersist(node, DEFAULT_QUESTION_COUNT, null);
-        } catch (Exception e) {
-            log.warn("[Learn] 生成 study_question 失败 kpId={}: {}", kpId, e.getMessage());
-        }
-        return new QuestionsView(node.id(), node.name(), node.nodeType(), loadLeafQuestions(node), true);
+        // Step 2: 确保 Step A 已跑（讲解生成会一并产出目标题 = study_question），再只读
+        boolean hadBefore = questionMapper.existsByKpId(kpId);
+        contentService.ensureContent(kpId);
+        List<QuestionItemView> qs = loadLeafQuestions(node);
+        return new QuestionsView(node.id(), node.name(), node.nodeType(), qs, !hadBefore && !qs.isEmpty());
     }
 
     /**
@@ -184,13 +179,8 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         // Step 2: 删未作答
         questionMapper.deleteUnattemptedByKpId(kpId);
 
-        // Step 3: 按上限补足
-        List<StudyQuestion> remaining = questionMapper.findByKpId(kpId);
-        int need = Math.min(REGENERATE_BATCH, Math.max(0, REGENERATE_CAP - remaining.size()));
-        if (need > 0) {
-            List<String> existingQs = remaining.stream().map(StudyQuestion::content).toList();
-            generateAndPersist(node, need, existingQs);
-        }
+        // Step 3: 目标题驱动重构后，题目由 Step A（讲解生成）产出，此处不再单独用 LLM 生成题目。
+        //   若需彻底重生题目，走"重新生成讲解"（content regenerate）整体重建。
         return new QuestionsView(node.id(), node.name(), node.nodeType(), loadLeafQuestions(node), true);
     }
 

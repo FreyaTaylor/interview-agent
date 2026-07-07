@@ -64,6 +64,26 @@ public interface KnowledgeSubtopicMapper {
                 @Param("sortOrder") int sortOrder,
                 @Param("source") String source);
 
+    /** Step A 用：只落标题+目标题的"待生成正文"子话题（body_md=null, content_status='pending'）。返回新行 id。 */
+    @Select("""
+            INSERT INTO knowledge_subtopic
+              (kp_id, title, body_md, importance, sort_order, source, content_status)
+            VALUES (
+              #{kpId}, #{title}, NULL, #{importance}, #{sortOrder}, #{source}, 'pending'
+            )
+            RETURNING id
+            """)
+    @Options(flushCache = Options.FlushCachePolicy.TRUE)
+    long insertPending(@Param("kpId") long kpId,
+                       @Param("title") String title,
+                       @Param("importance") int importance,
+                       @Param("sortOrder") int sortOrder,
+                       @Param("source") String source);
+
+    /** Step B 用：回填正文并置 content_status='ready'。 */
+    @Update("UPDATE knowledge_subtopic SET body_md = #{bodyMd}, content_status = 'ready' WHERE id = #{id} AND kp_id = #{kpId}")
+    int updateBody(@Param("id") long id, @Param("kpId") long kpId, @Param("bodyMd") String bodyMd);
+
     /**
      * 追加 followup 到 JSONB 数组末尾。
      * <p>使用 {@code followups || jsonb_build_array(...)} 在 SQL 层 append，避免读改写竞态。

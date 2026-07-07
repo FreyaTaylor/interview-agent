@@ -29,6 +29,9 @@ public interface StudyQuestionMapper {
     @Select("SELECT " + COLS + " FROM study_question WHERE knowledge_point_id = #{kpId} ORDER BY sort_order, id")
     List<StudyQuestion> findByKpId(@Param("kpId") long kpId);
 
+    @Select("SELECT " + COLS + " FROM study_question WHERE subtopic_id = #{subtopicId} ORDER BY sort_order, id")
+    List<StudyQuestion> findBySubtopic(@Param("subtopicId") long subtopicId);
+
     @Select("SELECT " + COLS + " FROM study_question WHERE id = #{id}")
     java.util.Optional<StudyQuestion> findById(@Param("id") long id);
 
@@ -55,6 +58,21 @@ public interface StudyQuestionMapper {
                 @Param("rubricTemplate") Object rubricTemplate,
                 @Param("recommendedAnswer") Object recommendedAnswer,
                 @Param("sortOrder") int sortOrder);
+
+    /** Step A 用：落归属子话题的题干（rubric 空、答案空——首次答题时懒补）。返回新行 id。 */
+    @Select("""
+            INSERT INTO study_question
+              (knowledge_point_id, subtopic_id, content, rubric_template, recommended_answer, sort_order)
+            VALUES (
+              #{kpId}, #{subtopicId}, #{content}, '[]'::jsonb, NULL, #{sortOrder}
+            )
+            RETURNING id
+            """)
+    @Options(flushCache = Options.FlushCachePolicy.TRUE)
+    long insertForSubtopic(@Param("kpId") long kpId,
+                           @Param("subtopicId") long subtopicId,
+                           @Param("content") String content,
+                           @Param("sortOrder") int sortOrder);
 
     /** 删除某 KP 下所有"无作答历史"的题目，返回删除条数。用于 regenerate-questions。 */
     @Delete("""
