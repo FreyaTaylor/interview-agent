@@ -123,7 +123,14 @@ function SubtopicCard({ st, isHighlighted, isFlash, onQuote, onDelete, onGenerat
             aria-label="删除此子话题"
           >×</button>
         </div>
-        <ImportanceStars value={st.importance} />
+        <div className="learn-sub-card-head-right">
+          {typeof st.mastery_level === 'number' && (
+            <span className="learn-sub-mastery" title="该子话题掌握度（近期答题均分）">
+              掌握 {st.mastery_level}
+            </span>
+          )}
+          <ImportanceStars value={st.importance} />
+        </div>
       </div>
       {targets.length > 0 && (
         <div className="learn-sub-targets">

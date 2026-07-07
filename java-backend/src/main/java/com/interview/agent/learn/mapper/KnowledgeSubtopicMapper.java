@@ -91,6 +91,10 @@ public interface KnowledgeSubtopicMapper {
     @Update("UPDATE knowledge_subtopic SET body_md = #{bodyMd}, content_status = 'ready' WHERE id = #{id} AND kp_id = #{kpId}")
     int updateBody(@Param("id") long id, @Param("kpId") long kpId, @Param("bodyMd") String bodyMd);
 
+    /** finish 钩子用：写回子话题级掌握度（null 允许，表示该子话题未答过题）。 */
+    @Update("UPDATE knowledge_subtopic SET mastery_level = #{mastery} WHERE id = #{id}")
+    int updateMastery(@Param("id") long id, @Param("mastery") Integer mastery);
+
     /**
      * 追加 followup 到 JSONB 数组末尾。
      * <p>使用 {@code followups || jsonb_build_array(...)} 在 SQL 层 append，避免读改写竞态。

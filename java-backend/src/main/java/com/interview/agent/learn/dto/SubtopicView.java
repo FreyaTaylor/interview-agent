@@ -13,6 +13,7 @@ public record SubtopicView(
         int sortOrder,
         String source,
         String contentStatus,
+        Integer masteryLevel,
         List<TargetQuestion> targetQuestions
 ) {
     /** 子话题目标面试题（= 考核题）的精简视图。 */

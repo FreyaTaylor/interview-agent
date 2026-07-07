@@ -417,6 +417,7 @@ public class LearnContentServiceImpl implements LearnContentService {
                 s.sortOrder() == null ? 0 : s.sortOrder(),
                 s.source(),
                 s.contentStatus() == null ? "ready" : s.contentStatus(),
+                s.masteryLevel() == null ? null : s.masteryLevel().intValue(),
                 targets
         );
     }
@@ -432,6 +433,7 @@ public class LearnContentServiceImpl implements LearnContentService {
                 s.sortOrder() == null ? 0 : s.sortOrder(),
                 s.source(),
                 s.contentStatus() == null ? "ready" : s.contentStatus(),
+                s.masteryLevel() == null ? null : s.masteryLevel().intValue(),
                 java.util.List.of()
         );
     }

@@ -73,6 +73,30 @@ public interface QuestionAttemptMapper {
             """)
     Double avgKpMastery(@Param("kpId") long kpId, @Param("recentN") int recentN);
 
+    /**
+     * 子话题掌握度：口径与 {@link #avgKpMastery} 一致，只是聚合边界从 knowledge_point_id
+     * 换成 subtopic_id —— 该子话题下每道题"最近 N 次 finished 平均分"再求平均；未答计 0。
+     * 子话题下无题时返 null。
+     */
+    @Select("""
+            SELECT AVG(COALESCE(q_score, 0)) FROM (
+              SELECT (
+                SELECT AVG(final_score)
+                FROM (
+                  SELECT final_score FROM question_attempt
+                  WHERE question_type = 'study'
+                    AND question_id = q.id
+                    AND status = 'finished'
+                  ORDER BY finished_at DESC NULLS LAST, id DESC
+                  LIMIT #{recentN}
+                ) recent_a
+              ) AS q_score
+              FROM study_question q
+              WHERE q.subtopic_id = #{subtopicId}
+            ) per_q
+            """)
+    Double avgSubtopicMastery(@Param("subtopicId") long subtopicId, @Param("recentN") int recentN);
+
     /** 该题"最近 N 次 finished 平均分"；无记录时 SQL 返 null。 */
     @Select("""
             SELECT AVG(a.final_score) FROM (

@@ -307,6 +307,10 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
 
         // Step 3: 刷 KP 掌握度
         Integer mastery = scoreAggregate.refreshKpMastery(kpId);
+        // Step 3.5: 刷所属子话题掌握度（目标题驱动重构后题目归属子话题；历史题 subtopicId 可空则跳过）
+        if (q.subtopicId() != null) {
+            scoreAggregate.refreshSubtopicMastery(q.subtopicId());
+        }
 
         return new AttemptFinishResponse(
                 attemptId, "finished", fs.finalScore(),

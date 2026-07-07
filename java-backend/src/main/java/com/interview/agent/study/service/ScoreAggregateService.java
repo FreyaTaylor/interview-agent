@@ -16,6 +16,12 @@ public interface ScoreAggregateService {
     /** KP 掌握度；该 KP 下无任何 finished 时返 {@code null}。 */
     Integer kpMastery(long kpId);
 
+    /** 子话题掌握度；该子话题下无 finished 时返 {@code null}。 */
+    Integer subtopicMastery(long subtopicId);
+
+    /** finish 钩子：算出子话题掌握度并写回 {@code knowledge_subtopic.mastery_level}。 */
+    Integer refreshSubtopicMastery(long subtopicId);
+
     /** finish 钩子：算出 kpMastery 并写回 {@code knowledge_node.mastery_level} + {@code study_count + 1}。
      *  返回最新 mastery（可能为 null，表示该 KP 仍无 finished 记录——但 finish 后理应不为 null）。 */
     Integer refreshKpMastery(long kpId);
