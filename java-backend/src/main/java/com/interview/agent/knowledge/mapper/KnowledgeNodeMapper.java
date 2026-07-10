@@ -213,12 +213,4 @@ public interface KnowledgeNodeMapper {
             </script>
             """)
     int nullOutInterviewKnowledgeRefs(@Param("ids") List<Long> ids);
-
-    @Delete("""
-            <script>
-            DELETE FROM learn_chat WHERE knowledge_point_id IN
-            <foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>
-            </script>
-            """)
-    int deleteLearnChat(@Param("ids") List<Long> ids);
 }

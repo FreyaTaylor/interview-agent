@@ -13,7 +13,6 @@ import com.interview.agent.learn.dto.SubtopicContentRequest;
 import com.interview.agent.learn.dto.SubtopicView;
 import com.interview.agent.learn.entity.KnowledgeSubtopic;
 import com.interview.agent.learn.mapper.KnowledgeSubtopicMapper;
-import com.interview.agent.learn.mapper.LearnChatMapper;
 import com.interview.agent.learn.mapper.StudyQuestionMapper;
 import com.interview.agent.learn.entity.StudyQuestion;
 import com.interview.agent.learn.service.LearnContentService;
@@ -34,13 +33,13 @@ import java.util.Map;
  * <ol>
  *   <li>FETCH：先查 {@code knowledge_subtopic}；无则调 LLM（prompt key={@value #GEN_PROMPT_KEY}）
  *       生成 JSON 列表并批量落库；解析时校验数量与字段，缺失触发重试</li>
- *   <li>REGENERATE：删 {@code knowledge_subtopic} + {@code learn_chat}（清掉绑在旧讲解上的对话），重生</li>
+ *   <li>REGENERATE：删 {@code knowledge_subtopic}，重生</li>
  * </ol>
  *
  * <h3>边界</h3>
  * <ul>
  *   <li>节点不存在 → 40400；action 未知 → 40001；LLM 全部重试失败 → 50000</li>
- *   <li>本服务<b>只</b>动 {@code knowledge_subtopic} + {@code learn_chat}；题目永远不动</li>
+ *   <li>本服务<b>只</b>动 {@code knowledge_subtopic}；题目永远不动</li>
  * </ul>
  */
 @Service
@@ -57,20 +56,17 @@ public class LearnContentServiceImpl implements LearnContentService {
 
     private final KnowledgeNodeMapper nodeMapper;
     private final KnowledgeSubtopicMapper subtopicMapper;
-    private final LearnChatMapper chatMapper;
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
     private final StudyQuestionMapper questionMapper;
 
     public LearnContentServiceImpl(KnowledgeNodeMapper nodeMapper,
                                    KnowledgeSubtopicMapper subtopicMapper,
-                                   LearnChatMapper chatMapper,
                                    LearnHelper helper,
                                    LlmInvoker llmInvoker,
                                    StudyQuestionMapper questionMapper) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
-        this.chatMapper = chatMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
         this.questionMapper = questionMapper;
@@ -175,7 +171,6 @@ public class LearnContentServiceImpl implements LearnContentService {
 
     /**
      * 删除单条子话题（需校验属于本 KP）。
-     * <p>{@code learn_chat.quoted_subtopic_id} 上的 FK 是 ON DELETE SET NULL，无需手动清。
      */
     @Override
     @Transactional
@@ -239,10 +234,10 @@ public class LearnContentServiceImpl implements LearnContentService {
     }
 
     /**
-     * 强制重生：清子话题 + 对话，重新调 LLM。
+     * 强制重生：清子话题，重新调 LLM。
      * <ol>
      *   <li>Step 1: 校验节点</li>
-     *   <li>Step 2: 先删 {@code learn_chat}（不然 FK 会把 quoted_subtopic_id SET NULL，无所谓），再删 {@code knowledge_subtopic}</li>
+     *   <li>Step 2: 删 {@code knowledge_subtopic}</li>
      *   <li>Step 3: 调 LLM 生成并落库</li>
      * </ol>
      */
@@ -255,8 +250,7 @@ public class LearnContentServiceImpl implements LearnContentService {
         // Step 2: 取 KP 级 advisory 锁，与并发的 fetch/regenerate 串行化，防重复生成
         subtopicMapper.acquireGenLock(kpId);
 
-        // Step 3: 清对话 + 子话题
-        chatMapper.deleteByKpId(kpId);
+        // Step 3: 清子话题
         subtopicMapper.deleteByKp(kpId);
 
         // Step 4: 重新生成

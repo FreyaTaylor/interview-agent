@@ -241,7 +241,6 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
      *   <li>查出待删节点，后面要用其 parentId。</li>
      *   <li>BFS 收集自身 + 所有子孙 id（避免递归 SQL / CTE，逻辑放 Java 可控）。</li>
      *   <li>手动清 FK：<br>
-     *       — learn_chat.kp_id 没 ON DELETE 约束 → 显式 DELETE<br>
      *       — interview_knowledge_question.knowledge_node_id 需 SET NULL（保留面试记录）<br>
      *       — 其他如 study_question / knowledge_content 已是 ON DELETE CASCADE，不用管</li>
      *   <li>批量 DELETE 所有节点。</li>
@@ -268,7 +267,6 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
 
         // Step 3: 清理非 CASCADE 的 FK 引用（空 List 会让 <foreach> 拼出非法 SQL，护守一下）
         if (!allIds.isEmpty()) {
-            repo.deleteLearnChat(allIds);
             repo.nullOutInterviewKnowledgeRefs(allIds);
         }
 

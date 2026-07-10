@@ -31,8 +31,6 @@ public final class PromptKeys {
     public static final String LEARN_SUBTOPIC_CONTENT = "learn/subtopic-content";
     /** 学习模式下「题目生成」（按子话题出题）。V10/V11 seed。 */
     public static final String LEARN_QUESTION_GEN = "learn/question-gen";
-    /** 学习模式下「Chat 对话」（讲解 + 引导）。V6/V7/V8/V10 seed（多版本迭代）。 */
-    public static final String LEARN_CHAT = "learn/chat";
 
     // ===== study 域（考核 / 答题评分）=====
     /** 答题每轮评分（状态机驱动 per-turn 评分）。V13 seed。 */
