@@ -8,8 +8,7 @@ function MasteryRing({ percent, color }) {
   const p = Math.max(0, Math.min(100, percent || 0))
   const offset = c * (1 - p / 100)
   return (
-    <svg className="mastery-ring" width="18" height="18" viewBox="0 0 18 18"
-      title={p > 0 ? `掌握度 ${p}%` : '尚未练习'}>
+    <svg className="mastery-ring" width="18" height="18" viewBox="0 0 18 18">
       <circle cx="9" cy="9" r={r} fill="none" stroke="#eee" strokeWidth="2.5" />
       {p > 0 && (
         <circle cx="9" cy="9" r={r} fill="none" stroke={color} strokeWidth="2.5"
@@ -20,6 +19,11 @@ function MasteryRing({ percent, color }) {
   )
 }
 
+// 掌握度配色：≥80 绿 / ≥40 黄 / >0 红 / 0 灰
+function masteryColor(p) {
+  return p >= 80 ? '#52c41a' : p >= 40 ? '#faad14' : p > 0 ? '#ff4d4f' : '#e0e0e0'
+}
+
 function TreeNode({ node, depth }) {
   const [collapsed, setCollapsed] = useState(false)
   const children = node.children || []
@@ -27,9 +31,9 @@ function TreeNode({ node, depth }) {
   const isCat = depth === 0
 
   const weight = node.interview_weight || 0
-  // 有效掌握度 = max(答题派生, 用户自评)；自评也能点亮圆环
-  const m = Math.max(node.mastery_level || 0, node.self_mastery || 0)
-  const color = m >= 80 ? '#52c41a' : m >= 40 ? '#faad14' : m > 0 ? '#ff4d4f' : '#e0e0e0'
+  // 答题掌握（近期答题派生）与自评掌握分开展示
+  const examM = node.mastery_level || 0
+  const selfM = node.self_mastery || 0
 
   return (
     <div className="tree-node">
@@ -49,7 +53,16 @@ function TreeNode({ node, depth }) {
                 <span key={i} className={i <= weight ? 'star on' : 'star off'}>★</span>
               ))}
             </span>
-            <MasteryRing percent={m} color={color} />
+            <span className="mastery-pair">
+              <span className="mp-item" title={examM > 0 ? `答题掌握度 ${examM}%` : '尚未答题'}>
+                <span className="mp-label">答题掌握度</span>
+                <MasteryRing percent={examM} color={masteryColor(examM)} />
+              </span>
+              <span className="mp-item" title={selfM > 0 ? `自评掌握度 ${selfM}%` : '尚未自评'}>
+                <span className="mp-label">自评掌握度</span>
+                <MasteryRing percent={selfM} color={masteryColor(selfM)} />
+              </span>
+            </span>
             <Link to={`/learn/${node.id}`} className="leaf-action learn">
               <span className="icon">📖</span>学习
             </Link>

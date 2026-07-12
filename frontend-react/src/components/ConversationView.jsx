@@ -60,10 +60,10 @@ function DialogItem({ m }) {
     if (m.note !== undefined && m.note !== null) {
       return <FeedbackBubbleV2 note={m.note} gapsFound={m.gaps_found || []} />
     }
-    // v1 兼容：covered + content（范例回答，默认收起）
+    // v1 兼容：covered + content（反馈：命中表 + 提示，默认展开）
     const covered = !!m.covered
     return (
-      <FeedbackBubble covered={covered} content={m.content} />
+      <FeedbackBubble covered={covered} content={m.content} hits={m.hits} />
     )
   }
   return (
@@ -109,9 +109,10 @@ function FeedbackBubbleV2({ note, gapsFound }) {
   )
 }
 
-// 范例回答气泡（v1）：默认收起（避免用户偷看答案），点击标题展开
-function FeedbackBubble({ covered, content }) {
-  const [open, setOpen] = useState(false)
+// 反馈气泡（v1 study）：默认展开，展示"提示 + 采分点命中表（命中规则 | 是否命中 | 原话）"
+function FeedbackBubble({ covered, content, hits }) {
+  const [open, setOpen] = useState(true)
+  const rows = Array.isArray(hits) ? hits : []
   return (
     <div className={`qa-msg qa-msg-feedback ${covered ? 'covered' : 'missed'} ${open ? 'is-open' : 'is-collapsed'}`}>
       <button
@@ -120,50 +121,32 @@ function FeedbackBubble({ covered, content }) {
         onClick={() => setOpen(v => !v)}
         aria-expanded={open}
       >
-        <span>范例回答</span>
-        <span className={`qa-cov-badge ${covered ? 'ok' : 'miss'}`}>
-          {covered ? '✓ 已覆盖' : '✗ 未覆盖'}
-        </span>
-        <span className="qa-feedback-toggle-hint">{open ? '收起 ▲' : '点击展开 ▼'}</span>
+        <span>反馈</span>
+        <span className="qa-feedback-toggle-hint">{open ? '收起 ▲' : '展开 ▼'}</span>
       </button>
-      {open && <FeedbackBody content={content} />}
+      {open && (
+        <div className="qa-msg-body qa-feedback-v2-body">
+          {content && <div className="qa-feedback-note">{content}</div>}
+          {rows.length > 0 && (
+            <table className="qa-hits-table">
+              <thead>
+                <tr><th>命中规则</th><th>是否命中</th><th>原话</th></tr>
+              </thead>
+              <tbody>
+                {rows.map((r, i) => (
+                  <tr key={i} className={r.hit ? 'hit' : 'miss'}>
+                    <td>{r.hit_rule || r.key_point || '—'}</td>
+                    <td className="qa-hit-cell">{r.hit ? '✅ 命中' : '❌ 未命中'}</td>
+                    <td className="qa-hit-quote">{r.hit ? (r.quote || '—') : '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
     </div>
   )
-}
-
-// 范例回答正文：兼容 string（旧数据）与 string[]（新版分点）
-function FeedbackBody({ content }) {
-  // 数组 → 分点列表
-  if (Array.isArray(content)) {
-    const items = content.map(s => String(s || '').trim()).filter(Boolean)
-    if (items.length === 0) return null
-    return (
-      <ul className="qa-msg-body qa-feedback-list">
-        {items.map((p, i) => <li key={i}>{p}</li>)}
-      </ul>
-    )
-  }
-  // 字符串 → 优先按换行拆点；否则按中文项目符号拆点
-  const text = String(content || '')
-  let lines = text.split(/\n+/).map(s => s.trim()).filter(Boolean)
-  if (lines.length < 2) {
-    // 兜底：按 "1." / "一、" / "•" / "·" / "- " 切分
-    lines = text
-      .split(/\s*(?:[1-9]\.|[一二三四五六七八九十]、|•|·|-\s)/)
-      .map(s => s.trim())
-      .filter(Boolean)
-  } else {
-    // 已按行切分时，去掉行首符号
-    lines = lines.map(s => s.replace(/^[\s\-•·]*(?:[1-9]\.|[一二三四五六七八九十]、)?\s*/, ''))
-  }
-  if (lines.length >= 2) {
-    return (
-      <ul className="qa-msg-body qa-feedback-list">
-        {lines.map((p, i) => <li key={i}>{p}</li>)}
-      </ul>
-    )
-  }
-  return <div className="qa-msg-body">{text}</div>
 }
 
 function FinalScoreBlock({ attempt }) {

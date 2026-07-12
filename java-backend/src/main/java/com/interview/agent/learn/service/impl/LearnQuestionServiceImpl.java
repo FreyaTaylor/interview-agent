@@ -56,7 +56,7 @@ import java.util.Map;
 public class LearnQuestionServiceImpl implements LearnQuestionService {
 
     private static final Logger log = LoggerFactory.getLogger(LearnQuestionServiceImpl.class);
-    private static final String LEAF = "leaf";
+    private static final String LEAF = "knowledge_point";
     private static final int DEFAULT_QUESTION_COUNT = 5;
     private static final int REGENERATE_BATCH = 5;
     private static final int REGENERATE_CAP = 15;
@@ -133,6 +133,17 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         // Step 2: 先删作答记录，再删题
         attemptMapper.deleteByStudyQuestion(questionId);
         questionMapper.deleteByIdAndKp(questionId, kpId);
+    }
+
+    /** 切换单题 tier（core/ext）：校验值域，按 kp 归属更新，0 行受影响 → 越权/不存在。 */
+    @Override
+    @Transactional
+    public void setQuestionTier(long kpId, long questionId, String tier) {
+        String t = "ext".equalsIgnoreCase(tier) ? "ext" : "core";
+        int n = questionMapper.updateTier(questionId, kpId, t);
+        if (n == 0) {
+            throw new BizException(40400, "题目不存在或不属于该知识点");
+        }
     }
 
     /**
@@ -299,11 +310,14 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         return null;
     }
 
-    /** 叶子节点查全部题目转 DTO，并附题目分（无 finished 记录为 null）。 */
+    /** 叶子节点查题目转 DTO，只取高频(core)题（答题=高频题），并附题目分（无 finished 记录为 null）。 */
     private List<QuestionItemView> loadLeafQuestions(KnowledgeNode node) {
         List<StudyQuestion> rows = questionMapper.findByKpId(node.id());
         List<QuestionItemView> out = new ArrayList<>(rows.size());
         for (StudyQuestion r : rows) {
+            if (!"core".equals(r.tier())) {
+                continue;   // 答题页只出高频题；扩展题不进答题范围
+            }
             Integer score = scoreAggregate.questionScore(r.id());
             out.add(new QuestionItemView(r.id(), r.content(), r.sortOrder(), r.recommendedAnswer(), score));
         }

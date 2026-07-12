@@ -40,7 +40,7 @@ import java.util.regex.Pattern;
  *   <li>6.5 以"我"为锚重排 turn_ids</li>
  *   <li>6.6 吸收纯面试官孤儿组</li>
  *   <li>7  回填 original_dialogue</li>
- *   <li>8  单段遗漏问题二次检查</li>
+ *   <li>8  遗漏问题二次检查（全文级，单/多段均执行）</li>
  * </ol>
  *
  * <p>对齐依据：{@code java-backend/docs/modules/interview-parser-python-spec.md}。</p>
@@ -117,10 +117,10 @@ public class InterviewParserServiceImpl implements InterviewParserService {
         // 7）回填 original_dialogue
         backfillOriginalDialogue(all, turns);
 
-        // 8）二次检查（仅单段）
-        if (chunks.size() == 1) {
-            appendMissedQuestions(all, rawText);
-        }
+        // 8）遗漏问题二次检查（全文级）。
+        //    原限「仅单段」——长面试(>1200字)分多段时被完全跳过，是漏题的主因；
+        //    missed-check prompt 吃整段 raw_text + 已解析问题清单，与分段数无关，故对多段同样执行。
+        appendMissedQuestions(all, rawText);
 
         return new PreviewParseResponse(turns, all, "");
     }
@@ -688,7 +688,7 @@ public class InterviewParserServiceImpl implements InterviewParserService {
     }
 
     // ============================================================
-    // 8）遗漏二次检查（仅单段）
+    // 8）遗漏二次检查（全文级，单/多段均执行）
     // ============================================================
 
     private void appendMissedQuestions(List<Map<String, Object>> groups, String rawText) {

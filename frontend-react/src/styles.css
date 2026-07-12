@@ -126,7 +126,7 @@ body {
   background: #d0d0d0; flex-shrink: 0; margin: 0 9px;
 }
 
-.node-name { flex: 1; font-size: 14px; color: #333; }
+.node-name { flex: 1; min-width: 6em; font-size: 14px; color: #333; word-break: break-word; }
 .cat .node-name { font-size: 15px; cursor: pointer; }
 
 /* 叶子节点右侧 */
@@ -136,6 +136,10 @@ body {
 .stars .star.on { color: #faad14; }
 .stars .star.off { color: #e8e8e8; }
 .mastery-ring { display: block; flex: 0 0 auto; }
+/* 答题掌握 + 自评掌握 双环 */
+.mastery-pair { display: inline-flex; align-items: center; gap: 10px; flex: 0 0 auto; }
+.mp-item { display: inline-flex; align-items: center; gap: 3px; }
+.mp-label { font-size: 11px; color: #999; white-space: nowrap; }
 
 /* 学习 / 答题 入口按钮 — 极简胶囊样式 */
 .leaf-action {
@@ -905,17 +909,14 @@ body {
 }
 .learn-title { margin: 0; font-size: 17px; font-weight: 700; line-height: 1.2; }
 .learn-meta { display: flex; gap: 16px; align-items: center; font-size: 13px; color: #999; }
-.learn-self-mastery { display: inline-flex; align-items: center; gap: 6px; }
+.learn-exam-mastery { color: #666; white-space: nowrap; }
+.learn-exam-mastery b { color: #1677ff; font-weight: 700; }
+.learn-self-mastery { display: inline-flex; align-items: center; gap: 8px; }
 .lsm-label { color: #999; }
-.lsm-chip {
-  padding: 2px 10px; border-radius: 12px;
-  border: 1px solid #e0e0e0; background: #fff; color: #888;
-  font-size: 12px; font-family: inherit; cursor: pointer; transition: all 0.15s;
+.lsm-slider {
+  width: 160px; height: 4px; cursor: pointer; accent-color: #1677ff;
 }
-.lsm-chip:hover { border-color: #91caff; color: #1677ff; }
-.lsm-chip.active {
-  background: #e6f4ff; border-color: #1677ff; color: #1677ff; font-weight: 600;
-}
+.lsm-value { min-width: 3em; font-weight: 600; color: #1677ff; }
 .learn-badge-new {
   padding: 2px 8px; font-size: 11px; background: #fff7e6; color: #fa8c16;
   border: 1px solid #ffd591; border-radius: 10px;
@@ -1013,8 +1014,18 @@ body {
   background: linear-gradient(90deg, #e6f4ff 0%, transparent 100%);
   padding: 6px 12px; border-radius: 6px; border-left: 3px solid #1677ff;
 }
-.learn-sub-card-title-text { flex: 1; min-width: 0; }
+.learn-sub-card-title-text { flex: 1; min-width: 0; transition: color 0.25s ease; }
 .learn-sub-card-body { font-size: 13.5px; color: #555; line-height: 1.8; }
+.learn-collapse-btn {
+  padding: 2px 10px; margin-bottom: 8px; font-size: 12px; font-family: inherit;
+  color: #1677ff; background: transparent; border: 1px solid #d6e4ff;
+  border-radius: 4px; cursor: pointer; transition: all 0.15s;
+}
+.learn-collapse-btn:hover { background: #e6f4ff; border-color: #91caff; }
+.learn-body-box {
+  border: 1px solid #eee; border-radius: 8px; padding: 12px 16px; background: #fafafa;
+  margin-top: 8px;
+}
 .learn-sub-card-body p { margin: 4px 0; }
 
 /* 子话题卡片头部右侧（掌握度徽标 + 重要度星） */
@@ -1037,16 +1048,64 @@ body {
   margin: 0; padding-left: 20px; font-size: 13px; color: #4b5563;
 }
 .learn-sub-targets-list li { margin: 2px 0; }
+/* 目标题：题干前 tier 徽标 + 查看参考答案按钮 + 嵌套参考答案子框 */
+.learn-target-item { margin: 4px 0; }
+.learn-target-line { display: flex; align-items: baseline; flex-wrap: wrap; gap: 2px; }
+.learn-target-text { flex: 1 1 auto; }
+.learn-answer-toggle {
+  flex: 0 0 auto; margin-right: 6px; padding: 0 8px;
+  font-size: 11px; line-height: 1.5; font-family: inherit;
+  color: #d46b08; background: #fff7e6; border: 1px solid #ffd591;
+  border-radius: 8px; cursor: pointer; transition: all 0.15s; white-space: nowrap;
+}
+.learn-answer-toggle:hover { background: #ffe7ba; border-color: #ffc069; }
+.learn-answer-box {
+  margin: 6px 0 4px; padding: 8px 14px;
+  background: #fffbe6; border: 1px solid #ffe58f; border-radius: 8px;
+}
+.learn-answer-subtitle {
+  font-size: 12px; font-weight: 700; color: #ad6800; margin: 4px 0 6px;
+}
+.learn-refans-block { margin-top: 10px; }
+.learn-rubric-table {
+  width: 100%; border-collapse: collapse; font-size: 12.5px; color: #614700;
+  background: #fff; border-radius: 6px; overflow: hidden;
+}
+.learn-rubric-table th, .learn-rubric-table td {
+  border: 1px solid #ffe58f; padding: 5px 10px; text-align: left; vertical-align: top;
+}
+.learn-rubric-table th {
+  background: #fff7d6; font-weight: 700; color: #ad6800; white-space: nowrap;
+}
+.learn-rubric-table td :where(p, span) { margin: 0; }
+.learn-rubric-score { width: 44px; text-align: center; font-weight: 700; white-space: nowrap; }
+.learn-answer-list {
+  margin: 0; padding-left: 18px; font-size: 13px; color: #614700; line-height: 1.7;
+}
+.learn-answer-list li { margin: 3px 0; }
+.learn-answer-list li :where(p, span) { margin: 0; }
+.learn-tier-badge {
+  display: inline-block; font-size: 11px; line-height: 1.4;
+  padding: 0 6px; border-radius: 8px; margin-right: 6px; vertical-align: middle;
+  cursor: pointer; font-family: inherit;
+}
+.learn-tier-badge:hover { filter: brightness(0.95); }
+.learn-tier-badge.core { color: #1677ff; background: #eef5ff; border: 1px solid #d6e8ff; }
+.learn-tier-badge.ext { color: #999; background: #f5f5f5; border: 1px solid #eaeaea; }
 
-/* pending 子话题的"生成讲解"按钮 */
+/* pending 子话题的"生成讲解" / "收起·展开讲解"按钮 —— 干净的圆角胶囊 */
 .learn-sub-gen-btn {
   display: inline-flex; align-items: center; gap: 6px;
-  padding: 8px 18px; font-size: 13.5px; font-weight: 600;
-  color: #1677ff; background: #fff; border: 1px dashed #91caff;
-  border-radius: 8px; cursor: pointer; transition: all 0.15s;
+  padding: 7px 16px; font-size: 13px; font-weight: 600; font-family: inherit;
+  color: #1677ff; background: #f0f7ff; border: 1px solid #d6e8ff;
+  border-radius: 18px; cursor: pointer; transition: all 0.18s;
 }
-.learn-sub-gen-btn:hover:not(:disabled) { background: #e6f4ff; border-style: solid; }
-.learn-sub-gen-btn:disabled { color: #999; border-color: #d9d9d9; cursor: not-allowed; }
+.learn-sub-gen-btn:hover:not(:disabled) {
+  background: #e0efff; border-color: #adceff; color: #0958d9;
+  box-shadow: 0 2px 8px rgba(22, 119, 255, 0.15);
+}
+.learn-sub-gen-btn:active:not(:disabled) { transform: translateY(1px); }
+.learn-sub-gen-btn:disabled { color: #999; background: #f5f5f5; border-color: #eee; cursor: not-allowed; }
 
 .learn-sub-card-body strong { color: #1f1f1f; font-weight: 700; }
 .learn-sub-card-body ul,
@@ -1060,6 +1119,30 @@ body {
   padding: 8px 14px; margin: 8px 0; border-radius: 0 6px 6px 0;
   color: #444; font-size: 13px;
 }
+/* 讲解正文 markdown 排版：标题分级 / 表格加边框 / 行内代码 / 代码块 */
+.learn-sub-card-body h3 { font-size: 15px; font-weight: 700; color: #1f1f1f; margin: 14px 0 6px; }
+.learn-sub-card-body h4 { font-size: 13.5px; font-weight: 700; color: #333; margin: 10px 0 4px; }
+.learn-sub-card-body h3:first-child, .learn-sub-card-body h4:first-child { margin-top: 0; }
+.learn-sub-card-body hr { border: none; border-top: 1px solid #eee; margin: 12px 0; }
+.learn-sub-card-body table {
+  width: 100%; border-collapse: collapse; margin: 10px 0;
+  font-size: 13px; background: #fff; border-radius: 6px; overflow: hidden;
+}
+.learn-sub-card-body th, .learn-sub-card-body td {
+  border: 1px solid #e8e8e8; padding: 6px 12px; text-align: left; vertical-align: top;
+}
+.learn-sub-card-body th { background: #f0f5ff; font-weight: 700; color: #333; }
+.learn-sub-card-body tbody tr:nth-child(even) td { background: #fafcff; }
+.learn-sub-card-body code {
+  background: #f2f4f7; color: #c7254e; font-size: 0.9em;
+  font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+  padding: 1px 5px; border-radius: 4px;
+}
+.learn-sub-card-body pre {
+  background: #1e1e1e; color: #e6e6e6; padding: 12px 14px; border-radius: 8px;
+  overflow-x: auto; margin: 10px 0; font-size: 12.5px; line-height: 1.6;
+}
+.learn-sub-card-body pre code { background: none; color: inherit; padding: 0; }
 
 /* 子话题卡片 - 头部（标题 + 重要度） */
 .learn-sub-card-head {
@@ -1091,6 +1174,10 @@ body {
 }
 .learn-sub-card-delete:hover {
   background: #fff1f0; color: #ff4d4f; opacity: 1 !important;
+}
+/* hover 删除按钮时，子话题标题渐变为红色（提示将删除该子话题） */
+.learn-sub-card-title:has(.learn-sub-card-delete:hover) .learn-sub-card-title-text {
+  color: #ff4d4f;
 }
 
 /* 子话题卡片 - 被引用高亮 */
@@ -1966,6 +2053,23 @@ body {
   padding-top: 10px;
   border-top: 1px dashed #adc6ff;
 }
+/* 答题反馈：采分点命中表（命中规则 | 是否命中 | 原话） */
+.qa-hits-table {
+  width: 100%; border-collapse: collapse; margin-top: 8px;
+  font-size: 12.5px; color: #333; background: #fff; border-radius: 6px; overflow: hidden;
+}
+.qa-hits-table th, .qa-hits-table td {
+  border: 1px solid #eee; padding: 6px 10px; text-align: left; vertical-align: top;
+}
+.qa-hits-table th {
+  background: #fafafa; font-weight: 700; color: #555; white-space: nowrap;
+}
+.qa-hits-table tr.hit td { background: #f6ffed; }
+.qa-hits-table tr.miss td { background: #fff1f0; }
+.qa-hit-cell { white-space: nowrap; font-weight: 600; }
+.qa-hits-table tr.hit .qa-hit-cell { color: #389e0d; }
+.qa-hits-table tr.miss .qa-hit-cell { color: #cf1322; }
+.qa-hit-quote { color: #614700; }
 .qa-feedback-gaps-title {
   font-size: 12px; font-weight: 600; color: #1d39c4;
   margin-bottom: 6px;
@@ -2230,8 +2334,18 @@ body {
   padding: 14px 18px; font-size: 14px; font-weight: 700;
   color: #1f1f1f; border-bottom: 1px solid #f0f0f0;
   display: flex; align-items: center; justify-content: space-between;
-  flex-shrink: 0;
+  flex-shrink: 0; gap: 8px;
 }
+.qa-kp-mastery-pair { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+.qa-kp-mastery {
+  margin-left: auto; font-size: 11.5px; font-weight: 700;
+  padding: 2px 9px; border-radius: 10px; white-space: nowrap;
+}
+.qa-kp-mastery-pair .qa-kp-mastery { margin-left: 0; }
+.qa-kp-mastery.high { color: #389e0d; background: #f6ffed; border: 1px solid #b7eb8f; }
+.qa-kp-mastery.mid  { color: #d48806; background: #fffbe6; border: 1px solid #ffe58f; }
+.qa-kp-mastery.low  { color: #cf1322; background: #fff1f0; border: 1px solid #ffccc7; }
+.qa-kp-mastery.none { color: #999;    background: #f5f5f5; border: 1px solid #eee; }
 .qa-side-body {
   flex: 1; overflow-y: auto; padding: 12px 14px;
 }

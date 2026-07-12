@@ -12,15 +12,10 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * project_node 表 Mapper（MyBatis @ 注解）。
+ * 项目树节点 Mapper —— 统一节点树 {@code tree_node} 中 {@code tree_kind='project'} 的部分。
  *
- * <p>与 KnowledgeNodeMapper 平行；差异：
- * <ul>
- *   <li>列集少：无 interview_weight / mastery_level / study_count / is_user_created</li>
- *   <li>有 user_id 列（写入固定 1）</li>
- * </ul>
- *
- * embedding 写入用 #{embeddingLiteral}::vector，与 S1 一致。
+ * <p>node_type 按 level 固定：1=project / 2=topic / 3=question（项目树固定三层）。
+ * embedding 写入用 #{embeddingLiteral}::vector，与知识树一致。
  */
 @Mapper
 public interface ProjectNodeMapper {
@@ -33,36 +28,36 @@ public interface ProjectNodeMapper {
     // ===== 查询 =====
 
     /** 列出全部项目节点；按 level → sort_order → id 给前端组树。 */
-    @Select("SELECT " + COLS + " FROM project_node ORDER BY level, sort_order, id")
+    @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'project' ORDER BY level, sort_order, id")
     List<ProjectNode> findAllOrdered();
 
-    @Select("SELECT " + COLS + " FROM project_node WHERE id = #{id}")
+    @Select("SELECT " + COLS + " FROM tree_node WHERE id = #{id}")
     Optional<ProjectNode> findById(@Param("id") long id);
 
-    @Select("SELECT id FROM project_node WHERE parent_id = #{parentId}")
+    @Select("SELECT id FROM tree_node WHERE parent_id = #{parentId}")
     List<Long> findChildIds(@Param("parentId") long parentId);
 
-    /** 取所有根节点（level=1，parent_id IS NULL）；用于 from-text 同名/语义去重。 */
-    @Select("SELECT " + COLS + " FROM project_node WHERE parent_id IS NULL ORDER BY id")
+    /** 取所有项目根节点（level=1，parent_id IS NULL）；用于 from-text 同名/语义去重。 */
+    @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'project' AND parent_id IS NULL ORDER BY id")
     List<ProjectNode> findRoots();
 
-    @Select("SELECT EXISTS(SELECT 1 FROM project_node WHERE parent_id = #{parentId})")
+    @Select("SELECT EXISTS(SELECT 1 FROM tree_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
-    // ===== S8 面试匹配（get_or_create + embedding 召回）=====
+    // ===== 面试匹配（get_or_create + embedding 召回）=====
 
-    /** 按 level + name 取 user_id=1 的节点 id（复刻 get_or_create「未命名项目」根的 filter_by）。 */
-    @Select("SELECT id FROM project_node WHERE user_id = 1 AND level = #{level} AND name = #{name} ORDER BY id LIMIT 1")
+    /** 按 level + name 取 user_id=1 的项目节点 id（复刻 get_or_create「未命名项目」根的 filter_by）。 */
+    @Select("SELECT id FROM tree_node WHERE tree_kind = 'project' AND user_id = 1 AND level = #{level} AND name = #{name} ORDER BY id LIMIT 1")
     Optional<Long> findIdByLevelAndName(@Param("level") short level, @Param("name") String name);
 
     /**
-     * 在指定 topic 下召回最相似的 level=3 叶子（embedding 非空）。
+     * 在指定 topic 下召回最相似的 question 叶子（embedding 非空）。
      * 复刻 match_or_create_question：{@code (embedding <=> :vec) AS distance} 取最近一条。
      */
     @Select("""
             SELECT id, name, (embedding <=> #{vec}::vector) AS distance
-            FROM project_node
-            WHERE parent_id = #{topicId} AND node_type = 'leaf' AND embedding IS NOT NULL
+            FROM tree_node
+            WHERE parent_id = #{topicId} AND node_type = 'question' AND embedding IS NOT NULL
             ORDER BY embedding <=> #{vec}::vector
             LIMIT 1
             """)
@@ -70,19 +65,19 @@ public interface ProjectNodeMapper {
             @Param("topicId") long topicId, @Param("vec") String vec);
 
     /** 累积问题表述：name = 旧 \\ 新（复刻 match_or_create_question 命中分支）。 */
-    @Update("UPDATE project_node SET name = #{name}, updated_at = NOW() WHERE id = #{id}")
+    @Update("UPDATE tree_node SET name = #{name}, updated_at = NOW() WHERE id = #{id}")
     int updateName(@Param("id") long id, @Param("name") String name);
 
-    /** 取某父节点下指定 level 的子节点列表，按 sort_order, id 排序。S7 用：root→L2 话题、L2→L3 题目。 */
-    @Select("SELECT " + COLS + " FROM project_node"
+    /** 取某父节点下指定 level 的子节点列表，按 sort_order, id 排序。root→L2 话题、L2→L3 题目。 */
+    @Select("SELECT " + COLS + " FROM tree_node"
             + " WHERE parent_id = #{parentId} AND level = #{level}"
             + " ORDER BY sort_order, id")
     List<ProjectNode> findChildrenByLevel(@Param("parentId") long parentId,
                                           @Param("level") short level);
 
-    /** 数某根（L1）下所有 L3 叶子题目数。供 projects-list real_question_count 使用。 */
-    @Select("SELECT COUNT(*) FROM project_node leaf"
-            + " JOIN project_node topic ON leaf.parent_id = topic.id"
+    /** 数某项目根（L1）下所有 L3 叶子题目数。供 projects-list real_question_count 使用。 */
+    @Select("SELECT COUNT(*) FROM tree_node leaf"
+            + " JOIN tree_node topic ON leaf.parent_id = topic.id"
             + " WHERE topic.parent_id = #{rootId} AND topic.level = 2 AND leaf.level = 3")
     int countLeavesUnderRoot(@Param("rootId") long rootId);
 
@@ -92,9 +87,9 @@ public interface ProjectNodeMapper {
      */
     @Select("""
             WITH RECURSIVE subtree AS (
-              SELECT id, level FROM project_node WHERE id = #{rootId}
+              SELECT id, level FROM tree_node WHERE id = #{rootId}
               UNION ALL
-              SELECT n.id, n.level FROM project_node n
+              SELECT n.id, n.level FROM tree_node n
                 JOIN subtree s ON n.parent_id = s.id
             )
             SELECT COALESCE(MAX(level), 0) FROM subtree
@@ -104,9 +99,9 @@ public interface ProjectNodeMapper {
     // ===== 插入 =====
 
     @Select("""
-            INSERT INTO project_node
-              (user_id, parent_id, name, level, node_type, sort_order)
-            VALUES (#{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{sortOrder})
+            INSERT INTO tree_node
+              (tree_kind, user_id, parent_id, name, level, node_type, sort_order)
+            VALUES ('project', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{sortOrder})
             RETURNING id
             """)
     long insertWithoutEmbedding(@Param("userId") long userId,
@@ -117,9 +112,9 @@ public interface ProjectNodeMapper {
                                 @Param("sortOrder") int sortOrder);
 
     @Select("""
-            INSERT INTO project_node
-              (user_id, parent_id, name, level, node_type, sort_order, embedding)
-            VALUES (#{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{sortOrder},
+            INSERT INTO tree_node
+              (tree_kind, user_id, parent_id, name, level, node_type, sort_order, embedding)
+            VALUES ('project', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{sortOrder},
                     #{embeddingLiteral}::vector)
             RETURNING id
             """)
@@ -135,7 +130,7 @@ public interface ProjectNodeMapper {
 
     /** name / sortOrder 用 COALESCE：null 表示不变。 */
     @Update("""
-            UPDATE project_node SET
+            UPDATE tree_node SET
               name = COALESCE(#{name}, name),
               sort_order = COALESCE(#{sortOrder}, sort_order),
               updated_at = NOW()
@@ -145,9 +140,9 @@ public interface ProjectNodeMapper {
                     @Param("name") String name,
                     @Param("sortOrder") Integer sortOrder);
 
-    /** 跨父移动：一次 UPDATE 写 parent_id / level / node_type（项目树硬规则 level≥3→leaf）。 */
+    /** 跨父移动：一次 UPDATE 写 parent_id / level / node_type（node_type 由 level 决定）。 */
     @Update("""
-            UPDATE project_node SET
+            UPDATE tree_node SET
               parent_id = #{parentId},
               level = #{level},
               node_type = #{nodeType},
@@ -159,28 +154,29 @@ public interface ProjectNodeMapper {
                    @Param("level") short level,
                    @Param("nodeType") String nodeType);
 
-    @Update("UPDATE project_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id}")
+    @Update("UPDATE tree_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id}")
     int updateSortOrder(@Param("id") long id, @Param("sortOrder") int sortOrder);
 
-    @Update("UPDATE project_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id}")
+    @Update("UPDATE tree_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id}")
     int updateNodeType(@Param("id") long id, @Param("nodeType") String nodeType);
 
     /**
-     * 把以 rootId 为根的子树（不含 root 自身）所有节点 level += delta。
-     * 与 S1 平行：跨父移动后整个子树 level 跟着平移，避免前端按 level 算缩进打扁。
-     * 同时按"硬规则" level≥3 → 'leaf'，否则 'category'（项目树固定三层；
-     *   实际操作中跨父挪动通常只发生在 level 1↔2 内部，level 3 已是叶子无子树）。
+     * 把以 rootId 为根的子树（不含 root 自身）所有节点 level += delta，
+     * node_type 按新 level 映射：1=project / 2=topic / 3=question（项目树固定三层）。
      */
     @Update("""
             WITH RECURSIVE descendants AS (
-              SELECT id, level FROM project_node WHERE parent_id = #{rootId}
+              SELECT id, level FROM tree_node WHERE parent_id = #{rootId}
               UNION ALL
-              SELECT n.id, n.level FROM project_node n
+              SELECT n.id, n.level FROM tree_node n
                 JOIN descendants d ON n.parent_id = d.id
             )
-            UPDATE project_node SET
+            UPDATE tree_node SET
               level = level + #{delta},
-              node_type = CASE WHEN (level + #{delta}) >= 3 THEN 'leaf' ELSE 'category' END,
+              node_type = CASE
+                WHEN (level + #{delta}) = 1 THEN 'project'
+                WHEN (level + #{delta}) = 2 THEN 'topic'
+                ELSE 'question' END,
               updated_at = NOW()
             WHERE id IN (SELECT id FROM descendants)
             """)
@@ -190,7 +186,7 @@ public interface ProjectNodeMapper {
 
     @Delete("""
             <script>
-            DELETE FROM project_node WHERE id IN
+            DELETE FROM tree_node WHERE id IN
             <foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>
             </script>
             """)

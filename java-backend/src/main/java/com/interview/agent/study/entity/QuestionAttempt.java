@@ -3,7 +3,10 @@ package com.interview.agent.study.entity;
 import java.time.Instant;
 
 /**
- * 一次完整作答（多态：study | project）—— 与 question_attempt 表一一对应。
+ * 一次完整作答 —— 与 question_attempt 表一一对应。
+ *
+ * <p>去多态后 {@code questionId} 直接指 {@code tree_node.id}（study 题与 project 题统一为 question 节点）；
+ * 不再有 {@code question_type} 判别列，按 question_id 全局唯一即可区分。
  *
  * <p>JSONB 字段类型为 {@code Object}（受 {@code JsonbTypeHandler} 约束），实际内容：
  * <ul>
@@ -18,7 +21,6 @@ import java.time.Instant;
 public record QuestionAttempt(
         Long id,
         Long userId,
-        String questionType,
         Long questionId,
         String status,
         Short finalScore,

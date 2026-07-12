@@ -459,7 +459,7 @@ export function InterviewReviewModal({
             const bg = isOrphan ? ORPHAN_BG : SECTION_BG[(colorIdx ?? 0) % SECTION_BG.length]
             const bd = isOrphan ? ORPHAN_BORDER : SECTION_BORDER[(colorIdx ?? 0) % SECTION_BORDER.length]
             return (
-              <section key={`sec-${secIdx}-${sec.gid}`} style={{
+              <section key={`sec-${sec.turns[0]?.uid ?? sec.gid}`} style={{
                 background: bg, border: `1px solid ${bd}`, borderRadius: 8,
                 padding: '12px 16px',
               }}>

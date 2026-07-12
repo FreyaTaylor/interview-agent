@@ -47,6 +47,20 @@ export default function ExamPage() {
   const qa = useQAFlow(API_STUDY, { style: 'java' })
   const bottomRef = useRef(null)
 
+  // 当前知识点的掌握度（从知识树按 id 查 答题派生 + 自评）
+  const kpMastery = useMemo(() => {
+    let found = { exam: 0, self: 0 }
+    const walk = (nodes) => {
+      for (const n of nodes || []) {
+        if (n.id === activeKpId) { found = { exam: n.mastery_level || 0, self: n.self_mastery || 0 }; return true }
+        if (walk(n.children)) return true
+      }
+      return false
+    }
+    walk(tree)
+    return found
+  }, [tree, activeKpId])
+
   // ---- 知识树到位后计算展开路径 ----
   useEffect(() => {
     if (tree.length > 0 && activeKpId) {
@@ -287,6 +301,14 @@ export default function ExamPage() {
           {questions.length > 0 && (
             <span style={{ fontSize: 12, color: '#999', fontWeight: 400 }}>
               {questions.length} 题
+            </span>
+          )}
+          {activeKpId && (
+            <span
+              className={`qa-kp-mastery ${kpMastery.exam >= 80 ? 'high' : kpMastery.exam >= 40 ? 'mid' : kpMastery.exam > 0 ? 'low' : 'none'}`}
+              title="该知识点答题掌握度（近期答题均分）"
+            >
+              答题掌握度 {kpMastery.exam}%
             </span>
           )}
         </div>

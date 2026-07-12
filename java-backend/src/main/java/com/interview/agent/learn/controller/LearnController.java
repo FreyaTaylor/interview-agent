@@ -5,6 +5,7 @@ import com.interview.agent.learn.dto.ContentView;
 import com.interview.agent.learn.dto.LearnAssetRequest;
 import com.interview.agent.learn.dto.QuestionDeleteRequest;
 import com.interview.agent.learn.dto.QuestionsView;
+import com.interview.agent.learn.dto.QuestionTierRequest;
 import com.interview.agent.learn.dto.SelfMasteryRequest;
 import com.interview.agent.learn.dto.SubtopicContentRequest;
 import com.interview.agent.learn.dto.SubtopicDeleteRequest;
@@ -61,6 +62,12 @@ public class LearnController {
     @PostMapping("/question-delete")
     public ApiResponse<Void> deleteQuestion(@Valid @RequestBody QuestionDeleteRequest req) {
         questionService.deleteQuestion(req.kpId(), req.questionId());
+        return ApiResponse.success(null);
+    }
+
+    @PostMapping("/question-tier")
+    public ApiResponse<Void> setQuestionTier(@Valid @RequestBody QuestionTierRequest req) {
+        questionService.setQuestionTier(req.kpId(), req.questionId(), req.tier());
         return ApiResponse.success(null);
     }
 

@@ -32,7 +32,12 @@ public class KnowledgeService {
     }
 
     public List<KnowledgeTreeNodeView> buildTree() {
-        List<KnowledgeNode> all = mapper.findAllOrdered(CurrentUser.id());
+        // tree_node 里知识树含 category/knowledge_point/subtopic/question 四类；
+        // 知识树视图只展示到"知识点"层，子话题/问题属学习页下钻，这里过滤掉；空名节点（占位/误建）也不展示。
+        List<KnowledgeNode> all = mapper.findAllOrdered(CurrentUser.id()).stream()
+                .filter(n -> "category".equals(n.nodeType()) || "knowledge_point".equals(n.nodeType()))
+                .filter(n -> n.name() != null && !n.name().isBlank())
+                .toList();
 
         // 用可变 List 暂存 children，最后整体作为 Record 字段返回
         Map<Long, List<KnowledgeTreeNodeView>> childrenBuckets = new HashMap<>(all.size() * 2);

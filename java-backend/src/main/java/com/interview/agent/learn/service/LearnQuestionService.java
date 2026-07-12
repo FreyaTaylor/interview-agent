@@ -19,4 +19,7 @@ public interface LearnQuestionService {
 
     /** 删除单道题（需校验属于本 KP），连带清理其作答记录。 */
     void deleteQuestion(long kpId, long questionId);
+
+    /** 切换单题 tier（core/ext），需校验属于本 KP。 */
+    void setQuestionTier(long kpId, long questionId, String tier);
 }

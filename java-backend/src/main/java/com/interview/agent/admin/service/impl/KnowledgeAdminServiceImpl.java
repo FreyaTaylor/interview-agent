@@ -65,7 +65,9 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
     public List<KnowledgeNodeView> listAll() {
         // 1. 从 DB 拉整表（按 parent + sort_order 有序）
         // 2. entity → view，脱敏（去掉 embedding / created_at 等底层字段）
+        // 3. 只保留类目/知识点层（tree_node 里子话题/问题节点不进 outliner 编辑器）
         return repo.findAllOrdered(CurrentUser.id()).stream()
+                .filter(n -> "category".equals(n.nodeType()) || "knowledge_point".equals(n.nodeType()))
                 .map(n -> new KnowledgeNodeView(
                         n.id(), n.parentId(), n.name(), n.level(), n.nodeType(),
                         n.interviewWeight(), n.sortOrder()))
@@ -109,8 +111,8 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
             level = 1;
         }
 
-        // Step 3: 新节点默认 leaf；一旦被加子节点会被升为 category（下面 Step 6 反向依赖这个默认值）
-        String nodeType = "leaf";
+        // Step 3: 新节点默认 knowledge_point；一旦被加子节点会被升为 category（下面 Step 6 反向依赖这个默认值）
+        String nodeType = "knowledge_point";
         short weight = req.interviewWeight() != null ? req.interviewWeight() : DEFAULT_INTERVIEW_WEIGHT;
 
         // Step 4: 同步生成 embedding（需要调 DashScope）；失败降级为 null，不阻断创建。
@@ -123,8 +125,8 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
                 ? repo.insertWithoutEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false)
                 : repo.insertWithEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false, embeddingLiteral);
 
-        // Step 6: 父节点升级——原本是 leaf 且现在多了个孩子 → 升为 category
-        if (parent != null && "leaf".equals(parent.nodeType())) {
+        // Step 6: 父节点升级——原本是 knowledge_point 且现在多了个孩子 → 升为 category
+        if (parent != null && "knowledge_point".equals(parent.nodeType())) {
             repo.updateNodeType(parent.id(), userId, "category");
         }
 
@@ -180,7 +182,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
                 newLevel = 1;
             }
             // Step 3.2: nodeType 按 "是否有子节点" 重评，与 level 解耦
-            String newNodeType = repo.hasChildren(id) ? "category" : "leaf";
+            String newNodeType = repo.hasChildren(id) ? "category" : "knowledge_point";
             // Step 3.3: 一句 SQL 同时改 parent / level / nodeType
             repo.moveParent(id, userId, req.parentId(), newLevel, newNodeType);
             // Step 3.4: 把整棵子树的 level 跟着平移 delta —— 否则前端按 level 算缩进会"打扁"
@@ -274,10 +276,10 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         long userId = CurrentUser.id();
         int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(userId, allIds);
 
-        // Step 5: 父节点降级——现在没娃了 → 变 leaf（与 create 中“leaf 加孩 → category”对称）
+        // Step 5: 父节点降级——现在没娃了 → 变 knowledge_point（与 create 中“knowledge_point 加孩 → category”对称）
         Long parentId = node.parentId();
         if (parentId != null && !repo.hasChildren(parentId)) {
-            repo.updateNodeType(parentId, userId, "leaf");
+            repo.updateNodeType(parentId, userId, "knowledge_point");
         }
 
         log.info("[KnowledgeAdmin] delete id={} (cascade {} nodes)", id, deleted);

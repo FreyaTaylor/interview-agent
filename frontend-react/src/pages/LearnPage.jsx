@@ -22,13 +22,6 @@ async function postLearn(path, body) {
   return resp.json()
 }
 
-// 自评掌握度三档（值与后端 clamp 保持 0-100；与答题派生掌握度相互独立）
-const SELF_LEVELS = [
-  { label: '了解', value: 40 },
-  { label: '掌握', value: 75 },
-  { label: '熟练', value: 100 },
-]
-
 // Markdown 渲染：在中文句号 / 问号 / 感叹号后插入硬换行（"  \n"），跳过代码块/标题/表格/引用
 // 两种情况都要处理：
 //   (1) 句号后同行非空字符 → 强行插换行   "AssertionError。 Exception" → "AssertionError。\nException"
@@ -44,7 +37,9 @@ function preprocessSentences(raw) {
       if (!trimmed) return line
       if (trimmed.startsWith('#') || trimmed.startsWith('|') || trimmed.startsWith('>')) return line
       const codeSlots = []
-      const guarded = line.replace(/`[^`\n]*`/g, m => {
+      // 保护行内代码 `code` 与加粗 **bold**：句号硬换行不能插进它们内部，
+      // 否则会把 ** 分隔符拆到两行 → 加粗解析失败，渲染出裸 ** 记号。
+      const guarded = line.replace(/`[^`\n]*`|\*\*[^*\n]+?\*\*/g, m => {
         codeSlots.push(m)
         return `\u0000${codeSlots.length - 1}\u0000`
       })
@@ -62,34 +57,81 @@ function MarkdownContent({ content }) {
   return <Markdown remarkPlugins={[remarkGfm]}>{preprocessSentences(content)}</Markdown>
 }
 
-// 重要度 ⭐⭐⭐⭐⭐（实心数 = importance）
-function ImportanceStars({ value }) {
-  const n = Math.max(1, Math.min(5, value || 3))
+// 行内 Markdown（渲染加粗/行内代码等，不做整段换行处理，<p> 降级为 <span> 保持内联）
+function InlineMd({ children }) {
+  if (!children) return null
   return (
-    <span className="learn-importance" title={`面试重要度 ${n}/5`}>
-      {'★'.repeat(n)}<span className="learn-importance-dim">{'★'.repeat(5 - n)}</span>
-    </span>
+    <Markdown remarkPlugins={[remarkGfm]} components={{ p: ({ node, ...props }) => <span {...props} /> }}>
+      {String(children)}
+    </Markdown>
   )
 }
 
-// 追问直接展开显示：Q 一行 + A 正文（原“对话气泡”样式）
-function FollowupItem({ fu }) {
+// 单条目标题：题干前带 tier 徽标 + 查看/收起参考答案按钮；展开在嵌套子框内分点展示参考答案
+function TargetItem({ q, onToggleTier }) {
+  const [showAnswer, setShowAnswer] = useState(false)
+  const answer = Array.isArray(q.recommended_answer) ? q.recommended_answer : []
+  const rubric = Array.isArray(q.rubric) ? q.rubric : []
+  const hasAnswer = answer.length > 0 || rubric.length > 0
   return (
-    <div className="learn-fu">
-      <div className="learn-fu-q">
-        <span className="learn-fu-icon">🎙</span>
-        <span className="learn-fu-q-text">{fu.q}</span>
+    <li className="learn-target-item">
+      <div className="learn-target-line">
+        <button
+          type="button"
+          className={`learn-tier-badge ${q.tier === 'ext' ? 'ext' : 'core'}`}
+          title="点击切换 高频/扩展"
+          onClick={() => onToggleTier(q.id, q.tier)}
+        >
+          {q.tier === 'ext' ? '扩展' : '高频'}
+        </button>
+        {hasAnswer && (
+          <button
+            type="button"
+            className="learn-answer-toggle"
+            onClick={() => setShowAnswer(v => !v)}
+          >{showAnswer ? '收起参考答案' : '查看参考答案'}</button>
+        )}
+        <span className="learn-target-text">{q.content}</span>
       </div>
-      <div className="learn-fu-a">
-        <MarkdownContent content={fu.a} />
-      </div>
-    </div>
+      {showAnswer && hasAnswer && (
+        <div className="learn-answer-box">
+          {rubric.length > 0 && (
+            <div className="learn-rubric-block">
+              <div className="learn-answer-subtitle">📊 评分采分点</div>
+              <table className="learn-rubric-table">
+                <thead>
+                  <tr><th>采分点</th><th>命中规则</th><th>权重</th></tr>
+                </thead>
+                <tbody>
+                  {rubric.map((r, i) => (
+                    <tr key={i}>
+                      <td><InlineMd>{r.key_point}</InlineMd></td>
+                      <td><InlineMd>{r.hit_rule}</InlineMd></td>
+                      <td className="learn-rubric-score">{r.score}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+          {answer.length > 0 && (
+            <div className="learn-refans-block">
+              <div className="learn-answer-subtitle">✍️ 参考答案</div>
+              <ul className="learn-answer-list">
+                {answer.map((pt, i) => <li key={i}><InlineMd>{pt}</InlineMd></li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </li>
   )
 }
 
 // 单个子话题卡片
-function SubtopicCard({ st, onDelete, onGenerate }) {
+function SubtopicCard({ st, onDelete, onGenerate, onToggleTier }) {
   const [generating, setGenerating] = useState(false)
+  const [bodyCollapsed, setBodyCollapsed] = useState(false)
   const isPending = st.content_status === 'pending' || !st.body_md
   const targets = Array.isArray(st.target_questions) ? st.target_questions : []
   async function handleGenerate() {
@@ -105,12 +147,14 @@ function SubtopicCard({ st, onDelete, onGenerate }) {
       <div className="learn-sub-card-head">
         <div className="learn-sub-card-title">
           <span className="learn-sub-card-title-text">{st.title}</span>
-          <button
-            className="learn-sub-card-delete"
-            title="删除此子话题"
-            onClick={(e) => { e.stopPropagation(); onDelete(st) }}
-            aria-label="删除此子话题"
-          >×</button>
+          {!st.is_hot && (
+            <button
+              className="learn-sub-card-delete"
+              title="删除此子话题（仅含扩展题的子话题可删）"
+              onClick={(e) => { e.stopPropagation(); onDelete(st) }}
+              aria-label="删除此子话题"
+            >×</button>
+          )}
         </div>
         <div className="learn-sub-card-head-right">
           {typeof st.mastery_level === 'number' && (
@@ -118,14 +162,19 @@ function SubtopicCard({ st, onDelete, onGenerate }) {
               掌握 {st.mastery_level}
             </span>
           )}
-          <ImportanceStars value={st.importance} />
         </div>
       </div>
       {targets.length > 0 && (
         <div className="learn-sub-targets">
           <div className="learn-sub-targets-label">🎯 学完你应能回答：</div>
           <ul className="learn-sub-targets-list">
-            {targets.map(q => <li key={q.id}>{q.content}</li>)}
+            {targets.map(q => (
+              <TargetItem
+                key={q.id}
+                q={q}
+                onToggleTier={(qid, tier) => onToggleTier(st.id, qid, tier)}
+              />
+            ))}
           </ul>
         </div>
       )}
@@ -135,14 +184,20 @@ function SubtopicCard({ st, onDelete, onGenerate }) {
             {generating ? '⏳ 生成中…' : '📖 生成讲解'}
           </button>
         ) : (
-          <MarkdownContent content={st.body_md} />
+          <>
+            <button
+              type="button"
+              className="learn-sub-gen-btn"
+              onClick={() => setBodyCollapsed(c => !c)}
+            >{bodyCollapsed ? '📖 展开讲解' : '📖 收起讲解'}</button>
+            {!bodyCollapsed && (
+              <div className="learn-body-box">
+                <MarkdownContent content={st.body_md} />
+              </div>
+            )}
+          </>
         )}
       </div>
-      {Array.isArray(st.followups) && st.followups.length > 0 && (
-        <div className="learn-fu-list">
-          {st.followups.map((fu, i) => <FollowupItem key={i} fu={fu} />)}
-        </div>
-      )}
     </div>
   )
 }
@@ -153,13 +208,11 @@ export default function LearnPage() {
   const tree = useKnowledgeTree()
   const [activeKpId, setActiveKpId] = useState(null)
   const [content, setContent] = useState(null) // { knowledge_point_name, subtopics, mastery_level }
-  const [questions, setQuestions] = useState([])
   const [loading, setLoading] = useState(false)
-  const [regenLoading, setRegenLoading] = useState(false)
   const [regenAllLoading, setRegenAllLoading] = useState(false)
   const [expandedIds, setExpandedIds] = useState(new Set())
+  const [selfVal, setSelfVal] = useState(0)   // 自评滑块本地值（0-100）
   const contentCacheRef = useRef({})
-  const questionsCacheRef = useRef({})
   // 记录正在请求中的 kp：防止 effect 依赖变化（如 tree.length 由 0→N）导致同一 kp 的 /content 被并发触发两次，
   // 首次生成尚未返回时缓存挡不住 → 会在后端重复生成两批子话题。
   const contentInflightRef = useRef({})
@@ -170,6 +223,11 @@ export default function LearnPage() {
     }
   }, [tree, kpId])
 
+  // 内容切换后同步自评滑块显示值
+  useEffect(() => {
+    setSelfVal(content?.self_mastery ?? 0)
+  }, [content?.self_mastery])
+
   useEffect(() => {
     if (kpId) {
       const id = parseInt(kpId)
@@ -177,7 +235,6 @@ export default function LearnPage() {
       setActiveKpId(id)
       if (tree.length > 0) setExpandedIds(findAncestorIds(tree, id))
       loadContent(id)
-      loadQuestions(id)
     }
   }, [kpId, tree.length])
 
@@ -223,25 +280,11 @@ export default function LearnPage() {
     }
   }, [])
 
-  const loadQuestions = useCallback(async (id) => {
-    const cached = questionsCacheRef.current[id]
-    if (cached) setQuestions(cached)
-    try {
-      const resp = await postLearn('/questions', { kp_id: id, action: 'fetch' })
-      if (resp.code === 0) {
-        const qs = resp.data?.questions || []
-        questionsCacheRef.current[id] = qs
-        setQuestions(qs)
-      }
-    } catch (e) { console.error('加载题目失败:', e) }
-  }, [])
-
   function handleSelectKp(id) {
     setActiveKpId(id)
     setExpandedIds(findAncestorIds(tree, id))
     navigate(`/learn/${id}`, { replace: true })
     loadContent(id)
-    loadQuestions(id)
   }
 
   // Step B：点击 pending 子话题的"生成讲解" → 调 /subtopic-content 生成正文 → 就地替换该卡片 + 同步缓存
@@ -260,6 +303,36 @@ export default function LearnPage() {
       })
     } catch (e) {
       alert('生成讲解失败: ' + e.message)
+    }
+  }
+
+  // 切换某目标题的 tier（core↔ext）：乐观更新本地态 + 缓存；后端失败则回滚
+  async function handleToggleTier(subtopicId, questionId, curTier) {
+    if (!activeKpId) return
+    const nextTier = curTier === 'ext' ? 'core' : 'ext'
+    const applyTier = (tier) => setContent(prev => {
+      if (!prev?.subtopics) return prev
+      const next = {
+        ...prev,
+        subtopics: prev.subtopics.map(s => s.id !== subtopicId ? s : {
+          ...s,
+          is_hot: (s.target_questions || []).some(q => q.id === questionId ? tier === 'core' : q.tier === 'core'),
+          target_questions: (s.target_questions || []).map(q => q.id === questionId ? { ...q, tier } : q),
+        }),
+      }
+      contentCacheRef.current[activeKpId] = next
+      return next
+    })
+    applyTier(nextTier)
+    try {
+      const resp = await postLearn('/question-tier', { kp_id: Number(activeKpId), question_id: questionId, tier: nextTier })
+      if (resp.code !== 0) {
+        applyTier(curTier)
+        alert('切换失败: ' + (resp.message || '未知错误'))
+      }
+    } catch (e) {
+      applyTier(curTier)
+      alert('切换失败: ' + e.message)
     }
   }
 
@@ -286,29 +359,11 @@ export default function LearnPage() {
     }
   }
 
-  async function handleDeleteQuestion(q) {
-    if (!activeKpId) return
-    if (!window.confirm(`确定删除题目「${q.question}」？该题的作答记录也会一并删除。`)) return
-    try {
-      const resp = await postLearn('/question-delete', {
-        kp_id: Number(activeKpId), question_id: q.id,
-      })
-      if (resp.code !== 0) {
-        alert('删除失败: ' + (resp.message || '未知错误'))
-        return
-      }
-      const next = questions.filter(item => item.id !== q.id)
-      questionsCacheRef.current[activeKpId] = next
-      setQuestions(next)
-    } catch (e) {
-      alert('删除失败: ' + e.message)
-    }
-  }
-
-  // 设置/清除自评掌握度（再点当前档位 = 取消）
+  // 设置自评掌握度（滑块 0-100）
   async function handleSetSelfMastery(value) {
     if (!activeKpId) return
-    const next = content?.self_mastery === value ? null : value
+    const next = value
+    if (content?.self_mastery === next) return   // 值未变，跳过请求
     try {
       const resp = await postLearn('/self-mastery', { kp_id: Number(activeKpId), self_mastery: next })
       if (resp.code !== 0) {
@@ -328,8 +383,6 @@ export default function LearnPage() {
     }
   }
 
-  const m = content?.mastery_level || 0
-  const mColor = m >= 80 ? '#52c41a' : m >= 40 ? '#faad14' : m > 0 ? '#ff4d4f' : '#e0e0e0'
   const subtopics = content?.subtopics || []
   return (
     <div className="learn-container">
@@ -368,20 +421,21 @@ export default function LearnPage() {
             <div className="learn-info-bar">
               <h2 className="learn-title">{content.knowledge_point_name}</h2>
               <div className="learn-meta">
-                <span className="learn-mastery">
-                  答题掌握度 <span style={{ color: mColor, fontWeight: 600 }}>{m}%</span>
-                </span>
                 <span className="learn-self-mastery">
-                  <span className="lsm-label" title="看完讲解觉得掌握了？手动自评一下（与答题掌握度分开计）">自评</span>
-                  {SELF_LEVELS.map(lv => (
-                    <button
-                      key={lv.value}
-                      type="button"
-                      className={`lsm-chip ${content?.self_mastery === lv.value ? 'active' : ''}`}
-                      title={`自评为「${lv.label}」（再点一次取消）`}
-                      onClick={() => handleSetSelfMastery(lv.value)}
-                    >{lv.label}</button>
-                  ))}
+                  <span className="lsm-label" title="看完讲解后自评掌握程度">自评掌握度</span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    step="5"
+                    value={selfVal}
+                    className="lsm-slider"
+                    onChange={e => setSelfVal(Number(e.target.value))}
+                    onMouseUp={e => handleSetSelfMastery(Number(e.target.value))}
+                    onTouchEnd={e => handleSetSelfMastery(Number(e.target.value))}
+                    onKeyUp={e => handleSetSelfMastery(Number(e.target.value))}
+                  />
+                  <span className="lsm-value">{selfVal}%</span>
                 </span>
               </div>
             </div>
@@ -392,12 +446,12 @@ export default function LearnPage() {
                 <div className="learn-content-actions" style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
                   <button
                     className="learn-regen-all-btn"
-                    title="清空当前讲解，重新生成（题目不变）"
+                    title="清空当前学习内容，重新生成（题目不变）"
                     disabled={regenAllLoading}
                     style={{ padding: '4px 12px', fontSize: 12, cursor: regenAllLoading ? 'not-allowed' : 'pointer', color: '#1677ff', background: 'transparent', border: '1px solid #1677ff', borderRadius: 4, opacity: regenAllLoading ? 0.6 : 1 }}
                     onClick={async () => {
                       if (!activeKpId || regenAllLoading) return
-                      if (!confirm('确定重新生成讲解？当前讲解会被清空（题目不受影响）。')) return
+                      if (!confirm('确定重新生成学习内容？当前学习目标/学习内容会被清空（题目不受影响）。')) return
                       setRegenAllLoading(true)
                       try {
                         const resp = await postLearn('/content', { kp_id: activeKpId, action: 'regenerate' })
@@ -413,7 +467,7 @@ export default function LearnPage() {
                         setRegenAllLoading(false)
                       }
                     }}
-                  >{regenAllLoading ? '生成中…' : '🔁 重新生成讲解'}</button>
+                  >{regenAllLoading ? '生成中…' : '🔁 重新生成学习内容'}</button>
                 </div>
 
                 <div className="learn-sub-cards">
@@ -426,72 +480,10 @@ export default function LearnPage() {
                       st={st}
                       onDelete={handleDeleteSubtopic}
                       onGenerate={handleGenerateSubtopic}
+                      onToggleTier={handleToggleTier}
                     />
                   ))}
                 </div>
-
-                {/* 高频面试题 */}
-                {questions.length > 0 && (
-                  <div className="learn-questions">
-                    <div className="learn-q-header-row">
-                      <h3>🎯 高频面试题</h3>
-                      <button
-                        className="learn-regen-q-btn"
-                        title="生成 5 道新题（已有作答的题目会保留，总数最多 15 道）"
-                        disabled={regenLoading}
-                        onClick={async () => {
-                          if (!activeKpId || regenLoading) return
-                          if (!confirm('确定生成 5 道新面试题？已有作答历史的题目会保留。')) return
-                          setRegenLoading(true)
-                          try {
-                            const resp = await postLearn('/questions', { kp_id: activeKpId, action: 'regenerate' })
-                            if (resp.code === 0) {
-                              const prevIds = new Set(questions.map(q => q.id))
-                              const newQs = resp.data?.questions || []
-                              const addedCount = newQs.filter(q => !prevIds.has(q.id)).length
-                              questionsCacheRef.current[activeKpId] = newQs
-                              setQuestions(newQs)
-                              if (addedCount === 0) {
-                                alert(`题目总数已达上限（${newQs.length} 道），未新增。`)
-                              }
-                            } else {
-                              alert(resp.message || '重新生成失败')
-                            }
-                          } catch (e) {
-                            alert('重新生成失败: ' + e.message)
-                          } finally {
-                            setRegenLoading(false)
-                          }
-                        }}
-                      >{regenLoading ? '⏳ 生成中...' : '🔄 重新生成题目'}</button>
-                    </div>
-                    {questions.map((q, i) => (
-                      <div key={q.id ?? i} className="learn-question-card">
-                        <div className="learn-q-title-row">
-                          <div className="learn-q-title">Q{i + 1}: {q.question}</div>
-                          {q.id != null && (
-                            <button
-                              type="button"
-                              className="learn-q-del-btn"
-                              title="删除该题"
-                              aria-label="删除该题"
-                              onClick={() => handleDeleteQuestion(q)}
-                            >×</button>
-                          )}
-                        </div>
-                        {Array.isArray(q.recommended_answer) && q.recommended_answer.length > 0 ? (
-                          <ul className="learn-q-answer">
-                            {q.recommended_answer.map((line, j) => (<li key={j}>{line}</li>))}
-                          </ul>
-                        ) : typeof q.recommended_answer === 'string' && q.recommended_answer ? (
-                          <div className="learn-q-answer-text">{q.recommended_answer}</div>
-                        ) : (
-                          <div className="learn-q-answer-empty">（暂无范例答案）</div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
               </div>
             </div>
           </>

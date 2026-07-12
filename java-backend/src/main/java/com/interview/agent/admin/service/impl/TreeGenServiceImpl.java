@@ -387,7 +387,7 @@ public class TreeGenServiceImpl implements TreeGenService {
 
         // Step 2: 判定 nodeType / 权重
         boolean isLeaf = node.isLeaf();
-        String nodeType = isLeaf ? "leaf" : "category";
+        String nodeType = isLeaf ? "knowledge_point" : "category";
         short weight = node.interviewWeight() != null ? node.interviewWeight() : DEFAULT_WEIGHT;
 
         // Step 3: 构造 embedding 文本（"父路径 / 当前名"），生成向量；失败降级 null

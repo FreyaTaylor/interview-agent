@@ -60,17 +60,20 @@ public class InterviewNodeMatcher {
     private final EmbeddingService embeddingService;
     private final UserAnswerEmbeddingMapper answerEmbeddingMapper;
     private final LlmInvoker llmInvoker;
+    private final com.interview.agent.learn.mapper.StudyQuestionMapper questionMapper;
 
     public InterviewNodeMatcher(KnowledgeNodeMapper knowledgeMapper,
                                 ProjectNodeMapper projectMapper,
                                 EmbeddingService embeddingService,
                                 UserAnswerEmbeddingMapper answerEmbeddingMapper,
-                                LlmInvoker llmInvoker) {
+                                LlmInvoker llmInvoker,
+                                com.interview.agent.learn.mapper.StudyQuestionMapper questionMapper) {
         this.knowledgeMapper = knowledgeMapper;
         this.projectMapper = projectMapper;
         this.embeddingService = embeddingService;
         this.answerEmbeddingMapper = answerEmbeddingMapper;
         this.llmInvoker = llmInvoker;
+        this.questionMapper = questionMapper;
     }
 
     // ============================================================
@@ -233,11 +236,11 @@ public class InterviewNodeMatcher {
         }
         if (emb != null) {
             return knowledgeMapper.insertWithEmbedding(
-                    userId, rootId, name, (short) 2, "leaf",
+                    userId, rootId, name, (short) 2, "knowledge_point",
                     DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false, emb);
         }
         return knowledgeMapper.insertWithoutEmbedding(
-                userId, rootId, name, (short) 2, "leaf",
+                userId, rootId, name, (short) 2, "knowledge_point",
                 DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false);
     }
 
@@ -289,7 +292,7 @@ public class InterviewNodeMatcher {
     private long getOrCreateUnnamedProjectRoot() {
         return projectMapper.findIdByLevelAndName((short) 1, UNNAMED_PROJECT)
                 .orElseGet(() -> projectMapper.insertWithoutEmbedding(
-                        CurrentUser.id(), null, UNNAMED_PROJECT, (short) 1, "category", ORPHAN_SORT_ORDER));
+                        CurrentUser.id(), null, UNNAMED_PROJECT, (short) 1, "project", ORPHAN_SORT_ORDER));
     }
 
     /** Step 2: 话题 —— 精确名匹配 → LLM 语义匹配 → 新建 level=2。 */
@@ -322,7 +325,7 @@ public class InterviewNodeMatcher {
             }
         }
         // 3) 新建
-        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), rootId, topic, (short) 2, "category", 0);
+        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), rootId, topic, (short) 2, "topic", 0);
     }
 
     /** Step 3: 问题叶子 —— embedding 相似度匹配；命中累积表述，未命中新建 level=3。 */
@@ -349,8 +352,8 @@ public class InterviewNodeMatcher {
             }
             return hit.id();
         }
-        // 未命中：新建 leaf（带 embedding）
-        return projectMapper.insertWithEmbedding(CurrentUser.id(), topicId, text, (short) 3, "leaf", 0, vec);
+        // 未命中：新建 question 叶子（带 embedding）
+        return projectMapper.insertWithEmbedding(CurrentUser.id(), topicId, text, (short) 3, "question", 0, vec);
     }
 
     /** embedding 不可用时的兜底：精确名匹配，否则新建（无 embedding）。 */
@@ -361,22 +364,57 @@ public class InterviewNodeMatcher {
                 return s.id();
             }
         }
-        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), topicId, text, (short) 3, "leaf", 0);
+        return projectMapper.insertWithoutEmbedding(CurrentUser.id(), topicId, text, (short) 3, "question", 0);
     }
 
     // ============================================================
     // 副作用：知识权重 + 用户回答向量
     // ============================================================
 
-    /** 复刻 update_knowledge_weights：命中知识节点 interview_weight +1（上限 5）。 */
+    /** 复刻 update_knowledge_weights：命中知识节点 interview_weight +1（上限 5）；
+     *  并把该组识别出的面试题落成该 KP 下的 core 题（题干去重，直接挂 KP）。 */
     public void updateKnowledgeWeights(List<Map<String, Object>> scoredGroups) {
         for (Map<String, Object> g : scoredGroups) {
             if ("knowledge".equals(str(g.get("type")))) {
                 Long nodeId = toLong(g.get("matched_node_id"));
                 if (nodeId != null) {
                     knowledgeMapper.bumpInterviewWeight(nodeId, CurrentUser.id());
+                    landInterviewQuestions(nodeId, g);
                 }
             }
+        }
+    }
+
+    /** 把面试组识别出的问题落成该 KP 下的 core 题（tier=core，rubric 懒补）；按归一化题干去重。 */
+    private void landInterviewQuestions(long kpNodeId, Map<String, Object> g) {
+        if (!(g.get("questions") instanceof List<?> qs) || qs.isEmpty()) {
+            return;
+        }
+        // 已有题干集合（归一化）用于去重
+        java.util.Set<String> existing = new java.util.HashSet<>();
+        for (com.interview.agent.learn.entity.StudyQuestion q : questionMapper.findByKpId(kpNodeId)) {
+            existing.add(normalize(q.content()));
+        }
+        int sort = questionMapper.maxSortOrder(kpNodeId) + 1;
+        for (Object o : qs) {
+            String content;
+            if (o instanceof Map<?, ?> m) {
+                Object qv = m.get("q");
+                if (qv == null) {
+                    qv = m.get("question");
+                }
+                content = str(qv).strip();
+            } else {
+                content = str(o).strip();
+            }
+            if (content.isEmpty()) {
+                continue;
+            }
+            String key = normalize(content);
+            if (!existing.add(key)) {
+                continue;   // 已存在等价题，跳过（保持 core，不重复插）
+            }
+            questionMapper.insert(kpNodeId, content, java.util.List.of(), null, sort++);
         }
     }
 

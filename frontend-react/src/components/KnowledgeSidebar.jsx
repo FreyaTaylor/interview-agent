@@ -72,7 +72,7 @@ export function findAncestorIds(tree, targetId) {
 export function SidebarNode({ node, activeId, expandedIds, onSelect, depth = 0 }) {
   const children = node.children || []
   const hasKids = children.length > 0
-  const isLeaf = node.node_type === 'leaf'
+  const isLeaf = node.node_type === 'knowledge_point'
   const isActive = node.id === activeId
   const shouldExpand = expandedIds.has(node.id)
   const [collapsed, setCollapsed] = useState(!shouldExpand)

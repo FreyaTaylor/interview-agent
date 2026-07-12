@@ -27,7 +27,7 @@ import java.util.Optional;
 public interface ProjectAttemptMapper {
 
     String COLS = """
-            id, user_id, question_type, question_id, status,
+            id, user_id, question_id, status,
             final_score, rubric_result, overall_summary,
             design_issues, extension_qa, dialog, follow_up_count,
             finished_at, created_at
@@ -36,9 +36,9 @@ public interface ProjectAttemptMapper {
     @Select("SELECT " + COLS + " FROM question_attempt WHERE id = #{id}")
     Optional<QuestionAttempt> findById(@Param("id") long id);
 
-    /** 查找该用户该 project 题（L3 叶子）的进行中作答。业务保证至多 1 条。 */
+    /** 查找该用户该 project 题（question 叶子）的进行中作答。业务保证至多 1 条。 */
     @Select("SELECT " + COLS + " FROM question_attempt"
-            + " WHERE user_id = #{userId} AND question_type = 'project'"
+            + " WHERE user_id = #{userId}"
             + " AND question_id = #{questionId} AND status = 'in_progress'"
             + " ORDER BY id DESC LIMIT 1")
     Optional<QuestionAttempt> findInProgress(@Param("userId") long userId,
@@ -46,7 +46,7 @@ public interface ProjectAttemptMapper {
 
     /** 最近 N 次作答（含 in_progress + finished），按 created_at 倒序。 */
     @Select("SELECT " + COLS + " FROM question_attempt"
-            + " WHERE question_type = 'project' AND question_id = #{questionId}"
+            + " WHERE question_id = #{questionId}"
             + " ORDER BY created_at DESC, id DESC LIMIT #{limit}")
     List<QuestionAttempt> findRecent(@Param("questionId") long questionId,
                                      @Param("limit") int limit);
@@ -55,8 +55,7 @@ public interface ProjectAttemptMapper {
     @Select("""
             SELECT AVG(a.final_score) FROM (
               SELECT final_score FROM question_attempt
-              WHERE question_type = 'project'
-                AND question_id = #{questionId}
+              WHERE question_id = #{questionId}
                 AND status = 'finished'
               ORDER BY finished_at DESC NULLS LAST, id DESC
               LIMIT #{recentN}
@@ -68,8 +67,7 @@ public interface ProjectAttemptMapper {
     /** 该题已 finished 的作答次数（用于"已练习 N 次"展示）。 */
     @Select("""
             SELECT COUNT(*) FROM question_attempt
-            WHERE question_type = 'project'
-              AND user_id = #{userId}
+            WHERE user_id = #{userId}
               AND question_id = #{questionId}
               AND status = 'finished'
             """)
@@ -79,9 +77,9 @@ public interface ProjectAttemptMapper {
     /** 创建 in_progress；主问题已先写入 dialog。 */
     @Select("""
             INSERT INTO question_attempt
-              (user_id, question_type, question_id, status, dialog, follow_up_count)
+              (user_id, question_id, status, dialog, follow_up_count)
             VALUES (
-              #{userId}, 'project', #{questionId}, 'in_progress',
+              #{userId}, #{questionId}, 'in_progress',
               #{dialog,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
               0
             )

@@ -12,16 +12,19 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * knowledge_node 表的 Mapper（MyBatis @ 注解）。
+ * 知识树节点的 Mapper（MyBatis @ 注解）—— 统一节点树 {@code tree_node} 中 {@code tree_kind='knowledge'} 的部分。
  *
  * SQL 与 Java 同文件：注解里写 SQL 文本块，IDE 折叠后即一个方法一行声明。
  * snake_case ↔ camelCase 由全局 mybatis.configuration.map-underscore-to-camel-case 处理；
  * Record 结果映射依赖 -parameters 编译参数 + 构造器形参名匹配（已在 pom 配置）。
  *
- * 共享给：admin（S1/S5 CRUD/树生成）、knowledge（S2 查询）、study（S3 推荐）、interview（S7/S8 匹配）。
+ * 共享给：admin（CRUD/树生成）、knowledge（查询）、study（掌握度写回）、interview（匹配）。
  *
  * embedding 写入用 #{embeddingLiteral}::vector —— 参数仍然走预编译绑定，
  * 拼接后由 PG 转 vector 类型；EmbeddingService 已保证 literal 格式安全。
+ *
+ * <p>tree_node 结构与内容分离：本 Mapper 只管知识树骨架（类目/知识点节点）；
+ * 子话题正文在 subtopic_detail、问题内容在 question_detail（各自 Mapper）。
  */
 @Mapper
 public interface KnowledgeNodeMapper {
@@ -34,42 +37,45 @@ public interface KnowledgeNodeMapper {
 
     // ===== 查询 =====
 
-    @Select("SELECT " + COLS + " FROM knowledge_node WHERE user_id = #{userId} ORDER BY level, sort_order, id")
+    @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'knowledge'"
+            + " AND node_type IN ('category', 'knowledge_point')"
+            + " AND user_id = #{userId} ORDER BY level, sort_order, id")
     List<KnowledgeNode> findAllOrdered(@Param("userId") long userId);
 
-    @Select("SELECT " + COLS + " FROM knowledge_node WHERE id = #{id}")
+    @Select("SELECT " + COLS + " FROM tree_node WHERE id = #{id}")
     Optional<KnowledgeNode> findById(@Param("id") long id);
 
-    @Select("SELECT id FROM knowledge_node WHERE parent_id = #{parentId}")
+    @Select("SELECT id FROM tree_node WHERE parent_id = #{parentId}")
     List<Long> findChildIds(@Param("parentId") long parentId);
 
-    /** 取当前用户的所有根节点（parent_id IS NULL），用于 S5 树生成的同名/语义去重检查。 */
-    @Select("SELECT " + COLS + " FROM knowledge_node WHERE parent_id IS NULL AND user_id = #{userId} ORDER BY id")
+    /** 取当前用户的所有知识树根节点（parent_id IS NULL），用于树生成的同名/语义去重检查。 */
+    @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'knowledge' AND parent_id IS NULL AND user_id = #{userId} ORDER BY id")
     List<KnowledgeNode> findRoots(@Param("userId") long userId);
 
-    @Select("SELECT EXISTS(SELECT 1 FROM knowledge_node WHERE parent_id = #{parentId})")
+    @Select("SELECT EXISTS(SELECT 1 FROM tree_node WHERE parent_id = #{parentId})")
     boolean hasChildren(@Param("parentId") long parentId);
 
-    // ===== S8 面试匹配（embedding 召回 + 占位叶子 get_or_create）=====
+    // ===== 面试匹配（embedding 召回 + 占位知识点 get_or_create）=====
 
-    /** 按 level + name 取当前用户的一个节点 id（复刻 get_or_create「未命名知识点」根的 filter_by）。 */
-    @Select("SELECT id FROM knowledge_node WHERE level = #{level} AND name = #{name} AND user_id = #{userId} ORDER BY id LIMIT 1")
+    /** 按 level + name 取当前用户的一个知识节点 id（复刻 get_or_create「未命名知识点」根的 filter_by）。 */
+    @Select("SELECT id FROM tree_node WHERE tree_kind = 'knowledge' AND level = #{level} AND name = #{name} AND user_id = #{userId} ORDER BY id LIMIT 1")
     java.util.Optional<Long> findIdByLevelAndName(@Param("level") short level, @Param("name") String name,
                                                  @Param("userId") long userId);
 
     /** 在指定父下按 name 取子节点 id（复刻 _create_orphan_leaf 的同名复用）。 */
-    @Select("SELECT id FROM knowledge_node WHERE parent_id = #{parentId} AND name = #{name} AND user_id = #{userId} ORDER BY id LIMIT 1")
+    @Select("SELECT id FROM tree_node WHERE parent_id = #{parentId} AND name = #{name} AND user_id = #{userId} ORDER BY id LIMIT 1")
     java.util.Optional<Long> findChildIdByName(@Param("parentId") long parentId, @Param("name") String name,
                                                @Param("userId") long userId);
 
     /**
-     * pgvector 召回 top_k 最近叶子（仅 node_type='leaf' 且 embedding 非空）。
+     * pgvector 召回 top_k 最近知识点（仅 node_type='knowledge_point' 且 embedding 非空）。
      * 复刻 embedding_match_skill：{@code (embedding <=> :vec) AS distance} 升序。
      */
     @Select("""
             SELECT id, name, (embedding <=> #{vec}::vector) AS distance
-            FROM knowledge_node
-            WHERE node_type = 'leaf' AND embedding IS NOT NULL AND user_id = #{userId}
+            FROM tree_node
+            WHERE tree_kind = 'knowledge' AND node_type = 'knowledge_point'
+              AND embedding IS NOT NULL AND user_id = #{userId}
             ORDER BY embedding <=> #{vec}::vector
             LIMIT #{k}
             """)
@@ -78,7 +84,7 @@ public interface KnowledgeNodeMapper {
 
     /** interview_weight +1（上限 5）；复刻 update_knowledge_weights。仅当未达上限且属于当前用户时生效。 */
     @Update("""
-            UPDATE knowledge_node
+            UPDATE tree_node
             SET interview_weight = LEAST(5, interview_weight + 1), updated_at = NOW()
             WHERE id = #{id} AND user_id = #{userId} AND interview_weight < 5
             """)
@@ -90,10 +96,10 @@ public interface KnowledgeNodeMapper {
     // 比 @Options(useGeneratedKeys=true) + 可变 holder 干净（Record 无 setter）。
 
     @Select("""
-            INSERT INTO knowledge_node
-              (user_id, parent_id, name, level, node_type, interview_weight,
+            INSERT INTO tree_node
+              (tree_kind, user_id, parent_id, name, level, node_type, interview_weight,
                sort_order, is_user_created)
-            VALUES (#{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
+            VALUES ('knowledge', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
                     #{sortOrder}, #{isUserCreated})
             RETURNING id
             """)
@@ -107,10 +113,10 @@ public interface KnowledgeNodeMapper {
                                 @Param("isUserCreated") boolean isUserCreated);
 
     @Select("""
-            INSERT INTO knowledge_node
-              (user_id, parent_id, name, level, node_type, interview_weight,
+            INSERT INTO tree_node
+              (tree_kind, user_id, parent_id, name, level, node_type, interview_weight,
                sort_order, is_user_created, embedding)
-            VALUES (#{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
+            VALUES ('knowledge', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
                     #{sortOrder}, #{isUserCreated}, #{embeddingLiteral}::vector)
             RETURNING id
             """)
@@ -128,7 +134,7 @@ public interface KnowledgeNodeMapper {
 
     /** name / interviewWeight / sortOrder 用 COALESCE：null 表示不变；仅限当前用户自己的节点 */
     @Update("""
-            UPDATE knowledge_node SET
+            UPDATE tree_node SET
               name = COALESCE(#{name}, name),
               interview_weight = COALESCE(#{interviewWeight}, interview_weight),
               sort_order = COALESCE(#{sortOrder}, sort_order),
@@ -143,7 +149,7 @@ public interface KnowledgeNodeMapper {
 
     /** 跨父移动：一次 UPDATE 写 parent_id / level / node_type（仅限当前用户） */
     @Update("""
-            UPDATE knowledge_node SET
+            UPDATE tree_node SET
               parent_id = #{parentId},
               level = #{level},
               node_type = #{nodeType},
@@ -156,7 +162,7 @@ public interface KnowledgeNodeMapper {
                    @Param("level") short level,
                    @Param("nodeType") String nodeType);
 
-    @Update("UPDATE knowledge_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
+    @Update("UPDATE tree_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
     int updateSortOrder(@Param("id") long id, @Param("userId") long userId, @Param("sortOrder") int sortOrder);
 
     /**
@@ -166,24 +172,24 @@ public interface KnowledgeNodeMapper {
      */
     @Update("""
             WITH RECURSIVE descendants AS (
-              SELECT id FROM knowledge_node WHERE parent_id = #{rootId}
+              SELECT id FROM tree_node WHERE parent_id = #{rootId}
               UNION ALL
-              SELECT n.id FROM knowledge_node n
+              SELECT n.id FROM tree_node n
                 JOIN descendants d ON n.parent_id = d.id
             )
-            UPDATE knowledge_node SET
+            UPDATE tree_node SET
               level = level + #{delta},
               updated_at = NOW()
             WHERE id IN (SELECT id FROM descendants) AND user_id = #{userId}
             """)
     int shiftDescendantLevels(@Param("rootId") long rootId, @Param("userId") long userId, @Param("delta") int delta);
 
-    @Update("UPDATE knowledge_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
+    @Update("UPDATE tree_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
     int updateNodeType(@Param("id") long id, @Param("userId") long userId, @Param("nodeType") String nodeType);
 
-    /** S3 Study finish 钩子：覆盖最新掌握度并把 study_count 累加 1（仅限当前用户）。 */
+    /** Study finish 钩子：覆盖最新掌握度并把 study_count 累加 1（仅限当前用户）。 */
     @Update("""
-            UPDATE knowledge_node
+            UPDATE tree_node
             SET mastery_level = #{mastery},
                 study_count = study_count + 1,
                 updated_at = NOW()
@@ -192,14 +198,14 @@ public interface KnowledgeNodeMapper {
     int updateMastery(@Param("id") long id, @Param("userId") long userId, @Param("mastery") Integer mastery);
 
     /** 学习页手动设置/清除自评掌握度（selfMastery 为 null 表示清除；仅限当前用户）。 */
-    @Update("UPDATE knowledge_node SET self_mastery = #{selfMastery}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
+    @Update("UPDATE tree_node SET self_mastery = #{selfMastery}, updated_at = NOW() WHERE id = #{id} AND user_id = #{userId}")
     int updateSelfMastery(@Param("id") long id, @Param("userId") long userId, @Param("selfMastery") Short selfMastery);
 
     // ===== 删除 + FK 兜底 =====
 
     @Delete("""
             <script>
-            DELETE FROM knowledge_node WHERE user_id = #{userId} AND id IN
+            DELETE FROM tree_node WHERE user_id = #{userId} AND id IN
             <foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>
             </script>
             """)

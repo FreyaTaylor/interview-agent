@@ -8,7 +8,7 @@ package com.interview.agent.infra.db;
  *
  * <pre>
  *   String literal = PgVector.toLiteral(embedding);
- *   jdbcClient.sql("UPDATE knowledge_node SET embedding = ?::vector WHERE id = ?")
+ *   jdbcClient.sql("UPDATE tree_node SET embedding = ?::vector WHERE id = ?")
  *             .params(literal, id)
  *             .update();
  * </pre>

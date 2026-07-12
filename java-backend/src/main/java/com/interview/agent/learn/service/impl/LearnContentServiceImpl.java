@@ -17,6 +17,7 @@ import com.interview.agent.learn.mapper.StudyQuestionMapper;
 import com.interview.agent.learn.entity.StudyQuestion;
 import com.interview.agent.learn.service.LearnContentService;
 import com.interview.agent.learn.service.LearnHelper;
+import com.interview.agent.learn.service.RubricGenService;
 import com.interview.agent.prompts.PromptKeys;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -59,17 +60,20 @@ public class LearnContentServiceImpl implements LearnContentService {
     private final LearnHelper helper;
     private final LlmInvoker llmInvoker;
     private final StudyQuestionMapper questionMapper;
+    private final RubricGenService rubricGenService;
 
     public LearnContentServiceImpl(KnowledgeNodeMapper nodeMapper,
                                    KnowledgeSubtopicMapper subtopicMapper,
                                    LearnHelper helper,
                                    LlmInvoker llmInvoker,
-                                   StudyQuestionMapper questionMapper) {
+                                   StudyQuestionMapper questionMapper,
+                                   RubricGenService rubricGenService) {
         this.nodeMapper = nodeMapper;
         this.subtopicMapper = subtopicMapper;
         this.helper = helper;
         this.llmInvoker = llmInvoker;
         this.questionMapper = questionMapper;
+        this.rubricGenService = rubricGenService;
     }
 
     /**
@@ -140,21 +144,97 @@ public class LearnContentServiceImpl implements LearnContentService {
         return "ready".equals(s.contentStatus()) && s.bodyMd() != null && !s.bodyMd().isBlank();
     }
 
-    /** 调 LLM 产单子话题深度正文（输入 title + 目标题）。 */
+    /**
+     * 调 LLM 产单子话题深度正文（“答案先 → 讲解后”两步）。
+     * <ol>
+     *   <li>B1 采分点先：为每道目标题补 rubric + 分点范例答案（学考同源，{@link RubricGenService}）；</li>
+     *   <li>B2 讲解后：聚合采分点为 {@code answer_points} 约束，生成“必须讲清每个采分点”的讲解。</li>
+     * </ol>
+     */
     private String generateSubtopicBody(KnowledgeSubtopic s) {
+        // B1 答案先：逐题补齐 rubric + 范例答案（已有则跳过，幂等）
         List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
+        for (StudyQuestion q : qs) {
+            rubricGenService.ensureRubric(q);
+        }
+        // 重查拿到刚落库的 rubric，用于组装采分点约束
+        qs = questionMapper.findBySubtopic(s.id());
         String targets = qs.isEmpty()
                 ? "（无）"
                 : qs.stream().map(q -> "- " + q.content()).collect(java.util.stream.Collectors.joining("\n"));
+        // B2 讲解后：以采分点为契约约束讲解
         Map<String, Object> vars = Map.of(
                 "title", s.title(),
                 "category_path", helper.categoryPath(s.kpId()),
-                "target_questions", targets
+                "target_questions", targets,
+                "answer_points", buildAnswerPoints(qs)
         );
         LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPIC_CONTENT, vars,
                 GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
         return llmInvoker.invoke(spec, LearnContentServiceImpl::parseBody)
                 .orElseThrow(() -> new BizException(50000, "子话题正文生成失败，请重试"));
+    }
+
+    /** 把各目标题的 rubric 采分点拼成“讲解必须讲清”的契约文本。 */
+    private static String buildAnswerPoints(List<StudyQuestion> qs) {
+        StringBuilder sb = new StringBuilder();
+        for (StudyQuestion q : qs) {
+            List<String> kps = keyPoints(q.rubricTemplate());
+            if (kps.isEmpty()) {
+                continue;
+            }
+            sb.append("【题目】").append(q.content()).append('\n');
+            sb.append("必须讲清的采分点：").append(String.join(" / ", kps)).append("\n\n");
+        }
+        return sb.length() == 0 ? "（无）" : sb.toString().strip();
+    }
+
+    /** 从 rubric_template(jsonb list of {key_point,score}) 提取 key_point 列表。 */
+    private static List<String> keyPoints(Object rubric) {
+        List<String> out = new ArrayList<>();
+        if (rubric instanceof List<?> l) {
+            for (Object o : l) {
+                if (o instanceof Map<?, ?> m) {
+                    Object kp = m.get("key_point");
+                    if (kp != null && !kp.toString().isBlank()) {
+                        out.add(kp.toString().strip());
+                    }
+                }
+            }
+        }
+        return out;
+    }
+
+    /** jsonb 范例答案 → List&lt;String&gt;（兼容数组与单字符串；空则空列表）。 */
+    private static List<String> toStringList(Object o) {
+        if (o instanceof List<?> l) {
+            List<String> out = new ArrayList<>(l.size());
+            for (Object e : l) {
+                if (e != null && !e.toString().isBlank()) {
+                    out.add(e.toString().strip());
+                }
+            }
+            return out;
+        }
+        if (o instanceof String s && !s.isBlank()) {
+            return List.of(s.strip());
+        }
+        return List.of();
+    }
+
+    /** jsonb rubric_template → List&lt;{key_point, score}&gt;（前端渲染采分点表；空则空列表）。 */
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> toRubricList(Object o) {
+        if (o instanceof List<?> l) {
+            List<Map<String, Object>> out = new ArrayList<>(l.size());
+            for (Object e : l) {
+                if (e instanceof Map<?, ?> m) {
+                    out.add((Map<String, Object>) m);
+                }
+            }
+            return out;
+        }
+        return List.of();
     }
 
     /** raw → 正文：去首尾空白与可能的 markdown 围栏；过短视为无效触发重试。 */
@@ -275,11 +355,15 @@ public class LearnContentServiceImpl implements LearnContentService {
         int sort = 1;
         for (Map<String, Object> it : items) {
             String title = it.get("title").toString().strip();
-            int importance = clampImportance(it.get("importance"));
-            long subtopicId = subtopicMapper.insertPending(node.id(), title, importance, sort, "initial");
+            List<TargetQ> qs = dedupQuestions(targetQuestions(it));
+            // 初始化自动过滤：只含扩展(ext)题、无高频(core)题的子话题不落库（非高频，不值得单列）
+            if (qs.stream().noneMatch(q -> "core".equals(q.tier()))) {
+                continue;
+            }
+            long subtopicId = subtopicMapper.insertPending(node.id(), title, sort);
             int qsort = 1;
-            for (String q : dedupQuestions(targetQuestions(it))) {
-                questionMapper.insertForSubtopic(node.id(), subtopicId, q, qsort);
+            for (TargetQ q : qs) {
+                questionMapper.insertForSubtopic(subtopicId, q.content(), q.tier(), qsort);
                 qsort++;
             }
             sort++;
@@ -318,25 +402,35 @@ public class LearnContentServiceImpl implements LearnContentService {
         return parsed;
     }
 
-    /** 取一个子话题的 target_questions（字符串列表，空/非法返空）。 */
-    private static List<String> targetQuestions(Map<String, Object> it) {
+    /** 一道目标题的生成结果：题干 + tier（core/ext）。 */
+    private record TargetQ(String content, String tier) {}
+
+    /** 取一个子话题的 target_questions；兼容对象 {q,tier} 与旧字符串（字符串默认 core）。 */
+    private static List<TargetQ> targetQuestions(Map<String, Object> it) {
         if (!(it.get("target_questions") instanceof List<?> l)) {
             return List.of();
         }
-        List<String> out = new ArrayList<>(l.size());
+        List<TargetQ> out = new ArrayList<>(l.size());
         for (Object o : l) {
-            if (o != null && !o.toString().isBlank()) {
-                out.add(o.toString().strip());
+            if (o instanceof Map<?, ?> m) {
+                Object q = m.get("q");
+                if (q == null || q.toString().isBlank()) {
+                    continue;
+                }
+                String tier = "ext".equalsIgnoreCase(String.valueOf(m.get("tier"))) ? "ext" : "core";
+                out.add(new TargetQ(q.toString().strip(), tier));
+            } else if (o != null && !o.toString().isBlank()) {
+                out.add(new TargetQ(o.toString().strip(), "core"));
             }
         }
         return out;
     }
 
-    /** 目标题归一化精确去重（去空格/标点/大小写后相同的合并），保序。 */
-    private static List<String> dedupQuestions(List<String> qs) {
-        Map<String, String> seen = new LinkedHashMap<>();
-        for (String q : qs) {
-            String key = q.toLowerCase().replaceAll("[\\s\\p{Punct}\\u3000-\\u303F\\uFF00-\\uFFEF]", "");
+    /** 目标题归一化精确去重（去空格/标点/大小写后相同的合并），保序；保留首个的 tier。 */
+    private static List<TargetQ> dedupQuestions(List<TargetQ> qs) {
+        Map<String, TargetQ> seen = new LinkedHashMap<>();
+        for (TargetQ q : qs) {
+            String key = q.content().toLowerCase().replaceAll("[\\s\\p{Punct}\\u3000-\\u303F\\uFF00-\\uFFEF]", "");
             seen.putIfAbsent(key, q);
         }
         return new ArrayList<>(seen.values());
@@ -361,26 +455,7 @@ public class LearnContentServiceImpl implements LearnContentService {
         return new ArrayList<>(seen.values());
     }
 
-    /** importance：缺省 3；非整数尝试转 int；超 [1,5] 截断。 */
-    private static int clampImportance(Object raw) {
-        int v = 3;
-        if (raw instanceof Number n) {
-            v = n.intValue();
-        } else if (raw != null) {
-            try {
-                v = Integer.parseInt(raw.toString().strip());
-            } catch (NumberFormatException ignored) {
-                // 落默认 3
-            }
-        }
-        if (v < 1) {
-            return 1;
-        }
-        if (v > 5) {
-            return 5;
-        }
-        return v;
-    }
+    /** importance 已废弃（子话题不再有星级）。 */
 
     private ContentView buildView(KnowledgeNode node, List<KnowledgeSubtopic> rows, boolean generated) {
         List<SubtopicView> views = new ArrayList<>(rows.size());
@@ -399,45 +474,25 @@ public class LearnContentServiceImpl implements LearnContentService {
     private SubtopicView toViewWithQuestions(KnowledgeSubtopic s) {
         List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
         List<SubtopicView.TargetQuestion> targets = new ArrayList<>(qs.size());
+        boolean isHot = false;
         for (StudyQuestion q : qs) {
-            targets.add(new SubtopicView.TargetQuestion(q.id(), q.content()));
+            String tier = q.tier() == null ? "core" : q.tier();
+            if ("core".equals(tier)) {
+                isHot = true;
+            }
+            targets.add(new SubtopicView.TargetQuestion(q.id(), q.content(), tier,
+                    toStringList(q.recommendedAnswer()), toRubricList(q.rubricTemplate())));
         }
         return new SubtopicView(
                 s.id(),
                 s.title(),
                 s.bodyMd(),
-                s.importance() == null ? 3 : s.importance().intValue(),
-                followupsAsList(s.followups()),
                 s.sortOrder() == null ? 0 : s.sortOrder(),
-                s.source(),
                 s.contentStatus() == null ? "ready" : s.contentStatus(),
                 s.masteryLevel() == null ? null : s.masteryLevel().intValue(),
+                isHot,
                 targets
         );
     }
 
-    /** 无目标题的精简视图（供 chat 新增子话题复用；chat 子话题不挂考核题）。 */
-    static SubtopicView toView(KnowledgeSubtopic s) {
-        return new SubtopicView(
-                s.id(),
-                s.title(),
-                s.bodyMd(),
-                s.importance() == null ? 3 : s.importance().intValue(),
-                followupsAsList(s.followups()),
-                s.sortOrder() == null ? 0 : s.sortOrder(),
-                s.source(),
-                s.contentStatus() == null ? "ready" : s.contentStatus(),
-                s.masteryLevel() == null ? null : s.masteryLevel().intValue(),
-                java.util.List.of()
-        );
-    }
-
-    /** JSONB 读出是 Object（底层 List 或 String）；这里统一收拢为 List。脱类型失败走空 List 兑底。 */
-    @SuppressWarnings("unchecked")
-    static java.util.List<java.util.Map<String, Object>> followupsAsList(Object raw) {
-        if (raw instanceof java.util.List<?> list) {
-            return (java.util.List<java.util.Map<String, Object>>) list;
-        }
-        return java.util.List.of();
-    }
 }

@@ -3,17 +3,17 @@ package com.interview.agent.learn.entity;
 import java.time.Instant;
 
 /**
- * 知识点下的预生成面试题 — 与 study_question 表一一对应。
+ * 知识点下的预生成面试题 — tree_node(node_type='question') + question_detail 侧表的组合视图。
  *
- * <p>JSONB 字段：
+ * <p>骨架字段来自 tree_node：{@code id}、{@code content}=name（题干）、{@code subtopicId}=parent_id、
+ * {@code sortOrder}、{@code userId}、{@code createdAt}；{@code knowledgePointId} 由所属子话题的父节点派生。
+ *
+ * <p>内容字段来自 question_detail：
  * <ul>
- *   <li>{@code rubricTemplate} — 评分点数组 {@code [{key_point, score}, ...]}，总分 = 100</li>
+ *   <li>{@code tier} — 'core'(高频，默认答题范围) | 'ext'(扩展)</li>
+ *   <li>{@code rubricTemplate} — 评分点数组 {@code [{key_point, score}, ...]}，总分 = 100（懒生成）</li>
  *   <li>{@code recommendedAnswer} — 范例答案（字符串数组或字符串，二者皆兼容前端）</li>
  * </ul>
- *
- * <p>由 S4 Learn 模块（懒生成）写入；S3 Study 模块只读。
- *
- * <p>{@code subtopicId}：所属子话题（目标题归属）。历史题可能为 null；新流程必填。
  */
 public record StudyQuestion(
         Long id,
@@ -21,6 +21,7 @@ public record StudyQuestion(
         Long knowledgePointId,
         Long subtopicId,
         String content,
+        String tier,
         Object rubricTemplate,
         Object recommendedAnswer,
         int sortOrder,

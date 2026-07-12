@@ -132,8 +132,8 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
             ancestors = List.of();
         }
 
-        // Step 3: 项目树硬规则 —— level≥3 → leaf
-        String nodeType = (level >= MAX_LEVEL) ? "leaf" : "category";
+        // Step 3: 项目树 node_type 由 level 决定（1=project / 2=topic / 3=question）
+        String nodeType = projectNodeType(level);
 
         // Step 4: embedding 文本 = 祖先链 / 当前 name（空 name 跳过）
         String embedText = ancestors.isEmpty() ? name : String.join(" / ", ancestors) + " / " + name;
@@ -191,8 +191,8 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
                         "项目树最多 " + MAX_LEVEL + " 层（项目→话题→问题），此移动会导致子树深度达到第 "
                                 + newMaxAfterMove + " 层");
             }
-            // 项目树硬规则：node_type 直接由 level 决定
-            String newNodeType = (newLevel >= MAX_LEVEL) ? "leaf" : "category";
+            // 项目树 node_type 直接由 level 决定
+            String newNodeType = projectNodeType(newLevel);
             repo.moveParent(id, req.parentId(), newLevel, newNodeType);
 
             // 子树 level 平移（同时按硬规则重写 node_type，见 Mapper SQL）
@@ -253,14 +253,10 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
             interviewProjectQuestionMapper.nullOutByNodeIds(allIds);
         }
 
-        // Step 3: 批量 DELETE（project.root_node_id 由 V1 schema ON DELETE SET NULL 自动处理）
+        // Step 3: 批量 DELETE（tree_node parent_id ON DELETE CASCADE 自动清子树）
         int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(allIds);
 
-        // Step 4: 父降级 —— 与 S1 对称（项目树 level=2 父若没娃了，可以是 leaf）
-        Long parentId = node.parentId();
-        if (parentId != null && !repo.hasChildren(parentId)) {
-            repo.updateNodeType(parentId, "leaf");
-        }
+        // 项目树 node_type 由 level 决定，不因子节点增删而变，无需父降级。
 
         log.info("[ProjectAdmin] delete id={} (cascade {} nodes)", id, deleted);
         return Map.of("deleted", id);
@@ -322,6 +318,11 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
 
     private record SaveResult(long rootId, int leafCount) {}
 
+    /** 项目树 node_type 由 level 固定映射：1=project / 2=topic / 3=question。 */
+    private static String projectNodeType(int level) {
+        return level == 1 ? "project" : level == 2 ? "topic" : "question";
+    }
+
     /**
      * 递归把 TreeNodeJson 写入 project_node。
      * <ul>
@@ -341,10 +342,10 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
             throw new BizException(50000, "LLM 返回的节点 name 为空");
         }
 
-        // Step 2: 项目树硬规则 + 是否有 children 综合判定
+        // Step 2: 项目树硬规则 —— 到 MAX_LEVEL 停递归；node_type 由 level 决定
         boolean atMaxLevel = level >= MAX_LEVEL;
         boolean hasKids = !atMaxLevel && node.children() != null && !node.children().isEmpty();
-        String nodeType = hasKids ? "category" : "leaf";
+        String nodeType = projectNodeType(level);
 
         // Step 3: embedding 文本（项目树全部 level 都生成 embedding —— doc §0 决策 5）
         String embedText = ancestors.isEmpty() ? name : String.join(" / ", ancestors) + " / " + name;

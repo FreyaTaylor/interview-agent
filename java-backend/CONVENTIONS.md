@@ -203,7 +203,7 @@ xxx/
 - 实现类方法必须加 `@Override`
 - 现阶段每个接口仅一个实现；分层为后续切插代理 / 多实现路由 / 单测 mock 预留
 - 完整 Javadoc 只写一份在实现类上（避免接口与实现 Javadoc 双重维护漂移）；接口里每个方法一行注释说清"做什么"即可
-- **职责单一**：一个 Service 只动一类资源。Learn 模块拆 `LearnContentService`（只动 `knowledge_content` + `learn_chat`）/ `LearnQuestionService`（只动 `study_question`）/ `LearnChatService`（只动 `learn_chat` + 调 LLM），不做"大杂烩 LearnService"
+- **职责单一**：一个 Service 只动一类资源。Learn 模块拆 `LearnContentService`（只动子话题节点 `tree_node(subtopic)`+`subtopic_detail`）/ `LearnQuestionService`（只动问题节点 `tree_node(question)`+`question_detail`），不做"大杂烩 LearnService"
   - 判断：Impl 类头能写「本服务**只**动 X」3 个表名以内 → 拆得对；要写 5 个表名 → 拆早了
 - **模块内共用纯函数**：放 `xxx/service/XxxHelper.java`（`@Service`，扁平不入 `impl/`）；只供单个 Service 用 → 直接做 `private` 方法
 - **禁止**再创建 `*Generator` / `*Resolver` 这类薄包装层（历史的 `LearnContentGenerator` / `CategoryPathResolver` 已删，LLM 调用 inline 到 ServiceImpl + `LlmInvoker`）

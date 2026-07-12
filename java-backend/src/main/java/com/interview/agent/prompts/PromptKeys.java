@@ -25,8 +25,6 @@ public final class PromptKeys {
     // ===== learn 域 =====
     /** 学习模式下「子话题生成」（按知识点拆 5±2 个子话题）。V10/V11 seed。 */
     public static final String LEARN_SUBTOPICS_GEN = "learn/subtopics-gen";
-    /** 学习模式下「子话题审校去重+补全」（两步生成的第二步）。V37 seed。 */
-    public static final String LEARN_SUBTOPICS_REFINE = "learn/subtopics-refine";
     /** 学习模式下「单子话题深度正文」（Step B 懒生成，讲到机制层能答出目标题）。V41 seed。 */
     public static final String LEARN_SUBTOPIC_CONTENT = "learn/subtopic-content";
     /** 学习模式下「题目生成」（按子话题出题）。V10/V11 seed。 */
