@@ -171,6 +171,12 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                 asString(scoreBundle.overallAnalysis().get("comment"))
         );
 
+        // 副作用（在 updateFinalize 之前）：命中知识点 interview_weight +1 + 计算错题本(performance)。
+        // P4（三模块解耦）：不再把真题落到知识树（真题留面试模块，经 interview_question_kp_link 关联）。
+        // updateKnowledgeWeights 会给每个 knowledge group 附上 performance（错题本），
+        // 故须在此之后再 updateFinalize，才能把带 performance 的 parsedQuestions 落库。
+        nodeMatcher.updateKnowledgeWeights(scoredGroups);
+
         recordMapper.updateFinalize(
                 recordId,
                 scoreBundle.avgScore(),
@@ -190,7 +196,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
         for (Map<String, Object> g : scoredGroups) {
             String type = asString(g.get("type"));
             if ("knowledge".equals(type)) {
-                knowledgeQuestionMapper.insert(
+                long ikqId = knowledgeQuestionMapper.insert(
                         recordId,
                         asLongOrNull(g.get("matched_node_id")),
                         defaultTag(g),
@@ -199,6 +205,8 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                         asString(g.get("original_dialogue")),
                         g.get("score_result")
                 );
+                // P2：给该真题写「相关知识点」关联快照（语义召回 top-k，写 interview_question_kp_link）
+                nodeMatcher.linkRelatedKnowledge(ikqId, asString(g.get("knowledge_point")));
             } else if ("project".equals(type)) {
                 projectQuestionMapper.insert(
                         recordId,
@@ -220,8 +228,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
             }
         }
 
-        // Step 5: 副作用 —— 命中知识点 interview_weight +1 + 用户回答向量化
-        nodeMatcher.updateKnowledgeWeights(scoredGroups);
+        // Step 5: 副作用 —— 用户回答向量化（真题落库/错题本已在 updateFinalize 前完成）
         nodeMatcher.storeAnswerEmbeddings(scoredGroups);
 
         return new FinalizeResponse(

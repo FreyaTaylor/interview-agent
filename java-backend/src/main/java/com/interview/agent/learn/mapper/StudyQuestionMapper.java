@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Mapper;
 import org.apache.ibatis.annotations.Options;
 import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Select;
+import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
 
@@ -27,6 +28,7 @@ public interface StudyQuestionMapper {
             CASE WHEN p.node_type = 'subtopic' THEN p.parent_id ELSE p.id END AS knowledge_point_id,
             CASE WHEN p.node_type = 'subtopic' THEN t.parent_id ELSE NULL END AS subtopic_id,
             t.name AS content, q.tier, q.rubric_template, q.recommended_answer,
+            q.source, q.interview_record_id,
             t.sort_order, t.created_at
             """;
 
@@ -61,7 +63,7 @@ public interface StudyQuestionMapper {
             """)
     boolean existsByKpId(@Param("kpId") long kpId);
 
-    /** 直接挂在 KP 下新增问题（rubric/answer 可空，懒补）。返回新节点 id。 */
+    /** 直接挂在 KP 下新增问题（rubric/answer 可空，懒补；source 默认 generated）。返回新节点 id。 */
     @Select("""
             WITH n AS (
               INSERT INTO tree_node (tree_kind, user_id, parent_id, name, level, node_type, sort_order)
@@ -72,10 +74,11 @@ public interface StudyQuestionMapper {
                       'question', #{sortOrder})
               RETURNING id
             )
-            INSERT INTO question_detail (node_id, tier, rubric_template, recommended_answer)
+            INSERT INTO question_detail (node_id, tier, rubric_template, recommended_answer, source, interview_record_id)
             SELECT id, 'core',
                    #{rubricTemplate,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
-                   #{recommendedAnswer,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER}
+                   #{recommendedAnswer,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
+                   #{source}, #{interviewRecordId,jdbcType=BIGINT}
             FROM n
             RETURNING node_id AS id
             """)
@@ -84,6 +87,8 @@ public interface StudyQuestionMapper {
                 @Param("content") String content,
                 @Param("rubricTemplate") Object rubricTemplate,
                 @Param("recommendedAnswer") Object recommendedAnswer,
+                @Param("source") String source,
+                @Param("interviewRecordId") Long interviewRecordId,
                 @Param("sortOrder") int sortOrder);
 
     /** Step A 用：挂在子话题下的目标题（tier 由 LLM 标注，rubric 空——首次答题懒补）。返回新节点 id。 */
@@ -131,6 +136,7 @@ public interface StudyQuestionMapper {
     /** 直接挂 KP 下问题的 max(sort_order)（regenerate 追加用）；无则 -1。 */
     @Select("SELECT COALESCE(MAX(sort_order), -1) FROM tree_node WHERE parent_id = #{kpId} AND node_type = 'question'")
     int maxSortOrder(@Param("kpId") long kpId);
+
 
     /** 懒生成：回填单题的 rubric_template + recommended_answer（首次答题时调）。 */
     @org.apache.ibatis.annotations.Update("""

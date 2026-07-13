@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
-import { API_PROJECT_GRILLING, API_TEXT } from '../config'
+import { API_PROJECT_GRILLING, API_TEXT, API_INTERVIEW } from '../config'
 import AnswerInput from '../components/AnswerInput'
 import PageHeader from '../components/PageHeader'
 import ConversationView from '../components/ConversationView'
@@ -24,6 +24,8 @@ export default function ProjectGrillingPage() {
   const [projects, setProjects] = useState([])
   const [activeProjectId, setActiveProjectId] = useState(urlProjectId ? Number(urlProjectId) : null)
   const [profile, setProfile] = useState({ project_facts: [], weak_points: [] })
+  // 三模块解耦 P5：该项目关联的面试真题（只读）
+  const [relatedProjectQuestions, setRelatedProjectQuestions] = useState([])
   const [topics, setTopics] = useState([])
   const [openTopicId, setOpenTopicId] = useState(null)
   const [topicQuestions, setTopicQuestions] = useState({}) // topicId -> [questions]
@@ -82,6 +84,17 @@ export default function ProjectGrillingPage() {
     setHistory([])
     setHistoryCollapsed(false)
     loadProjectMeta(activeProjectId)
+  }, [activeProjectId])
+
+  // 三模块解耦 P5：拉取该项目关联的面试真题（只读）
+  useEffect(() => {
+    if (!activeProjectId) { setRelatedProjectQuestions([]); return }
+    let cancelled = false
+    fetch(`${API_INTERVIEW}/related-project-questions?project_id=${activeProjectId}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.code === 0) setRelatedProjectQuestions(d.data || []) })
+      .catch(() => { if (!cancelled) setRelatedProjectQuestions([]) })
+    return () => { cancelled = true }
   }, [activeProjectId])
 
   async function loadProjectMeta(pid) {
@@ -266,6 +279,20 @@ export default function ProjectGrillingPage() {
               profile.project_facts.map((f, i) => (
                 <div key={i} className="qa-profile-item">
                   {typeof f === 'string' ? f : (f.fact || f.content || JSON.stringify(f))}
+                </div>
+              ))
+            )}
+          </div>
+
+          <div className="qa-profile-section">
+            <div className="qa-profile-title">📌 相关面试真题</div>
+            {relatedProjectQuestions.length === 0 ? (
+              <div className="qa-profile-empty">暂无关联真题</div>
+            ) : (
+              relatedProjectQuestions.map(rq => (
+                <div key={rq.id} className="qa-profile-item">
+                  {rq.company && <span className="learn-related-src" title="来源面试">{rq.company}</span>}
+                  {(rq.questions && rq.questions[0]) || rq.project_name}
                 </div>
               ))
             )}

@@ -42,6 +42,24 @@ public interface KnowledgeNodeMapper {
             + " AND user_id = #{userId} ORDER BY level, sort_order, id")
     List<KnowledgeNode> findAllOrdered(@Param("userId") long userId);
 
+    /**
+     * 全量知识树（管理视图）：不过滤 node_type，问题节点 LEFT JOIN question_detail 带出 tier/source。
+     * interview_weight/mastery_level 对子话题/问题为 NULL，用 COALESCE 归零避免 short 主类型映射 NPE。
+     */
+    @Select("""
+            SELECT t.id, t.parent_id, t.name, t.level, t.node_type,
+                   COALESCE(t.interview_weight, 0) AS interview_weight,
+                   t.sort_order,
+                   COALESCE(t.mastery_level, 0) AS mastery_level,
+                   COALESCE(t.self_mastery, 0) AS self_mastery,
+                   q.tier, q.source
+            FROM tree_node t
+            LEFT JOIN question_detail q ON q.node_id = t.id AND t.node_type = 'question'
+            WHERE t.tree_kind = 'knowledge' AND t.user_id = #{userId}
+            ORDER BY t.level, t.sort_order, t.id
+            """)
+    List<com.interview.agent.knowledge.dto.KnowledgeFullRow> findFullTree(@Param("userId") long userId);
+
     @Select("SELECT " + COLS + " FROM tree_node WHERE id = #{id}")
     Optional<KnowledgeNode> findById(@Param("id") long id);
 
@@ -70,13 +88,16 @@ public interface KnowledgeNodeMapper {
     /**
      * pgvector 召回 top_k 最近知识点（仅 node_type='knowledge_point' 且 embedding 非空）。
      * 复刻 embedding_match_skill：{@code (embedding <=> :vec) AS distance} 升序。
+     * <p>额外 LEFT JOIN 父节点取 {@code path}（父分类名），供 rerank 时给 LLM 判"域"，防跨域错配。
      */
     @Select("""
-            SELECT id, name, (embedding <=> #{vec}::vector) AS distance
-            FROM tree_node
-            WHERE tree_kind = 'knowledge' AND node_type = 'knowledge_point'
-              AND embedding IS NOT NULL AND user_id = #{userId}
-            ORDER BY embedding <=> #{vec}::vector
+            SELECT n.id AS id, n.name AS name, p.name AS path,
+                   (n.embedding <=> #{vec}::vector) AS distance
+            FROM tree_node n
+            LEFT JOIN tree_node p ON p.id = n.parent_id
+            WHERE n.tree_kind = 'knowledge' AND n.node_type = 'knowledge_point'
+              AND n.embedding IS NOT NULL AND n.user_id = #{userId}
+            ORDER BY n.embedding <=> #{vec}::vector
             LIMIT #{k}
             """)
     List<com.interview.agent.interview.matcher.NodeMatch> findNearestLeaves(

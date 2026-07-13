@@ -8,7 +8,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
-import { API_LEARN } from '../config'
+import { API_LEARN, API_INTERVIEW } from '../config'
 import { findAncestorIds, SidebarNode, useKnowledgeTree, refreshKnowledgeTree } from '../components/KnowledgeSidebar'
 import { Skeleton, StagePulse } from '../components/Loading'
 
@@ -208,6 +208,8 @@ export default function LearnPage() {
   const tree = useKnowledgeTree()
   const [activeKpId, setActiveKpId] = useState(null)
   const [content, setContent] = useState(null) // { knowledge_point_name, subtopics, mastery_level }
+  // 三模块解耦 P3：该知识点关联的面试真题（只读，来自 interview_question_kp_link）
+  const [relatedQuestions, setRelatedQuestions] = useState([])
   const [loading, setLoading] = useState(false)
   const [regenAllLoading, setRegenAllLoading] = useState(false)
   const [expandedIds, setExpandedIds] = useState(new Set())
@@ -237,6 +239,17 @@ export default function LearnPage() {
       loadContent(id)
     }
   }, [kpId, tree.length])
+
+  // 三模块解耦 P3：拉取该知识点关联的面试真题（只读）
+  useEffect(() => {
+    if (!activeKpId) { setRelatedQuestions([]); return }
+    let cancelled = false
+    fetch(`${API_INTERVIEW}/related-questions?kp_id=${activeKpId}`)
+      .then(r => r.json())
+      .then(d => { if (!cancelled && d.code === 0) setRelatedQuestions(d.data || []) })
+      .catch(() => { if (!cancelled) setRelatedQuestions([]) })
+    return () => { cancelled = true }
+  }, [activeKpId])
 
   const loadContent = useCallback(async (id) => {
     const cached = contentCacheRef.current[id]
@@ -471,6 +484,27 @@ export default function LearnPage() {
                 </div>
 
                 <div className="learn-sub-cards">
+                  {relatedQuestions.length > 0 && (
+                    <div className="learn-sub-card learn-interview-card">
+                      <div className="learn-sub-card-head">
+                        <div className="learn-sub-card-title">
+                          <span className="learn-sub-card-title-text">📌 相关面试真题</span>
+                          <span className="learn-interview-count">{relatedQuestions.length} 道 · 真实被问过</span>
+                        </div>
+                      </div>
+                      <ul className="learn-sub-targets-list">
+                        {relatedQuestions.map(rq => (
+                          <li key={rq.id} className="learn-target-item">
+                            <div className="learn-target-line">
+                              <span className="learn-interview-tag" title="真实面试被问过">📌真题</span>
+                              {rq.company && <span className="learn-related-src" title="来源面试">{rq.company}</span>}
+                              <span className="learn-target-text">{(rq.questions && rq.questions[0]) || rq.tag}</span>
+                            </div>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                   {subtopics.length === 0 && (
                     <div className="learn-empty" style={{ padding: 24, color: '#999' }}>暂无子话题</div>
                   )}

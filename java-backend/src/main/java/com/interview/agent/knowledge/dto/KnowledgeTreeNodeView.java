@@ -23,6 +23,9 @@ public record KnowledgeTreeNodeView(
         int masteryLevel,
         int studyCount,
         int selfMastery,
-        List<KnowledgeTreeNodeView> children
+        List<KnowledgeTreeNodeView> children,
+        String tier,
+        String source,
+        boolean hasInterviewQuestions
 ) {
 }

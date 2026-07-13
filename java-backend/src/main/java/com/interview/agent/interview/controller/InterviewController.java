@@ -52,13 +52,16 @@ public class InterviewController {
     private final InterviewParseService parseService;
     private final InterviewBasicService basicService;
     private final InterviewAsrService asrService;
+    private final com.interview.agent.interview.service.InterviewRelatedQuestionService relatedQuestionService;
 
     public InterviewController(InterviewParseService parseService,
                                InterviewBasicService basicService,
-                               InterviewAsrService asrService) {
+                               InterviewAsrService asrService,
+                               com.interview.agent.interview.service.InterviewRelatedQuestionService relatedQuestionService) {
         this.parseService = parseService;
         this.basicService = basicService;
         this.asrService = asrService;
+        this.relatedQuestionService = relatedQuestionService;
     }
 
     @PostMapping("/preview-parse")
@@ -90,6 +93,20 @@ public class InterviewController {
     @PostMapping("/check-duplicate")
     public ApiResponse<CheckDuplicateResponse> checkDuplicate(@Valid @RequestBody CheckDuplicateRequest req) {
         return ApiResponse.success(basicService.checkDuplicate(req.text()));
+    }
+
+    /** 知识点 → 相关面试真题（只读；三模块解耦 P3）。 */
+    @GetMapping("/related-questions")
+    public ApiResponse<List<com.interview.agent.interview.dto.RelatedInterviewQuestion>> relatedQuestions(
+            @org.springframework.web.bind.annotation.RequestParam("kp_id") long kpId) {
+        return ApiResponse.success(relatedQuestionService.byKnowledgePoint(kpId));
+    }
+
+    /** 项目 → 相关面试真题（只读；三模块解耦 P5）。 */
+    @GetMapping("/related-project-questions")
+    public ApiResponse<List<com.interview.agent.project.dto.RelatedProjectQuestion>> relatedProjectQuestions(
+            @org.springframework.web.bind.annotation.RequestParam("project_id") long projectId) {
+        return ApiResponse.success(relatedQuestionService.byProject(projectId));
     }
 
     @PostMapping("/overwrite")

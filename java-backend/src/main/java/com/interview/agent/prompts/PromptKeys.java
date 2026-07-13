@@ -89,6 +89,8 @@ public final class PromptKeys {
     public static final String INTERVIEW_MISSED_CHECK = "interview/missed-check";
     /** 面试复盘：ASR 说话人角色归一化（说话人X -> 面试官/我）。V21 seed。 */
     public static final String INTERVIEW_ASR_ROLE_NORMALIZE = "interview/asr-role-normalize";
+    /** 面试真题 rubric（追问链=采分点 + 当时回答）。落库即 eager 生成。V53 seed。 */
+    public static final String INTERVIEW_RUBRIC_GEN = "interview/rubric-gen";
     /** 面试复盘：知识点 embedding 召回后 LLM rerank（复刻 RERANK_PROMPT，占位符 {text}{candidates}）。V25 seed。 */
     public static final String INTERVIEW_MATCH_KNOWLEDGE_RERANK = "interview/match-knowledge-rerank";
     /** 面试复盘：项目根 LLM 语义匹配（复刻 match_or_create_project_root 内联，占位符 {catalog}{name}）。V25 seed。 */

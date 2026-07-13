@@ -55,7 +55,7 @@ public interface ProjectNodeMapper {
      * 复刻 match_or_create_question：{@code (embedding <=> :vec) AS distance} 取最近一条。
      */
     @Select("""
-            SELECT id, name, (embedding <=> #{vec}::vector) AS distance
+            SELECT id, name, NULL AS path, (embedding <=> #{vec}::vector) AS distance
             FROM tree_node
             WHERE parent_id = #{topicId} AND node_type = 'question' AND embedding IS NOT NULL
             ORDER BY embedding <=> #{vec}::vector

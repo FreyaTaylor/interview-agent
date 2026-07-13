@@ -330,7 +330,7 @@ public class LearnContentServiceImpl implements LearnContentService {
         // Step 2: 取 KP 级 advisory 锁，与并发的 fetch/regenerate 串行化，防重复生成
         subtopicMapper.acquireGenLock(kpId);
 
-        // Step 3: 清子话题
+        // Step 3: 清子话题（级联删其下生成题）
         subtopicMapper.deleteByKp(kpId);
 
         // Step 4: 重新生成
@@ -356,7 +356,7 @@ public class LearnContentServiceImpl implements LearnContentService {
         for (Map<String, Object> it : items) {
             String title = it.get("title").toString().strip();
             List<TargetQ> qs = dedupQuestions(targetQuestions(it));
-            // 初始化自动过滤：只含扩展(ext)题、无高频(core)题的子话题不落库（非高频，不值得单列）
+            // 初始化自动过滤：只含扩展(ext)题、无高频(core)题的子话题不落库
             if (qs.stream().noneMatch(q -> "core".equals(q.tier()))) {
                 continue;
             }

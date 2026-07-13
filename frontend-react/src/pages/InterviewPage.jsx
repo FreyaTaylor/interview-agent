@@ -70,10 +70,12 @@ export default function InterviewPage() {
   const [selectedTurnIds, setSelectedTurnIds] = useState([])
 
   // group → turn_ids 查询表 + turnId → group meta 反查 + group 在原文中的渲染顺序（用于交替底色）
-  const { turnIdsByGroup, turnMeta } = useMemo(() => {
+  // groupByKey：key → group 对象（定位时用主问文本在 turn 里找真正提问处）
+  const { turnIdsByGroup, turnMeta, groupByKey } = useMemo(() => {
     const byGroup = new Map()
     const meta = new Map()
-    if (!result?.groups) return { turnIdsByGroup: byGroup, turnMeta: meta }
+    const gByKey = new Map()
+    if (!result?.groups) return { turnIdsByGroup: byGroup, turnMeta: meta, groupByKey: gByKey }
     // 1) 收集所有 group 的 (key, tab, turn_ids)
     const items = []
     let r = 0, p = 0, algo = 0, hr = 0
@@ -86,6 +88,7 @@ export default function InterviewPage() {
       const ids = Array.isArray(g.turn_ids) ? g.turn_ids.filter(n => Number.isInteger(n)) : []
       if (!key || ids.length === 0) continue
       byGroup.set(key, ids)
+      gByKey.set(key, g)
       items.push({ key, tab, firstTurn: Math.min(...ids), ids })
     }
     // 2) 按 group 首个 turn 的位置排序 → 决定 colorIdx（保证原文中相邻 group 交替色）
@@ -95,8 +98,40 @@ export default function InterviewPage() {
         meta.set(tid, { key: it.key, tab: it.tab, colorIdx: idx })
       }
     })
-    return { turnIdsByGroup: byGroup, turnMeta: meta }
+    return { turnIdsByGroup: byGroup, turnMeta: meta, groupByKey: gByKey }
   }, [result])
+
+  // turnId → turn 内容映射（定位打分用）
+  const turnById = useMemo(() => {
+    const m = new Map()
+    for (const t of (result?.turns || [])) m.set(t.id, t)
+    return m
+  }, [result])
+
+  // 在 group 的 turn 范围里挑「最像主问」的那个 turn：
+  // 解析给的 turn_ids 常把前面无关寒暄/上一话题收尾也并进来，直接跳最早 turn 会落在无关处。
+  // 用主问文本与各 turn 的 2-gram 重合度打分，面试官提问的 turn 额外加权，取最高分。
+  function bestQuestionTurn(ids, group) {
+    if (!group) return ids[0]
+    const q = String(group.questions?.[0] || group.knowledge_point || '')
+    const bigrams = new Set()
+    const norm = s => String(s || '').toLowerCase().replace(/\s+/g, '')
+    const nq = norm(q)
+    for (let i = 0; i < nq.length - 1; i++) bigrams.add(nq.slice(i, i + 2))
+    if (bigrams.size === 0) return ids[0]
+    let best = ids[0], bestScore = -1
+    for (const id of ids) {
+      const t = turnById.get(id)
+      if (!t) continue
+      const nc = norm(t.content)
+      let hit = 0
+      for (let i = 0; i < nc.length - 1; i++) if (bigrams.has(nc.slice(i, i + 2))) hit++
+      let score = hit
+      if (String(t.speaker || '').includes('官')) score += 1  // 提问多为面试官
+      if (score > bestScore) { bestScore = score; best = id }
+    }
+    return bestScore > 0 ? best : ids[0]
+  }
 
   // 历史面试
   const [history, setHistory] = useState([])
@@ -291,8 +326,10 @@ export default function InterviewPage() {
     }
     const ids = [...turnIds].sort((a, b) => a - b)
     setSelectedTurnIds(ids)
+    // 跳到范围内「最像主问」的 turn（而非最早的 turn，避免落在寒暄/上一话题收尾）
+    const target = bestQuestionTurn(ids, groupByKey.get(groupKey))
     setTimeout(() => {
-      document.getElementById(`iv-turn-${ids[0]}`)
+      document.getElementById(`iv-turn-${target}`)
         ?.scrollIntoView({ behavior: 'smooth', block: 'center' })
     }, 30)
   }
@@ -865,6 +902,19 @@ export default function InterviewPage() {
                 {g.questions?.length > 0 && (
                   <div style={{ background: '#e8f4fd', borderLeft: '4px solid #1677ff', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13, lineHeight: 1.8 }}>
                     {g.questions.map((q, j) => <div key={j}>❓ {q}</div>)}
+                  </div>
+                )}
+                {Array.isArray(g.performance) && g.performance.length > 0 && (
+                  <div style={{ background: '#fffbe6', borderLeft: '4px solid #faad14', padding: '10px 14px', borderRadius: 6, marginBottom: 8, fontSize: 13 }}>
+                    <div style={{ marginBottom: 6, fontWeight: 700, color: '#ad6800' }}>
+                      📕 错题本 · 本次命中 {g.performance.filter(p => p.hit).length}/{g.performance.length}
+                    </div>
+                    {g.performance.map((p, k) => (
+                      <div key={k} style={{ padding: '2px 0', color: p.hit ? '#389e0d' : '#cf1322' }}>
+                        {p.hit ? '✅' : '❌'} {p.key_point}
+                        {p.hit && p.quote && <span style={{ color: '#999', fontStyle: 'italic' }}> 「{p.quote}」</span>}
+                      </div>
+                    ))}
                   </div>
                 )}
                 {sr && (

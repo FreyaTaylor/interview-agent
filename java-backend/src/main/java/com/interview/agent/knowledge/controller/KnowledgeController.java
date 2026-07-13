@@ -31,4 +31,10 @@ public class KnowledgeController {
     public ApiResponse<List<KnowledgeTreeNodeView>> getTree() {
         return ApiResponse.success(service.buildTree());
     }
+
+    /** 全量树（管理视图）：展开到子话题/问题，问题带 tier/source，供知识树页折叠与操作。 */
+    @GetMapping("/tree-full")
+    public ApiResponse<List<KnowledgeTreeNodeView>> getFullTree() {
+        return ApiResponse.success(service.buildFullTree());
+    }
 }

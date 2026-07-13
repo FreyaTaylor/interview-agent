@@ -233,7 +233,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         int base = questionMapper.maxSortOrder(node.id()) + 1;
         int idx = 0;
         for (QuestionItem q : items) {
-            questionMapper.insert(node.id(), q.question(), q.rubric(), q.recommendedAnswer(), base + idx);
+            questionMapper.insert(node.id(), q.question(), q.rubric(), q.recommendedAnswer(), "generated", null, base + idx);
             idx++;
         }
     }

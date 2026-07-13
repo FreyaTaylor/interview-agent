@@ -60,20 +60,58 @@ public class InterviewNodeMatcher {
     private final EmbeddingService embeddingService;
     private final UserAnswerEmbeddingMapper answerEmbeddingMapper;
     private final LlmInvoker llmInvoker;
-    private final com.interview.agent.learn.mapper.StudyQuestionMapper questionMapper;
+    private final com.interview.agent.learn.service.RubricGenService rubricGenService;
+    private final com.interview.agent.interview.mapper.InterviewQuestionKpLinkMapper linkMapper;
 
     public InterviewNodeMatcher(KnowledgeNodeMapper knowledgeMapper,
                                 ProjectNodeMapper projectMapper,
                                 EmbeddingService embeddingService,
                                 UserAnswerEmbeddingMapper answerEmbeddingMapper,
                                 LlmInvoker llmInvoker,
-                                com.interview.agent.learn.mapper.StudyQuestionMapper questionMapper) {
+                                com.interview.agent.learn.service.RubricGenService rubricGenService,
+                                com.interview.agent.interview.mapper.InterviewQuestionKpLinkMapper linkMapper) {
         this.knowledgeMapper = knowledgeMapper;
         this.projectMapper = projectMapper;
         this.embeddingService = embeddingService;
         this.answerEmbeddingMapper = answerEmbeddingMapper;
         this.llmInvoker = llmInvoker;
-        this.questionMapper = questionMapper;
+        this.rubricGenService = rubricGenService;
+        this.linkMapper = linkMapper;
+    }
+
+    // ============================================================
+    // P2：面试真题 ↔ 知识点 关联（召回 top-k + 写关联表快照）
+    // ============================================================
+
+    /** 与文本相关的知识点召回结果：id + name + 相似度(1-距离)。 */
+    public record KpRecall(long id, String name, float similarity) {
+    }
+
+    /** 召回与文本相关的 top-k 知识点（过滤距离阈值，相似度=1-距离）；embedding 失败返空。 */
+    public List<KpRecall> recallRelatedKnowledgePoints(String text) {
+        String t = text == null ? "" : text.strip();
+        if (t.isEmpty()) {
+            return List.of();
+        }
+        String vec;
+        try {
+            vec = embeddingService.embedToLiteral(t);
+        } catch (Exception e) {
+            log.warn("关联召回 embedding 失败，跳过: {}", e.getMessage());
+            return List.of();
+        }
+        return knowledgeMapper.findNearestLeaves(CurrentUser.id(), vec, KNOWLEDGE_TOP_K).stream()
+                .filter(r -> r.distance() <= KNOWLEDGE_DISTANCE_THRESHOLD)
+                .map(r -> new KpRecall(r.id(), r.name(), (float) (1.0 - r.distance())))
+                .toList();
+    }
+
+    /** 给一道面试知识题写「相关知识点」关联快照（source=recall + 相似度）；幂等（upsert）。 */
+    public void linkRelatedKnowledge(long interviewKnowledgeQuestionId, String kpText) {
+        long userId = CurrentUser.id();
+        for (KpRecall r : recallRelatedKnowledgePoints(kpText)) {
+            linkMapper.upsert(userId, interviewKnowledgeQuestionId, r.id(), r.name(), "recall", r.similarity());
+        }
     }
 
     // ============================================================
@@ -173,8 +211,9 @@ public class InterviewNodeMatcher {
         }
 
         // LLM rerank（向量近不等于语义对，必须 LLM 兜一道）
+        // 候选带「父路径 / 名」，给 LLM"域"上下文，避免跨技术域错配（如 Spring 事务→Redis 事务）
         String candLines = candidates.stream()
-                .map(c -> String.format("- id=%d, name=%s (距离=%.3f)", c.id(), c.name(), c.distance()))
+                .map(c -> String.format("- id=%d, name=%s (距离=%.3f)", c.id(), pathName(c), c.distance()))
                 .collect(Collectors.joining("\n"));
         String textForPrompt = t.length() > 500 ? t.substring(0, 500) : t;
         Set<Long> validIds = candidates.stream().map(NodeMatch::id).collect(Collectors.toSet());
@@ -211,6 +250,13 @@ public class InterviewNodeMatcher {
         return res.get().value();   // 可能为 null（LLM 判定都不匹配）
     }
 
+    /** 候选展示名：有父路径则拼「父 / 名」（如 {@code Redis / 事务与lua脚本}），否则仅名。 */
+    private static String pathName(NodeMatch c) {
+        String name = c.name() == null ? "" : c.name();
+        String path = c.path();
+        return (path == null || path.isBlank()) ? name : path + " / " + name;
+    }
+
     /** 懒创建/复用「未命名知识点」根节点（level=1, category, sort_order=9999）。 */
     private long getOrCreateUnnamedKnowledgeRoot() {
         long userId = CurrentUser.id();
@@ -230,7 +276,8 @@ public class InterviewNodeMatcher {
         }
         String emb = null;
         try {
-            emb = embeddingService.embedToLiteral(name);
+            // embedding 文本用「父路径 / 名」，与建树(TreeGenServiceImpl)一致，保证后续匹配同分布
+            emb = embeddingService.embedToLiteral(UNNAMED_KNOWLEDGE + " / " + name);
         } catch (Exception e) {
             log.warn("未命名知识点 embedding 失败 name={}: {}", name, e.getMessage());
         }
@@ -371,51 +418,65 @@ public class InterviewNodeMatcher {
     // 副作用：知识权重 + 用户回答向量
     // ============================================================
 
-    /** 复刻 update_knowledge_weights：命中知识节点 interview_weight +1（上限 5）；
-     *  并把该组识别出的面试题落成该 KP 下的 core 题（题干去重，直接挂 KP）。 */
+    /** 复刻 update_knowledge_weights：命中知识节点 interview_weight +1（上限 5）。
+     *  <p>三模块解耦（P4）：不再把真题落到知识树（真题留面试模块，经 interview_question_kp_link 关联）；
+     *  仅保留权重 +1 与「错题本(performance)」计算（供复盘页展示）。 */
     public void updateKnowledgeWeights(List<Map<String, Object>> scoredGroups) {
         for (Map<String, Object> g : scoredGroups) {
-            if ("knowledge".equals(str(g.get("type")))) {
-                Long nodeId = toLong(g.get("matched_node_id"));
-                if (nodeId != null) {
-                    knowledgeMapper.bumpInterviewWeight(nodeId, CurrentUser.id());
-                    landInterviewQuestions(nodeId, g);
-                }
+            if (!"knowledge".equals(str(g.get("type")))) {
+                continue;
             }
+            Long nodeId = toLong(g.get("matched_node_id"));
+            if (nodeId != null) {
+                knowledgeMapper.bumpInterviewWeight(nodeId, CurrentUser.id());
+            }
+            attachPerformance(g, nodeId);
         }
     }
 
-    /** 把面试组识别出的问题落成该 KP 下的 core 题（tier=core，rubric 懒补）；按归一化题干去重。 */
-    private void landInterviewQuestions(long kpNodeId, Map<String, Object> g) {
-        if (!(g.get("questions") instanceof List<?> qs) || qs.isEmpty()) {
-            return;
-        }
-        // 已有题干集合（归一化）用于去重
-        java.util.Set<String> existing = new java.util.HashSet<>();
-        for (com.interview.agent.learn.entity.StudyQuestion q : questionMapper.findByKpId(kpNodeId)) {
-            existing.add(normalize(q.content()));
-        }
-        int sort = questionMapper.maxSortOrder(kpNodeId) + 1;
-        for (Object o : qs) {
-            String content;
-            if (o instanceof Map<?, ?> m) {
-                Object qv = m.get("q");
-                if (qv == null) {
-                    qv = m.get("question");
+    /**
+     * 计算并附上「错题本(performance)」：主问 + 追问链 + 当时回答 → interview/rubric-gen，
+     * 取 performance 附到 group（finalize 随 parsed_questions 落库、复盘页展示）。
+     * <p>P4：只算错题本，<b>不再</b>把真题落到知识树。best-effort，失败不阻断 finalize。
+     */
+    private void attachPerformance(Map<String, Object> g, Long nodeId) {
+        try {
+            List<Object> qs = asList(g.get("questions"));
+            if (qs.isEmpty()) {
+                return;
+            }
+            String mainQuestion = questionText(qs.get(0));
+            if (mainQuestion.isEmpty()) {
+                return;
+            }
+            List<String> followUps = new java.util.ArrayList<>();
+            for (int i = 1; i < qs.size(); i++) {
+                String f = questionText(qs.get(i));
+                if (!f.isEmpty()) {
+                    followUps.add(f);
                 }
-                content = str(qv).strip();
-            } else {
-                content = str(o).strip();
             }
-            if (content.isEmpty()) {
-                continue;
+            String userAnswer = str(g.get("user_answer"));
+            var rubric = rubricGenService.generateInterviewRubric(
+                    nodeId == null ? 0L : nodeId, mainQuestion, followUps, userAnswer);
+            if (rubric.performance() != null) {
+                g.put("performance", rubric.performance());
             }
-            String key = normalize(content);
-            if (!existing.add(key)) {
-                continue;   // 已存在等价题，跳过（保持 core，不重复插）
-            }
-            questionMapper.insert(kpNodeId, content, java.util.List.of(), null, sort++);
+        } catch (Exception e) {
+            log.warn("错题本(performance)生成失败，跳过: {}", e.getMessage());
         }
+    }
+
+    /** 从 questions 元素取题干（兼容对象 {q/question} 与纯字符串）。 */
+    private String questionText(Object o) {
+        if (o instanceof Map<?, ?> m) {
+            Object qv = m.get("q");
+            if (qv == null) {
+                qv = m.get("question");
+            }
+            return str(qv).strip();
+        }
+        return str(o).strip();
     }
 
     /** 复刻 store_answer_embeddings：knowledge/project 类用户回答向量化入 user_answer_embedding。 */

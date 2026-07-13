@@ -24,6 +24,8 @@ public record StudyQuestion(
         String tier,
         Object rubricTemplate,
         Object recommendedAnswer,
+        String source,
+        Long interviewRecordId,
         int sortOrder,
         Instant createdAt
 ) {

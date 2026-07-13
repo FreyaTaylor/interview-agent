@@ -1,5 +1,9 @@
 package com.interview.agent.interview.controller;
 
+import com.interview.agent.auth.AppModeProperties;
+import com.interview.agent.auth.AuthInterceptor;
+import com.interview.agent.auth.AuthProperties;
+import com.interview.agent.auth.JwtService;
 import com.interview.agent.interview.dto.CheckDuplicateResponse;
 import com.interview.agent.interview.dto.DeleteResponse;
 import com.interview.agent.interview.dto.FinalizeResponse;
@@ -14,7 +18,10 @@ import com.interview.agent.interview.service.InterviewParseService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -43,7 +50,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * - 这里只校验 Controller 契约，不走数据库；业务逻辑由 service 层测试补齐。
  */
 @WebMvcTest(InterviewController.class)
+@Import({AuthInterceptor.class, InterviewControllerIT.AuthTestBeans.class})
 class InterviewControllerIT {
+
+    /** WebMvcTest 切片默认不含 auth 组件；补齐 AuthInterceptor 的依赖：single_user 模式直接放行（CurrentUser=1）。
+     *  JwtService 用真实 bean（不 mock）——它是具体类，JDK 25 上 Mockito 无法字节码 mock；single_user 下也不会真正调用它。 */
+    @TestConfiguration
+    static class AuthTestBeans {
+        @Bean
+        AppModeProperties appModeProperties() {
+            return new AppModeProperties("self_hosted", "single_user", false);
+        }
+
+        @Bean
+        AuthProperties authProperties() {
+            return new AuthProperties(null, null, null, null, null);
+        }
+
+        @Bean
+        JwtService jwtService(AuthProperties props, AppModeProperties mode) {
+            return new JwtService(props, mode);
+        }
+    }
 
     @Autowired
     private MockMvc mockMvc;
@@ -104,7 +132,7 @@ class InterviewControllerIT {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "text_hash": "hash"
+                                  "text": "面试官：你好\\n我：你好"
                                 }
                                 """))
                 .andExpect(status().isOk())

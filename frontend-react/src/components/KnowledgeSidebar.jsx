@@ -96,6 +96,9 @@ export function SidebarNode({ node, activeId, expandedIds, onSelect, depth = 0 }
         {hasKids && <span className={`learn-sidebar-toggle ${collapsed ? '' : 'open'}`} />}
         {isLeaf && <span className="learn-sidebar-bullet" />}
         <span className="learn-sidebar-name">{node.name}</span>
+        {node.has_interview_questions && (
+          <span className="kp-interview-heart" title="有关联面试真题">♥</span>
+        )}
       </div>
       {hasKids && !collapsed && children.map(ch => (
         <SidebarNode key={ch.id} node={ch} activeId={activeId} expandedIds={expandedIds} onSelect={onSelect} depth={depth + 1} />

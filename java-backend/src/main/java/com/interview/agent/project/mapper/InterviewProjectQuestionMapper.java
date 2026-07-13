@@ -7,7 +7,6 @@ import org.apache.ibatis.annotations.Select;
 import org.apache.ibatis.annotations.Update;
 
 import java.util.List;
-
 /**
  * interview_project_question 表 Mapper（仅 FK 兜底用）。
  *
@@ -46,4 +45,27 @@ public interface InterviewProjectQuestionMapper {
             </script>
             """)
     int nullOutByNodeIds(@Param("ids") List<Long> ids);
+
+    /** 「项目 → 相关面试真题」只读查询：project_node_id 落在项目子树内的真题（递归 CTE），JOIN 面试记录带公司/岗位。 */
+    @Select("""
+            WITH RECURSIVE sub AS (
+                SELECT id FROM tree_node WHERE id = #{projectId}
+                UNION ALL
+                SELECT t.id FROM tree_node t JOIN sub ON t.parent_id = sub.id
+            )
+            SELECT ipq.id                 AS id,
+                   ipq.questions::text     AS questions,
+                   ipq.project_name        AS project_name,
+                   ipq.interview_record_id AS interview_record_id,
+                   r.company               AS company,
+                   r.position              AS position,
+                   ipq.created_at          AS created_at
+            FROM interview_project_question ipq
+            JOIN sub ON sub.id = ipq.project_node_id
+            JOIN interview_record r ON r.id = ipq.interview_record_id
+            WHERE r.user_id = #{userId}
+            ORDER BY ipq.id
+            """)
+    List<com.interview.agent.project.dto.RelatedProjectQuestionRow> findRelatedByProject(
+            @Param("userId") long userId, @Param("projectId") long projectId);
 }

@@ -1,6 +1,16 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
-import { API_KNOWLEDGE } from '../config'
+import { API_KNOWLEDGE, API_LEARN } from '../config'
+
+// 统一 POST 小包装（全局 fetch 拦截器已注入 JWT）
+async function postLearn(path, body) {
+  const resp = await fetch(`${API_LEARN}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body || {}),
+  })
+  return resp.json()
+}
 
 // 掌握度小圆环：SVG stroke-dasharray 画进度，未练习时显示空灰圈
 function MasteryRing({ percent, color }) {
@@ -24,20 +34,73 @@ function masteryColor(p) {
   return p >= 80 ? '#52c41a' : p >= 40 ? '#faad14' : p > 0 ? '#ff4d4f' : '#e0e0e0'
 }
 
-function TreeNode({ node, depth }) {
+// 问题行：📌真题徽标 + tier 徽标 + 内容 + 操作（改 tier / 答题 / 删除）
+function QuestionRow({ node, kpId, depth, reload }) {
+  const [busy, setBusy] = useState(false)
+  const isInterview = node.source === 'interview'
+  const isCore = node.tier === 'core'
+
+  async function toggleTier() {
+    if (busy) return
+    setBusy(true)
+    try {
+      const next = isCore ? 'ext' : 'core'
+      const r = await postLearn('/question-tier', { kp_id: Number(kpId), question_id: node.id, tier: next })
+      if (r.code === 0) reload()
+    } finally { setBusy(false) }
+  }
+
+  async function del() {
+    if (busy) return
+    if (!window.confirm('确定删除这道题？')) return
+    setBusy(true)
+    try {
+      const r = await postLearn('/question-delete', { kp_id: Number(kpId), question_id: node.id })
+      if (r.code === 0) reload()
+    } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="tree-node">
+      <div className="node-row q-row" style={{ paddingLeft: 16 + depth * 22 }}>
+        <span className="bullet" />
+        {isInterview && <span className="q-badge interview" title="面试真题">📌真题</span>}
+        <span className={`q-badge tier ${isCore ? 'core' : 'ext'}`} title="题目层级">
+          {isCore ? '高频' : '扩展'}
+        </span>
+        <span className="q-text" title={node.name}>{node.name}</span>
+        <div className="q-actions">
+          <button type="button" className="q-btn" disabled={busy} onClick={toggleTier}
+            title="切换高频/扩展">{isCore ? '设为扩展' : '设为高频'}</button>
+          <Link to={`/exam/${kpId}`} className="q-btn link" title="进入该知识点答题">答题</Link>
+          <button type="button" className="q-btn danger" disabled={busy} onClick={del} title="删除该题">删除</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function TreeNode({ node, depth, kpId, reload }) {
   const [collapsed, setCollapsed] = useState(false)
   const children = node.children || []
   const hasKids = children.length > 0
-  const isCat = depth === 0
+  const type = node.node_type
 
+  if (type === 'question') {
+    return <QuestionRow node={node} kpId={kpId} depth={depth} reload={reload} />
+  }
+
+  const isCat = type === 'category'
+  const isKp = type === 'knowledge_point'
+  const childKpId = isKp ? node.id : kpId  // 知识点是问题的归属点，往下透传
   const weight = node.interview_weight || 0
-  // 答题掌握（近期答题派生）与自评掌握分开展示
   const examM = node.mastery_level || 0
   const selfM = node.self_mastery || 0
 
   return (
     <div className="tree-node">
-      <div className={`node-row ${isCat ? 'cat' : ''}`} style={{ paddingLeft: 16 + depth * 22 }}>
+      <div className={`node-row ${isCat ? 'cat' : ''} ${type === 'subtopic' ? 'subtopic' : ''}`}
+        style={{ paddingLeft: 16 + depth * 22 }}>
         {hasKids ? (
           <span className={`toggle ${collapsed ? '' : 'open'}`} onClick={() => setCollapsed(c => !c)} />
         ) : (
@@ -46,7 +109,10 @@ function TreeNode({ node, depth }) {
         <span className="node-name" onClick={() => hasKids && setCollapsed(c => !c)}>
           {node.name}
         </span>
-        {!hasKids && (
+        {isKp && node.has_interview_questions && (
+          <span className="kp-interview-heart" title="有关联面试真题">♥</span>
+        )}
+        {isKp && (
           <div className="leaf-meta">
             <span className="stars" title={`重要度 ${weight}/5`}>
               {[1, 2, 3, 4, 5].map(i => (
@@ -72,7 +138,9 @@ function TreeNode({ node, depth }) {
           </div>
         )}
       </div>
-      {hasKids && !collapsed && children.map(ch => <TreeNode key={ch.id} node={ch} depth={depth + 1} />)}
+      {hasKids && !collapsed && children.map(ch => (
+        <TreeNode key={ch.id} node={ch} depth={depth + 1} kpId={childKpId} reload={reload} />
+      ))}
     </div>
   )
 }
@@ -82,11 +150,15 @@ export default function KnowledgeTreePage() {
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState(0)
 
-  useEffect(() => {
-    fetch(`${API_KNOWLEDGE}/tree`).then(r => r.json()).then(d => {
+  const reload = useCallback(() => {
+    return fetch(`${API_KNOWLEDGE}/tree-full`).then(r => r.json()).then(d => {
       if (d.code === 0) setTree(d.data)
-    }).finally(() => setLoading(false))
+    })
   }, [])
+
+  useEffect(() => {
+    reload().finally(() => setLoading(false))
+  }, [reload])
 
   if (loading) return <div className="loading">加载中...</div>
   if (!tree.length) return <div className="empty">暂无知识树数据</div>
@@ -101,7 +173,9 @@ export default function KnowledgeTreePage() {
         ))}
       </div>
       <div className="tree-card">
-        {(tree[tab]?.children || []).map(node => <TreeNode key={node.id} node={node} depth={0} />)}
+        {(tree[tab]?.children || []).map(node => (
+          <TreeNode key={node.id} node={node} depth={0} kpId={null} reload={reload} />
+        ))}
         {!(tree[tab]?.children?.length) && <div className="empty">暂无内容</div>}
       </div>
     </div>
