@@ -322,7 +322,7 @@ export default function ExamPage() {
               activeId={activeQuestionId}
               onSelect={selectQuestion}
               onDelete={handleDeleteQuestion}
-              emptyText="该知识点还没有题目"
+              emptyText="该知识点暂无可答题目 —— 请先到「学习」页展开讲解，学过的子话题才会出题"
             />
           )}
         </div>

@@ -310,9 +310,10 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
         return null;
     }
 
-    /** 叶子节点查题目转 DTO，只取高频(core)题（答题=高频题），并附题目分（无 finished 记录为 null）。 */
+    /** 叶子节点查题目转 DTO，只取高频(core)题（答题=高频题），并附题目分（无 finished 记录为 null）。
+     *  <p>只出「讲解已展开(ready)子话题」下的题：答题只考展开讲解过的内容。 */
     private List<QuestionItemView> loadLeafQuestions(KnowledgeNode node) {
-        List<StudyQuestion> rows = questionMapper.findByKpId(node.id());
+        List<StudyQuestion> rows = questionMapper.findAnswerableByKpId(node.id());
         List<QuestionItemView> out = new ArrayList<>(rows.size());
         for (StudyQuestion r : rows) {
             if (!"core".equals(r.tier())) {

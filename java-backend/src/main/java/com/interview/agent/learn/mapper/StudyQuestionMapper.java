@@ -47,6 +47,17 @@ public interface StudyQuestionMapper {
     @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND " + UNDER_KP + " ORDER BY t.sort_order, t.id")
     List<StudyQuestion> findByKpId(@Param("kpId") long kpId);
 
+    /**
+     * 答题页取题：只出「父子话题讲解已生成(content_status='ready')」下的题。
+     * <p>讲解还没展开(pending)的子话题、以及直挂 KP 无子话题的题都不出——答题只考"展开讲解过"的内容。
+     */
+    @Select("SELECT " + COLS + FROM
+            + " JOIN subtopic_detail sd ON sd.node_id = p.id"
+            + " WHERE t.node_type = 'question' AND p.node_type = 'subtopic'"
+            + "   AND p.parent_id = #{kpId} AND sd.content_status = 'ready'"
+            + " ORDER BY t.sort_order, t.id")
+    List<StudyQuestion> findAnswerableByKpId(@Param("kpId") long kpId);
+
     @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND t.parent_id = #{subtopicId} ORDER BY t.sort_order, t.id")
     List<StudyQuestion> findBySubtopic(@Param("subtopicId") long subtopicId);
 
