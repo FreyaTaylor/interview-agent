@@ -53,15 +53,46 @@ public class InterviewController {
     private final InterviewBasicService basicService;
     private final InterviewAsrService asrService;
     private final com.interview.agent.interview.service.InterviewRelatedQuestionService relatedQuestionService;
+    private final com.interview.agent.interview.service.InterviewAdminQuestionService adminQuestionService;
 
     public InterviewController(InterviewParseService parseService,
                                InterviewBasicService basicService,
                                InterviewAsrService asrService,
-                               com.interview.agent.interview.service.InterviewRelatedQuestionService relatedQuestionService) {
+                               com.interview.agent.interview.service.InterviewRelatedQuestionService relatedQuestionService,
+                               com.interview.agent.interview.service.InterviewAdminQuestionService adminQuestionService) {
         this.parseService = parseService;
         this.basicService = basicService;
         this.asrService = asrService;
         this.relatedQuestionService = relatedQuestionService;
+        this.adminQuestionService = adminQuestionService;
+    }
+
+    /** 管理页「面试真题」三层视图：当前用户全部面试问题（面试→主题→问题）。 */
+    @GetMapping("/admin/all-questions")
+    public ApiResponse<List<com.interview.agent.interview.dto.InterviewAdminRecordGroup>> adminAllQuestions() {
+        return ApiResponse.success(adminQuestionService.listAllQuestions());
+    }
+
+    /** 管理页「面试真题」编辑：传 text 改文本（需 idx）或 topic 改主题。 */
+    @PatchMapping("/admin/question")
+    public ApiResponse<Void> adminEditQuestion(
+            @RequestBody com.interview.agent.interview.dto.InterviewAdminEditRequest req) {
+        if (req.text() != null) {
+            adminQuestionService.updateText(req.refType(), req.refId(), req.idx() == null ? 0 : req.idx(), req.text());
+        } else if (req.topic() != null) {
+            adminQuestionService.updateTopic(req.refType(), req.refId(), req.topic());
+        }
+        return ApiResponse.success(null);
+    }
+
+    /** 管理页「面试真题」删除：knowledge/project 删第 idx 个问题（删空则删行），other 删行。 */
+    @DeleteMapping("/admin/question")
+    public ApiResponse<Void> adminDeleteQuestion(
+            @RequestParam("ref_type") String refType,
+            @RequestParam("ref_id") long refId,
+            @RequestParam(value = "idx", defaultValue = "0") int idx) {
+        adminQuestionService.deleteQuestion(refType, refId, idx);
+        return ApiResponse.success(null);
     }
 
     @PostMapping("/preview-parse")

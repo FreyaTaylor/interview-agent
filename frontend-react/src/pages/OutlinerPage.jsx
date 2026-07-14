@@ -5,12 +5,13 @@
 import { useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import OutlinerEditor from '../components/OutlinerEditor'
+import InterviewQuestionsEditor from '../components/InterviewQuestionsEditor'
 import { API_ADMIN } from '../config'
 
 export default function OutlinerPage() {
   const { tab } = useParams()
   const navigate = useNavigate()
-  const adminTab = (tab === 'project') ? 'project' : 'tree'
+  const adminTab = (tab === 'project') ? 'project' : (tab === 'interview') ? 'interview' : 'tree'
 
   // ---- 新建知识树对话框 ----
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -112,7 +113,7 @@ export default function OutlinerPage() {
     <div className="outliner-container">
       {/* ---- Tab 栏 ---- */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #eee', marginBottom: 16 }}>
-        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }].map(t => (
+        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }, { key: 'interview', label: '📋 面试真题' }].map(t => (
           <button key={t.key} onClick={() => navigate(`/admin/${t.key}`)}
             style={{
               padding: '10px 24px', fontSize: 14, fontWeight: adminTab === t.key ? 600 : 400,
@@ -265,6 +266,9 @@ export default function OutlinerPage() {
           )}
         </>
       )}
+
+      {/* ---- 面试真题 Tab ---- */}
+      {adminTab === 'interview' && <InterviewQuestionsEditor />}
     </div>
   )
 }

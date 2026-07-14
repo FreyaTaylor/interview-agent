@@ -71,6 +71,17 @@ class InterviewControllerIT {
         JwtService jwtService(AuthProperties props, AppModeProperties mode) {
             return new JwtService(props, mode);
         }
+
+        // JDK 25 上 Mockito 无法 mock 具体类 → 用真实实例（mapper 传 null，本测试不打这两个端点）
+        @Bean
+        com.interview.agent.interview.service.InterviewRelatedQuestionService interviewRelatedQuestionService() {
+            return new com.interview.agent.interview.service.InterviewRelatedQuestionService(null, null);
+        }
+
+        @Bean
+        com.interview.agent.interview.service.InterviewAdminQuestionService interviewAdminQuestionService() {
+            return new com.interview.agent.interview.service.InterviewAdminQuestionService(null);
+        }
     }
 
     @Autowired

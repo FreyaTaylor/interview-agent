@@ -600,6 +600,73 @@ body {
   box-shadow: 0 1px 4px rgba(0,0,0,0.06);
   min-height: 500px;
 }
+/* ---- 面试真题三层视图（InterviewQuestionsEditor） ---- */
+.iqe-container { padding: 12px 20px 24px; }
+.iqe-state { padding: 40px 24px; color: #888; font-size: 14px; text-align: center; }
+.iqe-state.iqe-error { color: #d4380d; }
+.iqe-record { border: 1px solid #eee; border-radius: 8px; margin-bottom: 12px; overflow: hidden; }
+.iqe-record-head {
+  display: flex; align-items: center; gap: 8px; padding: 10px 14px;
+  background: #fafafa; cursor: pointer; user-select: none;
+}
+.iqe-record-title { font-weight: 700; color: #1f1f1f; font-size: 14px; }
+.iqe-record-meta { margin-left: auto; color: #999; font-size: 12px; }
+.iqe-record-body { padding: 6px 10px 10px 22px; }
+.iqe-topic { margin: 6px 0; }
+.iqe-topic-head {
+  display: flex; align-items: center; gap: 6px; padding: 6px 8px;
+  cursor: pointer; user-select: none; border-radius: 6px;
+}
+.iqe-topic-head:hover { background: #f5f7fa; }
+.iqe-topic-name { font-weight: 600; color: #1677ff; font-size: 13px; }
+.iqe-topic-lock { font-size: 12px; opacity: 0.6; }
+.iqe-topic-count {
+  margin-left: auto; font-size: 11px; color: #999;
+  background: #f0f0f0; border-radius: 10px; padding: 0 8px;
+}
+.iqe-topic-body { padding: 2px 0 4px 20px; }
+.iqe-q-row {
+  display: flex; align-items: flex-start; gap: 8px; padding: 5px 8px;
+  border-radius: 6px;
+}
+.iqe-q-row:hover { background: #f7f9fc; }
+.iqe-type-badge {
+  flex-shrink: 0; margin-top: 1px; padding: 1px 7px; border-radius: 10px;
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+}
+.iqe-type-badge.knowledge { color: #c41d7f; background: #fff0f6; border: 1px solid #ffadd2; }
+.iqe-type-badge.project { color: #08979c; background: #e6fffb; border: 1px solid #87e8de; }
+.iqe-type-badge.other { color: #d46b08; background: #fff7e6; border: 1px solid #ffd591; }
+.iqe-q-text { font-size: 13px; color: #333; line-height: 1.5; word-break: break-word; cursor: text; flex: 1; }
+.iqe-empty-text { color: #bbb; }
+.iqe-q-input {
+  flex: 1; font-size: 13px; line-height: 1.5; color: #333; padding: 3px 8px;
+  border: 1px solid #1677ff; border-radius: 6px; resize: vertical; font-family: inherit;
+  min-height: 26px;
+}
+.iqe-q-actions { flex-shrink: 0; display: inline-flex; gap: 4px; opacity: 0; transition: opacity 0.12s; }
+.iqe-q-row:hover .iqe-q-actions { opacity: 1; }
+.iqe-q-btn {
+  width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid #e0e0e0; background: #fff; border-radius: 5px; cursor: pointer;
+  font-size: 13px; color: #666; line-height: 1;
+}
+.iqe-q-btn:hover { border-color: #1677ff; color: #1677ff; }
+.iqe-q-btn.danger:hover { border-color: #ff4d4f; color: #ff4d4f; }
+.iqe-q-btn:disabled { opacity: 0.4; cursor: default; }
+.iqe-topic-name.editable { cursor: text; }
+.iqe-topic-name.editable:hover { text-decoration: underline dotted; }
+.iqe-topic-input {
+  font-size: 13px; font-weight: 600; color: #1677ff; padding: 2px 8px;
+  border: 1px solid #1677ff; border-radius: 6px; font-family: inherit;
+}
+.iqe-toggle {
+  width: 0; height: 0; border-left: 5px solid #bbb;
+  border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform 0.15s; flex-shrink: 0;
+}
+.iqe-toggle.open { transform: rotate(90deg); }
+
 .outliner-header {
   display: flex; justify-content: space-between; align-items: center;
   padding: 20px 28px 12px;
