@@ -16,7 +16,6 @@ public record KnowledgeNode(
         String nodeType,          // 'category' | 'leaf'
         short interviewWeight,    // 默认 3
         int sortOrder,
-        boolean isUserCreated,
         Short masteryLevel,       // S3 study 派生：可空（从未学过）
         int studyCount,           // S3 study 派生：finished 次数累加
         Short selfMastery,        // 用户自评掌握度 0-100：可空（未自评），与 masteryLevel 独立

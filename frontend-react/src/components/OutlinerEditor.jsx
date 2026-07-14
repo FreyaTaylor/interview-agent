@@ -11,7 +11,6 @@
  *   apiPrefix  — API 路径前缀，如 "tree-nodes" 或 "project-nodes"
  *   storageKey — localStorage 折叠状态的 key
  *   showWeight — 是否显示面试权重下拉（知识树用）
- *   showOptimize — 是否显示 LLM 优化按钮（知识树用）
  *   placeholders — 各层级 placeholder 文本，如 ['项目名', '话题', '问题']
  *   emptyText — 空状态提示文本
  *   headerSlot — 头部插槽（放按钮等）
@@ -24,7 +23,6 @@ export default function OutlinerEditor({
   apiPrefix = 'tree-nodes',
   storageKey = 'outliner_collapsed',
   showWeight = false,
-  showOptimize = false,
   placeholders = ['一级分类', '二级分类', '知识点'],
   emptyText = '暂无节点，点击上方按钮新增',
   headerSlot = null,
@@ -49,7 +47,6 @@ export default function OutlinerEditor({
   // 撤销栈：每次会改变结构的操作前 push 一份 {label, undo: async () => ...}
   const undoStack = useRef([])
   const [saving, setSaving] = useState(false)
-  const [optimizingId, setOptimizingId] = useState(null)
   // 来自 URL 的"定位"参数：?node=<id> — 加载完数据后展开祖先 + 滚动 + 高亮
   const [searchParams, setSearchParams] = useSearchParams()
   const [highlightId, setHighlightId] = useState(null)
@@ -511,23 +508,6 @@ export default function OutlinerEditor({
     } catch (e) { console.error('新增根节点失败:', e) }
   }
 
-  // ---- LLM 优化（知识树专用） ----
-  async function handleOptimize(rootNode) {
-    if (optimizingId) return
-    if (!window.confirm(`LLM 将对「${rootNode.name}」进行全面优化（去重合并、结构调整、查漏补缺、语言精简），确定继续？`)) return
-    setOptimizingId(rootNode.id)
-    try {
-      const resp = await fetch(`${API_ADMIN}/trees/${rootNode.id}/optimize`, {
-        method: 'POST',
-      }).then(r => r.json())
-      if (resp.code === 0) {
-        await fetchData()
-        alert(`优化完成：共 ${resp.data.leaf_count || 0} 个知识点`)
-      } else { alert(resp.message || '优化失败') }
-    } catch (e) { alert('优化失败: ' + e.message) }
-    finally { setOptimizingId(null) }
-  }
-
   // ---- 自动聚焦 ----
   useEffect(() => {
     if (focusId && inputRefs.current[focusId]) {
@@ -662,14 +642,6 @@ export default function OutlinerEditor({
                 >
                   {[1,2,3,4,5].map(v => <option key={v} value={v}>{'★'.repeat(v)}</option>)}
                 </select>
-              )}
-
-              {/* LLM 优化按钮（知识树根节点） */}
-              {showOptimize && node.parent_id === null && (
-                <button className="outliner-optimize" title="LLM 查漏补缺"
-                  disabled={optimizingId === node.id}
-                  onClick={() => handleOptimize(node)}
-                >{optimizingId === node.id ? '⏳' : '✨'}</button>
               )}
 
               {/* 删除 */}

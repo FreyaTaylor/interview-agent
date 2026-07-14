@@ -49,10 +49,6 @@ public interface KnowledgeSubtopicMapper {
     @Select("SELECT 1 FROM (SELECT pg_advisory_xact_lock(1, #{subtopicId})) AS _lock")
     Integer acquireSubtopicContentLock(@Param("subtopicId") int subtopicId);
 
-    /** 返回该 KP 下子话题 max(sort_order)；无数据时返回 0。 */
-    @Select("SELECT COALESCE(MAX(sort_order), 0) FROM tree_node WHERE parent_id = #{kpId} AND node_type = 'subtopic'")
-    int maxSortOrder(@Param("kpId") long kpId);
-
     /** Step A 用：只落标题的"待生成正文"子话题（body_md=null, content_status='pending'）。返回新节点 id。 */
     @Select("""
             WITH n AS (

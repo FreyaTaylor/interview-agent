@@ -113,7 +113,7 @@ export default function OutlinerPage() {
     <div className="outliner-container">
       {/* ---- Tab 栏 ---- */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #eee', marginBottom: 16 }}>
-        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }, { key: 'interview', label: '📋 面试真题' }].map(t => (
+        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }, { key: 'interview', label: '📋 面试复盘' }].map(t => (
           <button key={t.key} onClick={() => navigate(`/admin/${t.key}`)}
             style={{
               padding: '10px 24px', fontSize: 14, fontWeight: adminTab === t.key ? 600 : 400,
@@ -131,7 +131,6 @@ export default function OutlinerPage() {
             apiPrefix="tree-nodes"
             storageKey="outliner_collapsed"
             showWeight={true}
-            showOptimize={true}
             placeholders={['一级分类', '二级分类', '知识点']}
             emptyText="暂无知识树节点，点击上方按钮新增"
             headerSlot={({ handleAddRoot, fetchData }) => {
@@ -230,7 +229,6 @@ export default function OutlinerPage() {
             apiPrefix="project-nodes"
             storageKey="project_outliner_collapsed"
             showWeight={false}
-            showOptimize={false}
             placeholders={['项目名', '话题', '问题']}
             emptyText="暂无项目，点击上方按钮新增"
             headerSlot={({ handleAddRoot, fetchData }) => {

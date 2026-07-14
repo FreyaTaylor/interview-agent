@@ -144,10 +144,6 @@ public interface StudyQuestionMapper {
             """)
     int deleteByIdAndKp(@Param("id") long id, @Param("kpId") long kpId);
 
-    /** 直接挂 KP 下问题的 max(sort_order)（regenerate 追加用）；无则 -1。 */
-    @Select("SELECT COALESCE(MAX(sort_order), -1) FROM tree_node WHERE parent_id = #{kpId} AND node_type = 'question'")
-    int maxSortOrder(@Param("kpId") long kpId);
-
 
     /** 懒生成：回填单题的 rubric_template + recommended_answer（首次答题时调）。 */
     @org.apache.ibatis.annotations.Update("""

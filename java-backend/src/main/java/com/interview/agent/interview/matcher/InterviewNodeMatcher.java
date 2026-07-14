@@ -5,7 +5,6 @@ import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.infra.llm.EmbeddingService;
-import com.interview.agent.interview.mapper.UserAnswerEmbeddingMapper;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
 import com.interview.agent.project.entity.ProjectNode;
@@ -31,7 +30,7 @@ import java.util.stream.Collectors;
  *   <li>{@code interview_matcher.py::match_nodes}（知识 embedding 匹配 + 占位叶子；项目三级匹配）</li>
  *   <li>{@code embedding_match_skill.py::match_nearest_knowledge_node}（pgvector 召回 + LLM rerank）</li>
  *   <li>{@code project_node_matcher.py}（root/topic LLM 语义匹配；question embedding 匹配）</li>
- *   <li>{@code interview_storage.py::update_knowledge_weights / store_answer_embeddings}</li>
+ *   <li>{@code interview_storage.py::update_knowledge_weights}</li>
  * </ul>
  */
 @Component
@@ -58,7 +57,6 @@ public class InterviewNodeMatcher {
     private final KnowledgeNodeMapper knowledgeMapper;
     private final ProjectNodeMapper projectMapper;
     private final EmbeddingService embeddingService;
-    private final UserAnswerEmbeddingMapper answerEmbeddingMapper;
     private final LlmInvoker llmInvoker;
     private final com.interview.agent.learn.service.RubricGenService rubricGenService;
     private final com.interview.agent.interview.mapper.InterviewQuestionKpLinkMapper linkMapper;
@@ -66,14 +64,12 @@ public class InterviewNodeMatcher {
     public InterviewNodeMatcher(KnowledgeNodeMapper knowledgeMapper,
                                 ProjectNodeMapper projectMapper,
                                 EmbeddingService embeddingService,
-                                UserAnswerEmbeddingMapper answerEmbeddingMapper,
                                 LlmInvoker llmInvoker,
                                 com.interview.agent.learn.service.RubricGenService rubricGenService,
                                 com.interview.agent.interview.mapper.InterviewQuestionKpLinkMapper linkMapper) {
         this.knowledgeMapper = knowledgeMapper;
         this.projectMapper = projectMapper;
         this.embeddingService = embeddingService;
-        this.answerEmbeddingMapper = answerEmbeddingMapper;
         this.llmInvoker = llmInvoker;
         this.rubricGenService = rubricGenService;
         this.linkMapper = linkMapper;
@@ -263,7 +259,7 @@ public class InterviewNodeMatcher {
         return knowledgeMapper.findIdByLevelAndName((short) 1, UNNAMED_KNOWLEDGE, userId)
                 .orElseGet(() -> knowledgeMapper.insertWithoutEmbedding(
                         userId, null, UNNAMED_KNOWLEDGE, (short) 1, "category",
-                        DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false));
+                        DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER));
     }
 
     /** 在「未命名知识点」根下新建占位叶子；同名复用。 */
@@ -284,11 +280,11 @@ public class InterviewNodeMatcher {
         if (emb != null) {
             return knowledgeMapper.insertWithEmbedding(
                     userId, rootId, name, (short) 2, "knowledge_point",
-                    DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false, emb);
+                    DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, emb);
         }
         return knowledgeMapper.insertWithoutEmbedding(
                 userId, rootId, name, (short) 2, "knowledge_point",
-                DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER, false);
+                DEFAULT_INTERVIEW_WEIGHT, ORPHAN_SORT_ORDER);
     }
 
     // ============================================================
@@ -477,56 +473,6 @@ public class InterviewNodeMatcher {
             return str(qv).strip();
         }
         return str(o).strip();
-    }
-
-    /** 复刻 store_answer_embeddings：knowledge/project 类用户回答向量化入 user_answer_embedding。 */
-    public void storeAnswerEmbeddings(List<Map<String, Object>> scoredGroups) {
-        for (Map<String, Object> g : scoredGroups) {
-            String userAnswer = str(g.get("user_answer")).strip();
-            if (userAnswer.isEmpty()) {
-                continue;
-            }
-            String gType = str(g.get("type"));
-            if (!"knowledge".equals(gType) && !"project".equals(gType)) {
-                continue;
-            }
-
-            String kpName;
-            if ("project".equals(gType)) {
-                kpName = str(g.get("project_name")) + " · " + str(g.get("topic"));
-            } else {
-                String kp = str(g.get("knowledge_point"));
-                String matched = str(g.get("matched_node_name"));
-                kpName = !kp.isEmpty() ? kp : matched;   // 复刻 kp or matched_node_name or ""
-            }
-
-            String questionsText = asList(g.get("questions")).stream()
-                    .map(this::str)
-                    .collect(Collectors.joining(" | "));
-
-            // 得分仅 knowledge 评分结果里有 total_score
-            Integer score = null;
-            Object srObj = g.get("score_result");
-            if (srObj instanceof Map<?, ?> sr && "knowledge".equals(String.valueOf(sr.get("type")))) {
-                score = toInt(sr.get("total_score"));
-            }
-
-            Long kpId = toLong(g.get("matched_node_id"));
-            String text = "问题: " + questionsText + "\n回答: " + userAnswer;
-            String vec = null;
-            try {
-                vec = embeddingService.embedToLiteral(text);
-            } catch (Exception e) {
-                log.warn("回答向量化失败，降级为不带向量写入: {}", e.getMessage());
-            }
-            if (vec != null) {
-                answerEmbeddingMapper.insertWithEmbedding(
-                        kpId, "interview", kpName, questionsText, userAnswer, vec, score);
-            } else {
-                answerEmbeddingMapper.insertWithoutEmbedding(
-                        kpId, "interview", kpName, questionsText, userAnswer, score);
-            }
-        }
     }
 
     // ============================================================

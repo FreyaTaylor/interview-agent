@@ -11,9 +11,9 @@ public interface InterviewKnowledgeQuestionMapper {
 
     @Select("""
             INSERT INTO interview_knowledge_question
-              (interview_record_id, knowledge_node_id, tag, questions, user_answer, original_dialogue, score_result)
+              (interview_record_id, tag, questions, user_answer, original_dialogue, score_result)
             VALUES
-              (#{recordId}, #{knowledgeNodeId}, #{tag},
+              (#{recordId}, #{tag},
                #{questions,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                #{userAnswer}, #{originalDialogue},
                #{scoreResult,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER})
@@ -21,7 +21,6 @@ public interface InterviewKnowledgeQuestionMapper {
             """)
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
     long insert(@Param("recordId") long recordId,
-                @Param("knowledgeNodeId") Long knowledgeNodeId,
                 @Param("tag") String tag,
                 @Param("questions") Object questions,
                 @Param("userAnswer") String userAnswer,

@@ -824,17 +824,6 @@ body {
 }
 .outliner-delete:hover { background: #fff1f0; }
 
-/* LLM 优化按钮 */
-.outliner-optimize {
-  opacity: 0; border: none; background: none;
-  font-size: 14px; cursor: pointer;
-  width: 22px; height: 22px; line-height: 22px;
-  text-align: center; border-radius: 3px;
-  flex-shrink: 0; transition: opacity 0.15s, background 0.15s;
-}
-.outliner-optimize:hover { background: #fffbe6; }
-.outliner-optimize:disabled { cursor: wait; opacity: 1 !important; }
-.outliner-item:hover .outliner-optimize { opacity: 1; }
 
 /* ---- 新建知识树对话框 ---- */
 .outliner-dialog-overlay {

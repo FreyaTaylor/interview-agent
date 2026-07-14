@@ -90,8 +90,8 @@ class LearnGenerationIT {
     @Test
     void fetchContent_doesNotPullInterviewQuestionsIntoSubtopics() {
         // seed：分类 → 知识点 → 该 KP 下两道直挂面试真题（source=interview, 无子话题）
-        long catId = nodeMapper.insertWithoutEmbedding(1L, null, "测试分类", (short) 1, "category", (short) 3, 0, false);
-        long kpId = nodeMapper.insertWithoutEmbedding(1L, catId, "测试知识点", (short) 2, "knowledge_point", (short) 3, 0, false);
+        long catId = nodeMapper.insertWithoutEmbedding(1L, null, "测试分类", (short) 1, "category", (short) 3, 0);
+        long kpId = nodeMapper.insertWithoutEmbedding(1L, catId, "测试知识点", (short) 2, "knowledge_point", (short) 3, 0);
         long q1 = questionMapper.insert(kpId, "真题一", null, null, "interview", null, 1);
         long q2 = questionMapper.insert(kpId, "真题二", null, null, "interview", null, 2);
 

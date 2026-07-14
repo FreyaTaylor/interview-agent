@@ -85,7 +85,10 @@ final class InterviewServiceSupport {
             if (isBlank(copy.get("original_dialogue"))) {
                 copy.put("original_dialogue", rebuildDialogue(turnIds, turnById));
             }
-            if (!(copy.get("questions") instanceof List<?>)) {
+            // 手动校准新建的组会带 questions:[]（空列表），旧逻辑只在「非 List」时重建 → 空列表被跳过，
+            // 导致 questions 恒空、firstQuestion 兜底把整段对话塞进题干（大长串 bug）。故空列表也要按 turn 重建。
+            Object existingQuestions = copy.get("questions");
+            if (!(existingQuestions instanceof List<?> ql) || ql.isEmpty()) {
                 copy.put("questions", collectQuestions(turnIds, turnById));
             }
             if (isBlank(copy.get("user_answer"))) {
@@ -177,13 +180,22 @@ final class InterviewServiceSupport {
         return sb.toString();
     }
 
-    /** 取 group 首个问题文本；无 questions 时退化为 original_dialogue。 */
+    /** 取 group 首个非空问题文本；无 questions 时只退化为对话**首行**（绝不把整段对话塞进题干）。 */
     static String firstQuestion(Map<String, Object> group) {
         Object q = group.get("questions");
-        if (q instanceof List<?> list && !list.isEmpty() && list.get(0) != null) {
-            return list.get(0).toString();
+        if (q instanceof List<?> list) {
+            for (Object item : list) {
+                if (item != null && !item.toString().isBlank()) {
+                    return item.toString();
+                }
+            }
         }
-        return asString(group.get("original_dialogue"));
+        // 兜底：只取 original_dialogue 首行（去掉可能的「说话人：」前缀），避免大长串落库
+        String dialogue = asString(group.get("original_dialogue"));
+        int nl = dialogue.indexOf('\n');
+        String firstLine = nl >= 0 ? dialogue.substring(0, nl) : dialogue;
+        int colon = firstLine.indexOf('：');
+        return colon >= 0 ? firstLine.substring(colon + 1).strip() : firstLine.strip();
     }
 
     /** group 的 tag（空兜底「未分类」），子表落库用。 */

@@ -198,7 +198,6 @@ public class InterviewParseServiceImpl implements InterviewParseService {
             if ("knowledge".equals(type)) {
                 long ikqId = knowledgeQuestionMapper.insert(
                         recordId,
-                        asLongOrNull(g.get("matched_node_id")),
                         defaultTag(g),
                         g.get("questions"),
                         asString(g.get("user_answer")),
@@ -227,9 +226,6 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                 );
             }
         }
-
-        // Step 5: 副作用 —— 用户回答向量化（真题落库/错题本已在 updateFinalize 前完成）
-        nodeMatcher.storeAnswerEmbeddings(scoredGroups);
 
         return new FinalizeResponse(
                 recordId,

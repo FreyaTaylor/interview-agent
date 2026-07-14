@@ -122,8 +122,8 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         // Step 5: INSERT（两个 SQL 变体：带 / 不带 embedding）—— 避免 MyBatis 绑 NULL 到 ::vector 出错
         long userId = CurrentUser.id();
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false)
-                : repo.insertWithEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, false, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0)
+                : repo.insertWithEmbedding(userId, req.parentId(), name, level, nodeType, weight, 0, embeddingLiteral);
 
         // Step 6: 父节点升级——原本是 knowledge_point 且现在多了个孩子 → 升为 category
         if (parent != null && "knowledge_point".equals(parent.nodeType())) {

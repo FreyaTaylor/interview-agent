@@ -27,8 +27,6 @@ public final class PromptKeys {
     public static final String LEARN_SUBTOPICS_GEN = "learn/subtopics-gen";
     /** 学习模式下「单子话题深度正文」（Step B 懒生成，讲到机制层能答出目标题）。V41 seed。 */
     public static final String LEARN_SUBTOPIC_CONTENT = "learn/subtopic-content";
-    /** 学习模式下「题目生成」（按子话题出题）。V10/V11 seed。 */
-    public static final String LEARN_QUESTION_GEN = "learn/question-gen";
 
     // ===== study 域（考核 / 答题评分）=====
     /** 答题每轮评分（状态机驱动 per-turn 评分）。V13 seed。 */
@@ -57,10 +55,6 @@ public final class PromptKeys {
     // ===== project grilling 域（S7 项目拷打）=====
     /** 项目拷打 — 异步画像抽取：仅 facts_patch。V16/V19 seed。 */
     public static final String PROJECT_EXTRACT_PROFILE = "project/extract-profile";
-    /** 项目拷打 v1 — 单轮评分与追问决策。V16 seed。 */
-    public static final String PROJECT_PER_TURN = "project/per-turn";
-    /** 项目拷打 v1 — 最终综合评分。V16 seed。 */
-    public static final String PROJECT_FINAL_SCORE = "project/final-score";
     /** 项目拷打 v2「面试官自由追问」— 单轮：interviewer_note + gaps_found + signals + next_question/wrap_up_reason。V17 seed。 */
     public static final String PROJECT_PER_TURN_V2 = "project/per-turn-v2";
     /** 项目拷打 v2 — 综合评分：dimensions (4维) + overall_summary + design_issues + extension_qa。V17 seed。 */

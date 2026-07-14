@@ -40,7 +40,7 @@ public interface InterviewParseService {
      *   <li>节点匹配：knowledge embedding 召回 / 占位叶子；project 三级匹配（根→话题→问题叶子）</li>
      *   <li>rubric 逐组评分，产出 overall_analysis 与 avg_score / pass_estimate</li>
      *   <li>落 {@code interview_record}（text_hash = SHA-256(raw_text)）+ 按 group.type 分流落 3 张子表</li>
-     *   <li>副作用：命中知识点 {@code interview_weight +1}、用户回答向量化入 {@code user_answer_embedding}</li>
+     *   <li>副作用：命中知识点 {@code interview_weight +1}</li>
      * </ol>
      *
      * @param turns    校对后的对话轮次（source of truth，raw_text 由其拼出）

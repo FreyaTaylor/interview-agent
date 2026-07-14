@@ -31,7 +31,7 @@ public interface KnowledgeNodeMapper {
 
     String COLS = """
             id, parent_id, name, level, node_type, interview_weight,
-            sort_order, is_user_created, mastery_level, study_count,
+            sort_order, mastery_level, study_count,
             self_mastery, created_at, updated_at
             """;
 
@@ -119,9 +119,9 @@ public interface KnowledgeNodeMapper {
     @Select("""
             INSERT INTO tree_node
               (tree_kind, user_id, parent_id, name, level, node_type, interview_weight,
-               sort_order, is_user_created)
+               sort_order)
             VALUES ('knowledge', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
-                    #{sortOrder}, #{isUserCreated})
+                    #{sortOrder})
             RETURNING id
             """)
     long insertWithoutEmbedding(@Param("userId") long userId,
@@ -130,15 +130,14 @@ public interface KnowledgeNodeMapper {
                                 @Param("level") short level,
                                 @Param("nodeType") String nodeType,
                                 @Param("interviewWeight") short interviewWeight,
-                                @Param("sortOrder") int sortOrder,
-                                @Param("isUserCreated") boolean isUserCreated);
+                                @Param("sortOrder") int sortOrder);
 
     @Select("""
             INSERT INTO tree_node
               (tree_kind, user_id, parent_id, name, level, node_type, interview_weight,
-               sort_order, is_user_created, embedding)
+               sort_order, embedding)
             VALUES ('knowledge', #{userId}, #{parentId}, #{name}, #{level}, #{nodeType}, #{interviewWeight},
-                    #{sortOrder}, #{isUserCreated}, #{embeddingLiteral}::vector)
+                    #{sortOrder}, #{embeddingLiteral}::vector)
             RETURNING id
             """)
     long insertWithEmbedding(@Param("userId") long userId,
@@ -148,7 +147,6 @@ public interface KnowledgeNodeMapper {
                              @Param("nodeType") String nodeType,
                              @Param("interviewWeight") short interviewWeight,
                              @Param("sortOrder") int sortOrder,
-                             @Param("isUserCreated") boolean isUserCreated,
                              @Param("embeddingLiteral") String embeddingLiteral);
 
     // ===== 更新 =====

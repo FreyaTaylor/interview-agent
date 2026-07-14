@@ -397,8 +397,8 @@ public class TreeGenServiceImpl implements TreeGenService {
         // Step 4: INSERT（带 / 不带 embedding 两个分支）
         long userId = CurrentUser.id();
         long newId = (embeddingLiteral == null)
-                ? repo.insertWithoutEmbedding(userId, parentId, name, level, nodeType, weight, 0, false)
-                : repo.insertWithEmbedding(userId, parentId, name, level, nodeType, weight, 0, false, embeddingLiteral);
+                ? repo.insertWithoutEmbedding(userId, parentId, name, level, nodeType, weight, 0)
+                : repo.insertWithEmbedding(userId, parentId, name, level, nodeType, weight, 0, embeddingLiteral);
 
         // Step 5: 叶子终止递归，计数 +1
         if (isLeaf) {

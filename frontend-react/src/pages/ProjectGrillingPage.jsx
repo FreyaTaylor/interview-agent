@@ -2,7 +2,7 @@
  * ProjectGrillingPage — 项目拷打 v2（按题作答）
  *
  * 三栏布局：
- *   左 : 项目画像（project_facts + weak_points）+ 项目下拉切换
+ *   左 : 项目画像（project_facts）+ 项目下拉切换
  *   中 : 项目话题手风琴，每个话题展开后是题目列表
  *   右 : 当前作答会话（ConversationView + AnswerInput）
  */
@@ -23,7 +23,7 @@ export default function ProjectGrillingPage() {
 
   const [projects, setProjects] = useState([])
   const [activeProjectId, setActiveProjectId] = useState(urlProjectId ? Number(urlProjectId) : null)
-  const [profile, setProfile] = useState({ project_facts: [], weak_points: [] })
+  const [profile, setProfile] = useState({ project_facts: [] })
   // 三模块解耦 P5：该项目关联的面试真题（只读）
   const [relatedProjectQuestions, setRelatedProjectQuestions] = useState([])
   const [topics, setTopics] = useState([])
@@ -113,7 +113,6 @@ export default function ProjectGrillingPage() {
       if (pRes.code === 0) {
         setProfile({
           project_facts: pRes.data?.project_facts || [],
-          weak_points: pRes.data?.weak_points || [],
         })
       }
       if (dRes.code === 0) {

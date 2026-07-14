@@ -65,13 +65,17 @@ function QuestionRow({ node, kpId, depth, reload }) {
       <div className="node-row q-row" style={{ paddingLeft: 16 + depth * 22 }}>
         <span className="bullet" />
         {isInterview && <span className="q-badge interview" title="面试真题">📌真题</span>}
-        <span className={`q-badge tier ${isCore ? 'core' : 'ext'}`} title="题目层级">
+        <button
+          type="button"
+          className={`learn-tier-badge ${isCore ? 'core' : 'ext'}`}
+          disabled={busy}
+          title="点击切换 高频/扩展"
+          onClick={toggleTier}
+        >
           {isCore ? '高频' : '扩展'}
-        </span>
+        </button>
         <span className="q-text" title={node.name}>{node.name}</span>
         <div className="q-actions">
-          <button type="button" className="q-btn" disabled={busy} onClick={toggleTier}
-            title="切换高频/扩展">{isCore ? '设为扩展' : '设为高频'}</button>
           <Link to={`/exam/${kpId}`} className="q-btn link" title="进入该知识点答题">答题</Link>
           <button type="button" className="q-btn danger" disabled={busy} onClick={del} title="删除该题">删除</button>
         </div>

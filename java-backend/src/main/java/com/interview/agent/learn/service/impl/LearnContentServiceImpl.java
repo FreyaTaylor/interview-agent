@@ -455,8 +455,6 @@ public class LearnContentServiceImpl implements LearnContentService {
         return new ArrayList<>(seen.values());
     }
 
-    /** importance 已废弃（子话题不再有星级）。 */
-
     private ContentView buildView(KnowledgeNode node, List<KnowledgeSubtopic> rows, boolean generated) {
         List<SubtopicView> views = new ArrayList<>(rows.size());
         for (KnowledgeSubtopic s : rows) {

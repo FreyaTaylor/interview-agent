@@ -41,9 +41,6 @@ public interface ProjectNodeMapper {
     @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'project' AND parent_id IS NULL ORDER BY id")
     List<ProjectNode> findRoots();
 
-    @Select("SELECT EXISTS(SELECT 1 FROM tree_node WHERE parent_id = #{parentId})")
-    boolean hasChildren(@Param("parentId") long parentId);
-
     // ===== 面试匹配（get_or_create + embedding 召回）=====
 
     /** 按 level + name 取 user_id=1 的项目节点 id（复刻 get_or_create「未命名项目」根的 filter_by）。 */
@@ -156,9 +153,6 @@ public interface ProjectNodeMapper {
 
     @Update("UPDATE tree_node SET sort_order = #{sortOrder}, updated_at = NOW() WHERE id = #{id}")
     int updateSortOrder(@Param("id") long id, @Param("sortOrder") int sortOrder);
-
-    @Update("UPDATE tree_node SET node_type = #{nodeType}, updated_at = NOW() WHERE id = #{id}")
-    int updateNodeType(@Param("id") long id, @Param("nodeType") String nodeType);
 
     /**
      * 把以 rootId 为根的子树（不含 root 自身）所有节点 level += delta，
