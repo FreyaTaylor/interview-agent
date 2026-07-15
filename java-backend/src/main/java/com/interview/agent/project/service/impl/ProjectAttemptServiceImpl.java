@@ -122,7 +122,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
         QuestionAttempt attempt = loadOrThrow(attemptId);
         requireInProgress(attempt);
         ProjectNode leaf = loadLeaf(attempt.questionId());
-        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId()).orElse(null);
+        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId(), CurrentUser.id()).orElse(null);
         String topicName = topic == null ? "" : topic.name();
         Project project = loadProjectFromTopic(topic);
         ProjectUserProfile profile = loadOrCreateProfile(project);
@@ -164,7 +164,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
             followUpCount += 1;
         }
 
-        attemptMapper.updateTurn(attemptId, dialog, followUpCount);
+        attemptMapper.updateTurn(attemptId, CurrentUser.id(), dialog, followUpCount);
 
         int nextStep = countQuestions(dialog);
         boolean canFinish = nextQuestion == null;
@@ -197,7 +197,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
     public AttemptFinishResponse finish(long attemptId) {
         QuestionAttempt attempt = loadOrThrow(attemptId);
         ProjectNode leaf = loadLeaf(attempt.questionId());
-        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId()).orElse(null);
+        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId(), CurrentUser.id()).orElse(null);
         String topicName = topic == null ? "" : topic.name();
         Project project = loadProjectFromTopic(topic);
 
@@ -219,7 +219,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
         Map<String, Object> rubricPayload = new LinkedHashMap<>();
         rubricPayload.put("dimensions", fs.dimensions());
 
-        int affected = attemptMapper.finish(attemptId, fs.finalScore(), rubricPayload,
+        int affected = attemptMapper.finish(attemptId, CurrentUser.id(), fs.finalScore(), rubricPayload,
                 fs.overallSummary(), fs.designIssues(), fs.extensionQa());
         if (affected == 0) {
             // 并发 finish 竞争：再读一遍
@@ -318,7 +318,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
     public AttemptDetailResponse detail(long attemptId) {
         QuestionAttempt a = loadOrThrow(attemptId);
         ProjectNode leaf = loadLeaf(a.questionId());
-        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId()).orElse(null);
+        ProjectNode topic = leaf.parentId() == null ? null : nodeMapper.findById(leaf.parentId(), CurrentUser.id()).orElse(null);
         DimRubric dr = splitDimensionsAndRubric(a.rubricResult());
         return new AttemptDetailResponse(
                 a.id(), a.questionId(), leaf.name(),
@@ -335,7 +335,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
     @Override
     public AttemptsHistoryResponse history(long questionId, int limit) {
         int eff = limit <= 0 ? DEFAULT_HISTORY_LIMIT : Math.min(limit, 50);
-        List<QuestionAttempt> rows = attemptMapper.findRecent(questionId, eff);
+        List<QuestionAttempt> rows = attemptMapper.findRecent(CurrentUser.id(), questionId, eff);
         List<AttemptsHistoryResponse.Item> items = new ArrayList<>(rows.size());
         for (QuestionAttempt a : rows) {
             DimRubric dr = splitDimensionsAndRubric(a.rubricResult());
@@ -357,12 +357,12 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
     // ============================================================
 
     private QuestionAttempt loadOrThrow(long attemptId) {
-        return attemptMapper.findById(attemptId)
+        return attemptMapper.findById(attemptId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "作答记录不存在"));
     }
 
     private ProjectNode loadLeaf(long questionId) {
-        ProjectNode leaf = nodeMapper.findById(questionId)
+        ProjectNode leaf = nodeMapper.findById(questionId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
         if (leaf.level() != 3) {
             throw new BizException(40001, "题目必须是 L3 叶子节点");
@@ -372,7 +372,7 @@ public class ProjectAttemptServiceImpl implements ProjectAttemptService {
 
     private String loadTopicName(Long topicId) {
         if (topicId == null) return "";
-        return nodeMapper.findById(topicId).map(ProjectNode::name).orElse("");
+        return nodeMapper.findById(topicId, CurrentUser.id()).map(ProjectNode::name).orElse("");
     }
 
     /** L2 topic → L1 root → 反查 project。topic 为 null 或孤儿返 null。 */

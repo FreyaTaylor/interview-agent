@@ -34,8 +34,8 @@ public interface ProjectMapper {
                            @Param("description") String description,
                            @Param("rootNodeId") long rootNodeId);
 
-    @Select(SELECT_COLS + " WHERE t.id = #{id} AND t.node_type = 'project'")
-    Optional<Project> findById(@Param("id") long id);
+    @Select(SELECT_COLS + " WHERE t.id = #{id} AND t.node_type = 'project' AND t.user_id = #{userId}")
+    Optional<Project> findById(@Param("id") long id, @Param("userId") long userId);
 
     /** 列出该 user 的全部项目（tree_node 项目根），按创建时间倒序。 */
     @Select(SELECT_COLS

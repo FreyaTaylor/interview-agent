@@ -87,7 +87,7 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
 
     @Override
     public InterviewHistoryDetailResponse historyDetail(long recordId) {
-        InterviewRecord r = recordMapper.findById(recordId)
+        InterviewRecord r = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
 
         Map<String, Object> parsed = asMap(r.parsedQuestions());
@@ -164,7 +164,7 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
         for (InterviewEmbeddingBackfillRow row : rows) {
             try {
                 String literal = embeddingService.embedToLiteral(dedupText(row.rawText()));
-                recordMapper.updateEmbedding(row.id(), literal);
+                recordMapper.updateEmbedding(row.id(), userId, literal);
             } catch (Exception e) {
                 log.warn("回填面试记录 embedding 失败（不影响查重）record_id={}: {}", row.id(), e.getMessage());
             }
@@ -189,10 +189,11 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
             throw new BizException(40001, "turns/groups 不能为空");
         }
         if (recordId != null) {
-            InterviewRecord record = recordMapper.findById(recordId)
+            InterviewRecord record = recordMapper.findById(recordId, CurrentUser.id())
                     .orElseThrow(() -> new BizException(40004, "记录不存在"));
             int affected = recordMapper.updateDraft(
                     record.id(),
+                    CurrentUser.id(),
                     turns,
                     groups,
                     blankToNull(company),
@@ -223,7 +224,7 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
     public FinalizeResponse historyRecalibrate(long recordId,
                                                List<Map<String, Object>> turns,
                                                List<Map<String, Object>> groups) {
-        InterviewRecord record = recordMapper.findById(recordId)
+        InterviewRecord record = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
         deleteRecordOrThrow(recordId);
         return parseService.finalizeInterview(turns, groups, record.company(), record.position());
@@ -239,27 +240,28 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
     @Override
     @Transactional
     public UpdateMetaResponse updateMeta(long recordId, String company, String position) {
-        InterviewRecord record = recordMapper.findById(recordId)
+        InterviewRecord record = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
         int affected = recordMapper.updateMeta(
                 record.id(),
+                CurrentUser.id(),
                 blankToNull(company),
                 blankToNull(position)
         );
         if (affected == 0) {
             throw new BizException(50000, "更新失败");
         }
-        InterviewRecord latest = recordMapper.findById(recordId)
+        InterviewRecord latest = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
         return new UpdateMetaResponse(latest.id(), latest.company(), latest.position());
     }
 
     /** 删除记录前置校验：不存在抛 40004，删除影响行数为 0 抛 50000。 */
     private void deleteRecordOrThrow(long recordId) {
-        if (recordMapper.findById(recordId).isEmpty()) {
+        if (recordMapper.findById(recordId, CurrentUser.id()).isEmpty()) {
             throw new BizException(40004, "记录不存在");
         }
-        int affected = recordMapper.deleteById(recordId);
+        int affected = recordMapper.deleteById(recordId, CurrentUser.id());
         if (affected == 0) {
             throw new BizException(50000, "删除失败");
         }

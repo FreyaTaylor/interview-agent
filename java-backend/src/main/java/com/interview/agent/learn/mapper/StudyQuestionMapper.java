@@ -44,8 +44,8 @@ public interface StudyQuestionMapper {
              OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
             """;
 
-    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND " + UNDER_KP + " ORDER BY t.sort_order, t.id")
-    List<StudyQuestion> findByKpId(@Param("kpId") long kpId);
+    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND " + UNDER_KP + " AND t.user_id = #{userId} ORDER BY t.sort_order, t.id")
+    List<StudyQuestion> findByKpId(@Param("kpId") long kpId, @Param("userId") long userId);
 
     /**
      * 答题页取题：只出「父子话题讲解已生成(content_status='ready')」下的题。
@@ -54,25 +54,25 @@ public interface StudyQuestionMapper {
     @Select("SELECT " + COLS + FROM
             + " JOIN subtopic_detail sd ON sd.node_id = p.id"
             + " WHERE t.node_type = 'question' AND p.node_type = 'subtopic'"
-            + "   AND p.parent_id = #{kpId} AND sd.content_status = 'ready'"
+            + "   AND p.parent_id = #{kpId} AND sd.content_status = 'ready' AND t.user_id = #{userId}"
             + " ORDER BY t.sort_order, t.id")
-    List<StudyQuestion> findAnswerableByKpId(@Param("kpId") long kpId);
+    List<StudyQuestion> findAnswerableByKpId(@Param("kpId") long kpId, @Param("userId") long userId);
 
-    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND t.parent_id = #{subtopicId} ORDER BY t.sort_order, t.id")
-    List<StudyQuestion> findBySubtopic(@Param("subtopicId") long subtopicId);
+    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'question' AND t.parent_id = #{subtopicId} AND t.user_id = #{userId} ORDER BY t.sort_order, t.id")
+    List<StudyQuestion> findBySubtopic(@Param("subtopicId") long subtopicId, @Param("userId") long userId);
 
-    @Select("SELECT " + COLS + FROM + " WHERE t.id = #{id}")
-    java.util.Optional<StudyQuestion> findById(@Param("id") long id);
+    @Select("SELECT " + COLS + FROM + " WHERE t.id = #{id} AND t.user_id = #{userId}")
+    java.util.Optional<StudyQuestion> findById(@Param("id") long id, @Param("userId") long userId);
 
     @Select("""
             SELECT EXISTS(
               SELECT 1 FROM tree_node t JOIN tree_node p ON p.id = t.parent_id
-              WHERE t.node_type = 'question' AND
+              WHERE t.node_type = 'question' AND t.user_id = #{userId} AND
               (   (p.node_type = 'subtopic' AND p.parent_id = #{kpId})
                OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
             )
             """)
-    boolean existsByKpId(@Param("kpId") long kpId);
+    boolean existsByKpId(@Param("kpId") long kpId, @Param("userId") long userId);
 
     /** 直接挂在 KP 下新增问题（rubric/answer 可空，懒补；source 默认 generated）。返回新节点 id。 */
     @Select("""
@@ -127,33 +127,35 @@ public interface StudyQuestionMapper {
     @Delete("""
             DELETE FROM tree_node t
             USING tree_node p
-            WHERE p.id = t.parent_id AND t.node_type = 'question'
+            WHERE p.id = t.parent_id AND t.node_type = 'question' AND t.user_id = #{userId}
               AND (   (p.node_type = 'subtopic' AND p.parent_id = #{kpId})
                    OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
               AND NOT EXISTS (SELECT 1 FROM question_attempt a WHERE a.question_id = t.id)
             """)
-    int deleteUnattemptedByKpId(@Param("kpId") long kpId);
+    int deleteUnattemptedByKpId(@Param("kpId") long kpId, @Param("userId") long userId);
 
     /** 按 id 删单个问题节点，带 kp 归属校验防越权；返回受影响行数。 */
     @Delete("""
             DELETE FROM tree_node t
             USING tree_node p
-            WHERE t.id = #{id} AND t.node_type = 'question' AND p.id = t.parent_id
+            WHERE t.id = #{id} AND t.node_type = 'question' AND t.user_id = #{userId} AND p.id = t.parent_id
               AND (   (p.node_type = 'subtopic' AND p.parent_id = #{kpId})
                    OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
             """)
-    int deleteByIdAndKp(@Param("id") long id, @Param("kpId") long kpId);
+    int deleteByIdAndKp(@Param("id") long id, @Param("kpId") long kpId, @Param("userId") long userId);
 
 
-    /** 懒生成：回填单题的 rubric_template + recommended_answer（首次答题时调）。 */
+    /** 懒生成：回填单题的 rubric_template + recommended_answer（首次答题时调）；带归属校验。 */
     @org.apache.ibatis.annotations.Update("""
             UPDATE question_detail SET
               rubric_template = #{rubricTemplate,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
               recommended_answer = #{recommendedAnswer,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER}
             WHERE node_id = #{id}
+              AND node_id IN (SELECT id FROM tree_node WHERE id = #{id} AND user_id = #{userId})
             """)
     @Options(flushCache = Options.FlushCachePolicy.TRUE)
     int updateRubric(@Param("id") long id,
+                     @Param("userId") long userId,
                      @Param("rubricTemplate") Object rubricTemplate,
                      @Param("recommendedAnswer") Object recommendedAnswer);
 
@@ -162,10 +164,10 @@ public interface StudyQuestionMapper {
             UPDATE question_detail SET tier = #{tier}
             WHERE node_id = #{id} AND node_id IN (
               SELECT t.id FROM tree_node t JOIN tree_node p ON p.id = t.parent_id
-              WHERE t.node_type = 'question'
+              WHERE t.node_type = 'question' AND t.user_id = #{userId}
                 AND (   (p.node_type = 'subtopic' AND p.parent_id = #{kpId})
                      OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
             )
             """)
-    int updateTier(@Param("id") long id, @Param("kpId") long kpId, @Param("tier") String tier);
+    int updateTier(@Param("id") long id, @Param("kpId") long kpId, @Param("tier") String tier, @Param("userId") long userId);
 }

@@ -93,7 +93,7 @@ class LinkRecallIT {
 
         matcher.linkRelatedKnowledge(ikqId, "虚拟线程与 synchronized");
 
-        List<InterviewQuestionKpLink> links = linkMapper.findByInterviewQuestion(ikqId);
+        List<InterviewQuestionKpLink> links = linkMapper.findByInterviewQuestion(ikqId, 1L);
         Set<Long> linkedKpIds = links.stream()
                 .map(InterviewQuestionKpLink::knowledgePointId).collect(Collectors.toSet());
 

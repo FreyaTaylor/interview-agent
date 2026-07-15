@@ -57,7 +57,7 @@ public class ProjectGrillingServiceImpl implements ProjectGrillingService {
         List<Project> projects = projectMapper.listByUser(CurrentUser.id());
         List<ProjectListItem> result = new ArrayList<>(projects.size());
         for (Project p : projects) {
-            int qCount = p.rootNodeId() == null ? 0 : nodeMapper.countLeavesUnderRoot(p.rootNodeId());
+            int qCount = p.rootNodeId() == null ? 0 : nodeMapper.countLeavesUnderRoot(p.rootNodeId(), CurrentUser.id());
             Integer readiness = aggregateService.projectReadiness(p.id());
             result.add(new ProjectListItem(
                     p.id(),
@@ -92,15 +92,15 @@ public class ProjectGrillingServiceImpl implements ProjectGrillingService {
 
     @Override
     public List<DimensionItem> dimensionsList(long projectId) {
-        Optional<Project> projectOpt = projectMapper.findById(projectId);
+        Optional<Project> projectOpt = projectMapper.findById(projectId, CurrentUser.id());
         if (projectOpt.isEmpty() || projectOpt.get().rootNodeId() == null) {
             return Collections.emptyList();
         }
         long rootId = projectOpt.get().rootNodeId();
-        List<ProjectNode> topics = nodeMapper.findChildrenByLevel(rootId, (short) 2);
+        List<ProjectNode> topics = nodeMapper.findChildrenByLevel(rootId, (short) 2, CurrentUser.id());
         List<DimensionItem> result = new ArrayList<>(topics.size());
         for (ProjectNode t : topics) {
-            int qCount = nodeMapper.findChildrenByLevel(t.id(), (short) 3).size();
+            int qCount = nodeMapper.findChildrenByLevel(t.id(), (short) 3, CurrentUser.id()).size();
             ProjectScoreAggregateService.TopicScore ts = aggregateService.topicScore(t.id());
             result.add(new DimensionItem(t.id(), t.name(), qCount, ts.attemptCount(), ts.avgScore()));
         }
@@ -109,9 +109,9 @@ public class ProjectGrillingServiceImpl implements ProjectGrillingService {
 
     @Override
     public TopicQuestionsResponse topicQuestions(long topicId) {
-        ProjectNode topic = nodeMapper.findById(topicId).orElseThrow(() ->
+        ProjectNode topic = nodeMapper.findById(topicId, CurrentUser.id()).orElseThrow(() ->
                 new IllegalArgumentException("话题不存在：topic_id=" + topicId));
-        List<ProjectNode> leaves = nodeMapper.findChildrenByLevel(topicId, (short) 3);
+        List<ProjectNode> leaves = nodeMapper.findChildrenByLevel(topicId, (short) 3, CurrentUser.id());
         List<TopicQuestionsResponse.QuestionItem> questions = new ArrayList<>(leaves.size());
         for (ProjectNode q : leaves) {
             questions.add(new TopicQuestionsResponse.QuestionItem(

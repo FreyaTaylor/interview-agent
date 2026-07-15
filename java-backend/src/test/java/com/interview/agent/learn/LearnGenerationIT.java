@@ -104,7 +104,7 @@ class LearnGenerationIT {
         assertTrue(subtopicCount != null && subtopicCount >= 1, "应生成子话题");
 
         // assert 2（P4 新行为）：两道真题不被并入子话题 —— 仍 KP 直挂（subtopic_id 为空）、source 不变
-        List<StudyQuestion> interviewQs = questionMapper.findByKpId(kpId).stream()
+        List<StudyQuestion> interviewQs = questionMapper.findByKpId(kpId, 1L).stream()
                 .filter(q -> "interview".equals(q.source())).toList();
         assertEquals(2, interviewQs.size(), "两道真题应仍在（未被删）");
         for (StudyQuestion q : interviewQs) {

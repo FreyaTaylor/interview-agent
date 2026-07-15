@@ -61,7 +61,7 @@ public class ProjectProfileServiceImpl implements ProjectProfileService {
     @Override
     public void extractAndApply(long projectId, String topic, String question, String answer,
                                 String scoringSummary, List<String> missedKeyPoints, long userId) {
-        Project project = projectMapper.findById(projectId).orElse(null);
+        Project project = projectMapper.findById(projectId, userId).orElse(null);
         if (project == null) {
             log.warn("extractAndApply: project {} 不存在", projectId);
             return;

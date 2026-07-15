@@ -1,5 +1,6 @@
 package com.interview.agent.learn.service.impl;
 
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.BizException;
 import com.interview.agent.knowledge.entity.KnowledgeNode;
 import com.interview.agent.knowledge.mapper.KnowledgeNodeMapper;
@@ -86,12 +87,12 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     @Transactional
     public void deleteQuestion(long kpId, long questionId) {
         // Step 1: 校验题目存在且属于本 KP（防越权）
-        questionMapper.findById(questionId)
+        questionMapper.findById(questionId, CurrentUser.id())
                 .filter(q -> q.knowledgePointId() != null && q.knowledgePointId() == kpId)
                 .orElseThrow(() -> new BizException(40400, "题目不存在或不属于该知识点"));
         // Step 2: 先删作答记录，再删题
-        attemptMapper.deleteByStudyQuestion(questionId);
-        questionMapper.deleteByIdAndKp(questionId, kpId);
+        attemptMapper.deleteByStudyQuestion(questionId, CurrentUser.id());
+        questionMapper.deleteByIdAndKp(questionId, kpId, CurrentUser.id());
     }
 
     /** 切换单题 tier（core/ext）：校验值域，按 kp 归属更新，0 行受影响 → 越权/不存在。 */
@@ -99,7 +100,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     @Transactional
     public void setQuestionTier(long kpId, long questionId, String tier) {
         String t = "ext".equalsIgnoreCase(tier) ? "ext" : "core";
-        int n = questionMapper.updateTier(questionId, kpId, t);
+        int n = questionMapper.updateTier(questionId, kpId, t, CurrentUser.id());
         if (n == 0) {
             throw new BizException(40400, "题目不存在或不属于该知识点");
         }
@@ -115,14 +116,14 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     @Transactional
     protected QuestionsView fetchQuestions(long kpId) {
         // Step 1: 校验 + 非叶子早退
-        KnowledgeNode node = nodeMapper.findById(kpId)
+        KnowledgeNode node = nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
         if (!LEAF.equals(node.nodeType())) {
             return new QuestionsView(node.id(), node.name(), node.nodeType(), List.of(), false);
         }
 
         // Step 2: 确保 Step A 已跑（讲解生成会一并产出目标题 = study_question），再只读
-        boolean hadBefore = questionMapper.existsByKpId(kpId);
+        boolean hadBefore = questionMapper.existsByKpId(kpId, CurrentUser.id());
         contentService.ensureContent(kpId);
         List<QuestionItemView> qs = loadLeafQuestions(node);
         return new QuestionsView(node.id(), node.name(), node.nodeType(), qs, !hadBefore && !qs.isEmpty());
@@ -138,14 +139,14 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     @Transactional
     protected QuestionsView forceRegenerate(long kpId) {
         // Step 1: 校验
-        KnowledgeNode node = nodeMapper.findById(kpId)
+        KnowledgeNode node = nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
         if (!LEAF.equals(node.nodeType())) {
             throw new BizException(40001, "非叶子节点不支持生成题目");
         }
 
         // Step 2: 删未作答
-        questionMapper.deleteUnattemptedByKpId(kpId);
+        questionMapper.deleteUnattemptedByKpId(kpId, CurrentUser.id());
 
         // Step 3: 目标题驱动重构后，题目由 Step A（讲解生成）产出，此处不再单独用 LLM 生成题目。
         //   若需彻底重生题目，走"重新生成讲解"（content regenerate）整体重建。
@@ -159,7 +160,7 @@ public class LearnQuestionServiceImpl implements LearnQuestionService {
     /** 叶子节点查题目转 DTO，只取高频(core)题（答题=高频题），并附题目分（无 finished 记录为 null）。
      *  <p>只出「讲解已展开(ready)子话题」下的题：答题只考展开讲解过的内容。 */
     private List<QuestionItemView> loadLeafQuestions(KnowledgeNode node) {
-        List<StudyQuestion> rows = questionMapper.findAnswerableByKpId(node.id());
+        List<StudyQuestion> rows = questionMapper.findAnswerableByKpId(node.id(), CurrentUser.id());
         List<QuestionItemView> out = new ArrayList<>(rows.size());
         for (StudyQuestion r : rows) {
             if (!"core".equals(r.tier())) {

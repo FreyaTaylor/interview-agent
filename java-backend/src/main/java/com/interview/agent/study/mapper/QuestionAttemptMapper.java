@@ -30,8 +30,8 @@ public interface QuestionAttemptMapper {
             finished_at, created_at
             """;
 
-    @Select("SELECT " + COLS + " FROM question_attempt WHERE id = #{id}")
-    Optional<QuestionAttempt> findById(@Param("id") long id);
+    @Select("SELECT " + COLS + " FROM question_attempt WHERE id = #{id} AND user_id = #{userId}")
+    Optional<QuestionAttempt> findById(@Param("id") long id, @Param("userId") long userId);
 
     /** 查找该用户该题的进行中作答（最多 1 条，业务保证）。 */
     @Select("SELECT " + COLS + " FROM question_attempt"
@@ -41,11 +41,12 @@ public interface QuestionAttemptMapper {
     Optional<QuestionAttempt> findInProgress(@Param("userId") long userId,
                                              @Param("questionId") long questionId);
 
-    /** 最近 N 次作答（含 in_progress + finished），按 created_at 倒序。 */
+    /** 最近 N 次作答（含 in_progress + finished），按 created_at 倒序；仅当前用户。 */
     @Select("SELECT " + COLS + " FROM question_attempt"
-            + " WHERE question_id = #{questionId}"
+            + " WHERE user_id = #{userId} AND question_id = #{questionId}"
             + " ORDER BY created_at DESC, id DESC LIMIT #{limit}")
-    List<QuestionAttempt> findRecent(@Param("questionId") long questionId,
+    List<QuestionAttempt> findRecent(@Param("userId") long userId,
+                                     @Param("questionId") long questionId,
                                      @Param("limit") int limit);
 
     /**
@@ -60,6 +61,7 @@ public interface QuestionAttemptMapper {
                 FROM (
                   SELECT final_score FROM question_attempt
                   WHERE question_id = q.id
+                    AND user_id = #{userId}
                     AND status = 'finished'
                   ORDER BY finished_at DESC NULLS LAST, id DESC
                   LIMIT #{recentN}
@@ -72,7 +74,7 @@ public interface QuestionAttemptMapper {
                      OR (p.node_type = 'knowledge_point' AND p.id = #{kpId}) )
             ) per_q
             """)
-    Double avgKpMastery(@Param("kpId") long kpId, @Param("recentN") int recentN);
+    Double avgKpMastery(@Param("userId") long userId, @Param("kpId") long kpId, @Param("recentN") int recentN);
 
     /**
      * 子话题掌握度：口径与 {@link #avgKpMastery} 一致，聚合边界为该子话题的直接子问题节点。
@@ -85,6 +87,7 @@ public interface QuestionAttemptMapper {
                 FROM (
                   SELECT final_score FROM question_attempt
                   WHERE question_id = q.id
+                    AND user_id = #{userId}
                     AND status = 'finished'
                   ORDER BY finished_at DESC NULLS LAST, id DESC
                   LIMIT #{recentN}
@@ -94,19 +97,21 @@ public interface QuestionAttemptMapper {
               WHERE q.node_type = 'question' AND q.parent_id = #{subtopicId}
             ) per_q
             """)
-    Double avgSubtopicMastery(@Param("subtopicId") long subtopicId, @Param("recentN") int recentN);
+    Double avgSubtopicMastery(@Param("userId") long userId, @Param("subtopicId") long subtopicId, @Param("recentN") int recentN);
 
-    /** 该题"最近 N 次 finished 平均分"；无记录时 SQL 返 null。 */
+    /** 该题该用户“最近 N 次 finished 平均分”；无记录时 SQL 返 null。 */
     @Select("""
             SELECT AVG(a.final_score) FROM (
               SELECT final_score FROM question_attempt
               WHERE question_id = #{questionId}
+                AND user_id = #{userId}
                 AND status = 'finished'
               ORDER BY finished_at DESC NULLS LAST, id DESC
               LIMIT #{recentN}
             ) a
             """)
-    Double avgQuestionScore(@Param("questionId") long questionId,
+    Double avgQuestionScore(@Param("userId") long userId,
+                            @Param("questionId") long questionId,
                             @Param("recentN") int recentN);
 
     /** 创建 in_progress；主问题已先写入 dialog。 */
@@ -125,14 +130,15 @@ public interface QuestionAttemptMapper {
                                @Param("questionId") long questionId,
                                @Param("dialog") Object dialog);
 
-    /** 一轮过后：覆盖 dialog + 累加 follow_up_count。 */
+    /** 一轮过后：覆盖 dialog + 累加 follow_up_count；仅限当前用户。 */
     @Update("""
             UPDATE question_attempt
             SET dialog = #{dialog,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                 follow_up_count = #{followUpCount}
-            WHERE id = #{id}
+            WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateTurn(@Param("id") long id,
+                   @Param("userId") long userId,
                    @Param("dialog") Object dialog,
                    @Param("followUpCount") int followUpCount);
 
@@ -144,15 +150,16 @@ public interface QuestionAttemptMapper {
                 rubric_result = #{rubricResult,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                 overall_summary = #{overallSummary},
                 finished_at = NOW()
-            WHERE id = #{id} AND status = 'in_progress'
+            WHERE id = #{id} AND status = 'in_progress' AND user_id = #{userId}
             """)
     int finish(@Param("id") long id,
+               @Param("userId") long userId,
                @Param("finalScore") int finalScore,
                @Param("rubricResult") Object rubricResult,
                @Param("overallSummary") String overallSummary);
 
     /** 删除某题的全部作答记录。返回删除条数。
      *  （删题节点时 FK ON DELETE CASCADE 已自动清；此方法保留供显式清理场景。） */
-    @Delete("DELETE FROM question_attempt WHERE question_id = #{questionId}")
-    int deleteByStudyQuestion(@Param("questionId") long questionId);
+    @Delete("DELETE FROM question_attempt WHERE question_id = #{questionId} AND user_id = #{userId}")
+    int deleteByStudyQuestion(@Param("questionId") long questionId, @Param("userId") long userId);
 }

@@ -179,6 +179,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
 
         recordMapper.updateFinalize(
                 recordId,
+                CurrentUser.id(),
                 scoreBundle.avgScore(),
                 scoreBundle.passEstimate(),
                 parsedQuestions,
@@ -187,7 +188,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
 
         // 语义查重：整段面试文本向量化回写（失败不影响主流程）
         try {
-            recordMapper.updateEmbedding(recordId, embeddingService.embedToLiteral(dedupText(rawText)));
+            recordMapper.updateEmbedding(recordId, CurrentUser.id(), embeddingService.embedToLiteral(dedupText(rawText)));
         } catch (Exception e) {
             log.warn("面试记录 embedding 写入失败（不影响主流程）record_id={}: {}", recordId, e.getMessage());
         }

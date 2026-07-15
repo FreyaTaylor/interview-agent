@@ -86,7 +86,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
 
     @Override
     public List<ProjectNodeView> listAll() {
-        return repo.findAllOrdered().stream()
+        return repo.findAllOrdered(CurrentUser.id()).stream()
                 .map(n -> new ProjectNodeView(
                         n.id(), n.parentId(), n.name(), n.level(), n.nodeType(), n.sortOrder()))
                 .toList();
@@ -118,7 +118,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         short level;
         List<String> ancestors;
         if (req.parentId() != null) {
-            ProjectNode parent = repo.findById(req.parentId())
+            ProjectNode parent = repo.findById(req.parentId(), CurrentUser.id())
                     .orElseThrow(() -> new BizException(40400, "父节点不存在"));
             level = (short) (parent.level() + 1);
             // 项目树固定三层硬限：禁止在 level=3 节点下再加子节点（防拖拉拽破坏结构）
@@ -161,12 +161,12 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
     public Map<String, Object> update(UpdateProjectNodeReq req) {
         // id 从 body 读（不再走 PathVariable）
         long id = req.id();
-        ProjectNode node = repo.findById(id)
+        ProjectNode node = repo.findById(id, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
 
         // Step 1: 部分更新（COALESCE）
         String newName = req.name() == null ? null : req.name().strip();
-        repo.updateBasic(id, newName, req.sortOrder());
+        repo.updateBasic(id, CurrentUser.id(), newName, req.sortOrder());
 
         // Step 2: 仅 movingParent=true 才动 parent
         if (req.isMovingParent()) {
@@ -175,7 +175,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
                 if (req.parentId() == id) {
                     throw new BizException(40001, "不能把节点挂到自己下面");
                 }
-                ProjectNode newParent = repo.findById(req.parentId())
+                ProjectNode newParent = repo.findById(req.parentId(), CurrentUser.id())
                         .orElseThrow(() -> new BizException(40400, "新父节点不存在"));
                 newLevel = (short) (newParent.level() + 1);
             } else {
@@ -183,7 +183,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
             }
             // 项目树固定三层硬限：移动后子树最深 level 不得超过 3
             // 计算方式：子树最深 level - 节点当前 level = 子树深度差；新最深 = newLevel + 子树深度差
-            int currentMaxInSubtree = repo.findMaxLevelInSubtree(id);
+            int currentMaxInSubtree = repo.findMaxLevelInSubtree(id, CurrentUser.id());
             int subtreeDepthBelow = currentMaxInSubtree - node.level();
             int newMaxAfterMove = newLevel + subtreeDepthBelow;
             if (newMaxAfterMove > MAX_LEVEL) {
@@ -193,12 +193,12 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
             }
             // 项目树 node_type 直接由 level 决定
             String newNodeType = projectNodeType(newLevel);
-            repo.moveParent(id, req.parentId(), newLevel, newNodeType);
+            repo.moveParent(id, CurrentUser.id(), req.parentId(), newLevel, newNodeType);
 
             // 子树 level 平移（同时按硬规则重写 node_type，见 Mapper SQL）
             int delta = newLevel - node.level();
             if (delta != 0) {
-                int shifted = repo.shiftDescendantLevels(id, delta);
+                int shifted = repo.shiftDescendantLevels(id, CurrentUser.id(), delta);
                 log.info("[ProjectAdmin] move id={} -> parent={} level={}(delta={}) type={} subtree_shifted={}",
                         id, req.parentId(), newLevel, delta, newNodeType, shifted);
             } else {
@@ -219,7 +219,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
     public Map<String, Object> batchSort(BatchSortReq req) {
         int count = 0;
         for (BatchSortReq.Item it : req.updates()) {
-            count += repo.updateSortOrder(it.id(), it.sortOrder());
+            count += repo.updateSortOrder(it.id(), CurrentUser.id(), it.sortOrder());
         }
         return Map.of("updated", count);
     }
@@ -242,7 +242,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
     public Map<String, Object> delete(DeleteNodeReq req) {
         // id 从 body 读
         long id = req.id();
-        ProjectNode node = repo.findById(id)
+        ProjectNode node = repo.findById(id, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
 
         // Step 1: BFS 收集 + 防环
@@ -254,7 +254,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         }
 
         // Step 3: 批量 DELETE（tree_node parent_id ON DELETE CASCADE 自动清子树）
-        int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(allIds);
+        int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(allIds, CurrentUser.id());
 
         // 项目树 node_type 由 level 决定，不因子节点增删而变，无需父降级。
 
@@ -369,7 +369,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         List<TreeNodeJson> children = node.children();
         for (int i = 0; i < children.size(); i++) {
             SaveResult childRes = saveRecursive(children.get(i), newId, (short) (level + 1), nextAncestors);
-            repo.updateSortOrder(childRes.rootId, i);
+            repo.updateSortOrder(childRes.rootId, CurrentUser.id(), i);
             leafCount += childRes.leafCount;
         }
         return new SaveResult(newId, leafCount);
@@ -380,7 +380,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
     // ============================================================
 
     private void checkDuplicateByName(String name) {
-        List<ProjectNode> roots = repo.findRoots();
+        List<ProjectNode> roots = repo.findRoots(CurrentUser.id());
         if (roots.isEmpty()) {
             return;
         }
@@ -438,7 +438,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         while (!frontier.isEmpty()) {
             List<Long> next = new ArrayList<>();
             for (Long pid : frontier) {
-                for (Long cid : repo.findChildIds(pid)) {
+                for (Long cid : repo.findChildIds(pid, CurrentUser.id())) {
                     if (all.add(cid)) {
                         next.add(cid);
                     }
@@ -456,7 +456,7 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         while (cur != null) {
             chain.add(0, cur.name());
             if (cur.parentId() == null) break;
-            cur = repo.findById(cur.parentId()).orElse(null);
+            cur = repo.findById(cur.parentId(), CurrentUser.id()).orElse(null);
         }
         return chain;
     }

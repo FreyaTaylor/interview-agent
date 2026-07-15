@@ -1,6 +1,7 @@
 package com.interview.agent.learn.service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.interview.agent.auth.CurrentUser;
 import com.interview.agent.common.JsonUtil;
 import com.interview.agent.common.LlmInvoker;
 import com.interview.agent.learn.entity.StudyQuestion;
@@ -66,7 +67,7 @@ public class RubricGenService {
         if (res.isEmpty()) {
             return false; // 降级：保持空 rubric，不阻断
         }
-        questionMapper.updateRubric(q.id(), res.get().get("rubric"), res.get().get("recommended_answer"));
+        questionMapper.updateRubric(q.id(), CurrentUser.id(), res.get().get("rubric"), res.get().get("recommended_answer"));
         return true;
     }
 

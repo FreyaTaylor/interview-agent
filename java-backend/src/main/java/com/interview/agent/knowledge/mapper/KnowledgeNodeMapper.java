@@ -60,18 +60,18 @@ public interface KnowledgeNodeMapper {
             """)
     List<com.interview.agent.knowledge.dto.KnowledgeFullRow> findFullTree(@Param("userId") long userId);
 
-    @Select("SELECT " + COLS + " FROM tree_node WHERE id = #{id}")
-    Optional<KnowledgeNode> findById(@Param("id") long id);
+    @Select("SELECT " + COLS + " FROM tree_node WHERE id = #{id} AND user_id = #{userId}")
+    Optional<KnowledgeNode> findById(@Param("id") long id, @Param("userId") long userId);
 
-    @Select("SELECT id FROM tree_node WHERE parent_id = #{parentId}")
-    List<Long> findChildIds(@Param("parentId") long parentId);
+    @Select("SELECT id FROM tree_node WHERE parent_id = #{parentId} AND user_id = #{userId}")
+    List<Long> findChildIds(@Param("parentId") long parentId, @Param("userId") long userId);
 
     /** 取当前用户的所有知识树根节点（parent_id IS NULL），用于树生成的同名/语义去重检查。 */
     @Select("SELECT " + COLS + " FROM tree_node WHERE tree_kind = 'knowledge' AND parent_id IS NULL AND user_id = #{userId} ORDER BY id")
     List<KnowledgeNode> findRoots(@Param("userId") long userId);
 
-    @Select("SELECT EXISTS(SELECT 1 FROM tree_node WHERE parent_id = #{parentId})")
-    boolean hasChildren(@Param("parentId") long parentId);
+    @Select("SELECT EXISTS(SELECT 1 FROM tree_node WHERE parent_id = #{parentId} AND user_id = #{userId})")
+    boolean hasChildren(@Param("parentId") long parentId, @Param("userId") long userId);
 
     // ===== 面试匹配（embedding 召回 + 占位知识点 get_or_create）=====
 

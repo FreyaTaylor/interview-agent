@@ -28,11 +28,11 @@ public interface KnowledgeSubtopicMapper {
 
     String FROM = " FROM tree_node t JOIN subtopic_detail d ON d.node_id = t.id ";
 
-    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'subtopic' AND t.parent_id = #{kpId} ORDER BY t.sort_order, t.id")
-    List<KnowledgeSubtopic> findByKp(@Param("kpId") long kpId);
+    @Select("SELECT " + COLS + FROM + " WHERE t.node_type = 'subtopic' AND t.parent_id = #{kpId} AND t.user_id = #{userId} ORDER BY t.sort_order, t.id")
+    List<KnowledgeSubtopic> findByKp(@Param("kpId") long kpId, @Param("userId") long userId);
 
-    @Select("SELECT " + COLS + FROM + " WHERE t.id = #{id}")
-    Optional<KnowledgeSubtopic> findById(@Param("id") long id);
+    @Select("SELECT " + COLS + FROM + " WHERE t.id = #{id} AND t.user_id = #{userId}")
+    Optional<KnowledgeSubtopic> findById(@Param("id") long id, @Param("userId") long userId);
 
     /**
      * 取该 KP 的事务级 advisory 锁，序列化"生成子话题"这一临界区，防并发重复生成。
@@ -69,24 +69,25 @@ public interface KnowledgeSubtopicMapper {
                        @Param("title") String title,
                        @Param("sortOrder") int sortOrder);
 
-    /** Step B 用：回填正文并置 content_status='ready'（校验节点属于该 KP）。 */
+    /** Step B 用：回填正文并置 content_status='ready'（校验节点属于该 KP 且属当前用户）。 */
     @Update("""
             UPDATE subtopic_detail d
             SET body_md = #{bodyMd}, content_status = 'ready'
             FROM tree_node t
-            WHERE d.node_id = t.id AND t.id = #{id} AND t.parent_id = #{kpId}
+            WHERE d.node_id = t.id AND t.id = #{id} AND t.parent_id = #{kpId} AND t.user_id = #{userId}
             """)
-    int updateBody(@Param("id") long id, @Param("kpId") long kpId, @Param("bodyMd") String bodyMd);
+    int updateBody(@Param("id") long id, @Param("kpId") long kpId, @Param("userId") long userId, @Param("bodyMd") String bodyMd);
 
-    /** finish 钩子用：写回子话题级掌握度（null 允许，表示该子话题未答过题）。 */
-    @Update("UPDATE subtopic_detail SET mastery_level = #{mastery} WHERE node_id = #{id}")
-    int updateMastery(@Param("id") long id, @Param("mastery") Integer mastery);
+    /** finish 钩子用：写回子话题级掌握度（null 允许，表示该子话题未答过题）；带归属校验。 */
+    @Update("UPDATE subtopic_detail SET mastery_level = #{mastery} WHERE node_id = #{id}"
+            + " AND node_id IN (SELECT id FROM tree_node WHERE id = #{id} AND user_id = #{userId})")
+    int updateMastery(@Param("id") long id, @Param("userId") long userId, @Param("mastery") Integer mastery);
 
     /** 删该 KP 下所有子话题节点（tree_node 级联删 subtopic_detail 及子问题节点 + question_detail）。 */
-    @Delete("DELETE FROM tree_node WHERE parent_id = #{kpId} AND node_type = 'subtopic'")
-    int deleteByKp(@Param("kpId") long kpId);
+    @Delete("DELETE FROM tree_node WHERE parent_id = #{kpId} AND node_type = 'subtopic' AND user_id = #{userId}")
+    int deleteByKp(@Param("kpId") long kpId, @Param("userId") long userId);
 
     /** 按 id 删单个子话题节点，带 kp_id 校验防越权。 */
-    @Delete("DELETE FROM tree_node WHERE id = #{id} AND parent_id = #{kpId} AND node_type = 'subtopic'")
-    int deleteById(@Param("id") long id, @Param("kpId") long kpId);
+    @Delete("DELETE FROM tree_node WHERE id = #{id} AND parent_id = #{kpId} AND node_type = 'subtopic' AND user_id = #{userId}")
+    int deleteById(@Param("id") long id, @Param("kpId") long kpId, @Param("userId") long userId);
 }

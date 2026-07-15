@@ -42,7 +42,7 @@ public class ProjectScoreAggregateServiceImpl implements ProjectScoreAggregateSe
 
     @Override
     public Integer questionScore(long questionId) {
-        Double avg = attemptMapper.avgQuestionScore(questionId, Impl.RECENT_N);
+        Double avg = attemptMapper.avgQuestionScore(CurrentUser.id(), questionId, Impl.RECENT_N);
         return avg == null ? null : (int) Math.round(avg);
     }
 
@@ -54,7 +54,7 @@ public class ProjectScoreAggregateServiceImpl implements ProjectScoreAggregateSe
     @Override
     public TopicScore topicScore(long topicId) {
         // Step 1: 拉该 L2 下所有 L3 叶子
-        List<ProjectNode> leaves = nodeMapper.findChildrenByLevel(topicId, (short) 3);
+        List<ProjectNode> leaves = nodeMapper.findChildrenByLevel(topicId, (short) 3, CurrentUser.id());
         if (leaves.isEmpty()) {
             return new TopicScore(null, 0);
         }
@@ -83,14 +83,14 @@ public class ProjectScoreAggregateServiceImpl implements ProjectScoreAggregateSe
     @Override
     public Integer projectReadiness(long projectId) {
         // Step 1: 取项目 root
-        Optional<Project> projectOpt = projectMapper.findById(projectId);
+        Optional<Project> projectOpt = projectMapper.findById(projectId, CurrentUser.id());
         if (projectOpt.isEmpty() || projectOpt.get().rootNodeId() == null) {
             return null;
         }
         long rootId = projectOpt.get().rootNodeId();
 
         // Step 2: 拉所有 L2 话题
-        List<ProjectNode> topics = nodeMapper.findChildrenByLevel(rootId, (short) 2);
+        List<ProjectNode> topics = nodeMapper.findChildrenByLevel(rootId, (short) 2, CurrentUser.id());
         if (topics.isEmpty()) {
             return null;
         }

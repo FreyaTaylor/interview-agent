@@ -117,7 +117,7 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     public SubtopicView resolveSubtopicContent(SubtopicContentRequest req) {
         LearnAssetRequest.Action action = req.resolvedAction();
-        KnowledgeSubtopic s = subtopicMapper.findById(req.subtopicId())
+        KnowledgeSubtopic s = subtopicMapper.findById(req.subtopicId(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "子话题不存在"));
 
         // FETCH 且已 ready → 直接返
@@ -127,7 +127,7 @@ public class LearnContentServiceImpl implements LearnContentService {
 
         // 取子话题级锁串行化；拿锁后重查（FETCH 下若已被并发生成则直接返）
         subtopicMapper.acquireSubtopicContentLock(Math.toIntExact(s.id()));
-        s = subtopicMapper.findById(req.subtopicId())
+        s = subtopicMapper.findById(req.subtopicId(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "子话题不存在"));
         if (action == LearnAssetRequest.Action.FETCH && isReady(s)) {
             return toViewWithQuestions(s);
@@ -135,8 +135,8 @@ public class LearnContentServiceImpl implements LearnContentService {
 
         // 生成正文 + 置 ready
         String body = generateSubtopicBody(s);
-        subtopicMapper.updateBody(s.id(), s.kpId(), body);
-        return toViewWithQuestions(subtopicMapper.findById(s.id())
+        subtopicMapper.updateBody(s.id(), s.kpId(), CurrentUser.id(), body);
+        return toViewWithQuestions(subtopicMapper.findById(s.id(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(50000, "正文写入后回读失败")));
     }
 
@@ -153,12 +153,12 @@ public class LearnContentServiceImpl implements LearnContentService {
      */
     private String generateSubtopicBody(KnowledgeSubtopic s) {
         // B1 答案先：逐题补齐 rubric + 范例答案（已有则跳过，幂等）
-        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
+        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id(), CurrentUser.id());
         for (StudyQuestion q : qs) {
             rubricGenService.ensureRubric(q);
         }
         // 重查拿到刚落库的 rubric，用于组装采分点约束
-        qs = questionMapper.findBySubtopic(s.id());
+        qs = questionMapper.findBySubtopic(s.id(), CurrentUser.id());
         String targets = qs.isEmpty()
                 ? "（无）"
                 : qs.stream().map(q -> "- " + q.content()).collect(java.util.stream.Collectors.joining("\n"));
@@ -256,10 +256,10 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     public void deleteSubtopic(long kpId, long subtopicId) {
         // Step 1: 校验节点存在
-        nodeMapper.findById(kpId)
+        nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
         // Step 2: 按 (id, kp_id) 删；若 0 行受影响 → 该 id 不存在或不属于本 KP
-        int n = subtopicMapper.deleteById(subtopicId, kpId);
+        int n = subtopicMapper.deleteById(subtopicId, kpId, CurrentUser.id());
         if (n == 0) {
             throw new BizException(40400, "子话题不存在或不属于该知识点");
         }
@@ -273,7 +273,7 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     public Integer setSelfMastery(long kpId, Integer selfMastery) {
         // Step 1: 校验节点存在
-        nodeMapper.findById(kpId)
+        nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
         // Step 2: clamp + 写库（null 表示清除自评）
         Short val = selfMastery == null
@@ -294,11 +294,11 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     protected ContentView fetchContent(long kpId) {
         // Step 1: 校验
-        KnowledgeNode node = nodeMapper.findById(kpId)
+        KnowledgeNode node = nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
 
         // Step 2: 命中即返
-        List<KnowledgeSubtopic> existing = subtopicMapper.findByKp(kpId);
+        List<KnowledgeSubtopic> existing = subtopicMapper.findByKp(kpId, CurrentUser.id());
         if (!existing.isEmpty()) {
             return buildView(node, existing, false);
         }
@@ -306,7 +306,7 @@ public class LearnContentServiceImpl implements LearnContentService {
         // Step 3: 取 KP 级 advisory 锁串行化生成，防并发重复生成（前端可能双触发 FETCH）。
         // 拿到锁后再查一次：若前一个生成事务已提交，这里即可看到数据、直接返回，实现幂等。
         subtopicMapper.acquireGenLock(kpId);
-        List<KnowledgeSubtopic> afterLock = subtopicMapper.findByKp(kpId);
+        List<KnowledgeSubtopic> afterLock = subtopicMapper.findByKp(kpId, CurrentUser.id());
         if (!afterLock.isEmpty()) {
             return buildView(node, afterLock, false);
         }
@@ -324,14 +324,14 @@ public class LearnContentServiceImpl implements LearnContentService {
     @Transactional
     protected ContentView forceRegenerate(long kpId) {
         // Step 1: 校验
-        KnowledgeNode node = nodeMapper.findById(kpId)
+        KnowledgeNode node = nodeMapper.findById(kpId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "知识点不存在"));
 
         // Step 2: 取 KP 级 advisory 锁，与并发的 fetch/regenerate 串行化，防重复生成
         subtopicMapper.acquireGenLock(kpId);
 
         // Step 3: 清子话题（级联删其下生成题）
-        subtopicMapper.deleteByKp(kpId);
+        subtopicMapper.deleteByKp(kpId, CurrentUser.id());
 
         // Step 4: 重新生成
         return generateAndPersist(node);
@@ -368,7 +368,7 @@ public class LearnContentServiceImpl implements LearnContentService {
             }
             sort++;
         }
-        return buildView(node, subtopicMapper.findByKp(node.id()), true);
+        return buildView(node, subtopicMapper.findByKp(node.id(), CurrentUser.id()), true);
     }
 
     /**
@@ -470,7 +470,7 @@ public class LearnContentServiceImpl implements LearnContentService {
 
     /** 带目标题的子话题视图：额外查该子话题的 study_question 作为 target_questions。 */
     private SubtopicView toViewWithQuestions(KnowledgeSubtopic s) {
-        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id());
+        List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id(), CurrentUser.id());
         List<SubtopicView.TargetQuestion> targets = new ArrayList<>(qs.size());
         boolean isHot = false;
         for (StudyQuestion q : qs) {

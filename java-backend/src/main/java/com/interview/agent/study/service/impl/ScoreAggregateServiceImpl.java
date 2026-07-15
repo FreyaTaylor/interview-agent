@@ -30,13 +30,13 @@ public class ScoreAggregateServiceImpl implements ScoreAggregateService {
 
     @Override
     public Integer questionScore(long questionId) {
-        Double avg = attemptMapper.avgQuestionScore(questionId, Impl.RECENT_N);
+        Double avg = attemptMapper.avgQuestionScore(CurrentUser.id(), questionId, Impl.RECENT_N);
         return avg == null ? null : (int) Math.round(avg);
     }
 
     @Override
     public Integer kpMastery(long kpId) {
-        Double avg = attemptMapper.avgKpMastery(kpId, Impl.RECENT_N);
+        Double avg = attemptMapper.avgKpMastery(CurrentUser.id(), kpId, Impl.RECENT_N);
         return avg == null ? null : (int) Math.round(avg);
     }
 
@@ -51,14 +51,14 @@ public class ScoreAggregateServiceImpl implements ScoreAggregateService {
 
     @Override
     public Integer subtopicMastery(long subtopicId) {
-        Double avg = attemptMapper.avgSubtopicMastery(subtopicId, Impl.RECENT_N);
+        Double avg = attemptMapper.avgSubtopicMastery(CurrentUser.id(), subtopicId, Impl.RECENT_N);
         return avg == null ? null : (int) Math.round(avg);
     }
 
     @Override
     public Integer refreshSubtopicMastery(long subtopicId) {
         Integer mastery = subtopicMastery(subtopicId);
-        subtopicMapper.updateMastery(subtopicId, mastery);
+        subtopicMapper.updateMastery(subtopicId, CurrentUser.id(), mastery);
         return mastery;
     }
 }

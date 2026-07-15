@@ -70,7 +70,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
     @Transactional
     public AttemptStartResponse start(long questionId) {
         // Step 1
-        StudyQuestion q = questionMapper.findById(questionId)
+        StudyQuestion q = questionMapper.findById(questionId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
 
         // Step 1.5: rubric 懒生成 —— 目标题驱动重构后，Step A 产的题无 rubric，首次答题时补齐
@@ -97,7 +97,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
      */
     private StudyQuestion ensureRubric(StudyQuestion q) {
         if (rubricGenService.ensureRubric(q)) {
-            return questionMapper.findById(q.id()).orElse(q);
+            return questionMapper.findById(q.id(), CurrentUser.id()).orElse(q);
         }
         return q;
     }
@@ -122,7 +122,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
         // Step 1: 加载 + 校验
         QuestionAttempt attempt = loadOrThrow(attemptId);
         requireInProgress(attempt);
-        StudyQuestion q = questionMapper.findById(attempt.questionId())
+        StudyQuestion q = questionMapper.findById(attempt.questionId(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
 
         // Step 2: 追加 user answer
@@ -195,7 +195,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
         }
 
         // Step 8: 落库
-        attemptMapper.updateTurn(attemptId, dialog, followUpCount);
+        attemptMapper.updateTurn(attemptId, CurrentUser.id(), dialog, followUpCount);
 
         // Step 9: 返
         int nextStep = countQuestions(dialog);
@@ -235,7 +235,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
     @Transactional
     public AttemptFinishResponse finish(long attemptId) {
         QuestionAttempt attempt = loadOrThrow(attemptId);
-        StudyQuestion q = questionMapper.findById(attempt.questionId())
+        StudyQuestion q = questionMapper.findById(attempt.questionId(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
         long kpId = q.knowledgePointId();
 
@@ -253,7 +253,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
         StudyQaStrategy.FinalScore fs = strategy.finalScore(q.content(), q.rubricTemplate(), dialog);
 
         // Step 2: 写收尾
-        int affected = attemptMapper.finish(attemptId, fs.finalScore(), fs.rubricResult(), fs.overallSummary());
+        int affected = attemptMapper.finish(attemptId, CurrentUser.id(), fs.finalScore(), fs.rubricResult(), fs.overallSummary());
         if (affected == 0) {
             // 并发 finish 竞争：再读一遍按 finished 路径返
             QuestionAttempt latest = loadOrThrow(attemptId);
@@ -284,7 +284,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
     @Override
     public AttemptDetailResponse detail(long attemptId) {
         QuestionAttempt a = loadOrThrow(attemptId);
-        StudyQuestion q = questionMapper.findById(a.questionId())
+        StudyQuestion q = questionMapper.findById(a.questionId(), CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "题目不存在"));
         return new AttemptDetailResponse(
                 a.id(), a.questionId(), q.content(), a.status(),
@@ -298,7 +298,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
     @Override
     public AttemptsHistoryResponse history(long questionId, int limit) {
         int eff = limit <= 0 ? DEFAULT_HISTORY_LIMIT : Math.min(limit, 50);
-        List<QuestionAttempt> rows = attemptMapper.findRecent(questionId, eff);
+        List<QuestionAttempt> rows = attemptMapper.findRecent(CurrentUser.id(), questionId, eff);
         List<AttemptsHistoryResponse.Item> items = new ArrayList<>(rows.size());
         for (QuestionAttempt a : rows) {
             items.add(new AttemptsHistoryResponse.Item(
@@ -314,7 +314,7 @@ public class StudyAttemptServiceImpl implements StudyAttemptService {
     // ============================================================
 
     private QuestionAttempt loadOrThrow(long attemptId) {
-        return attemptMapper.findById(attemptId)
+        return attemptMapper.findById(attemptId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "作答记录不存在"));
     }
 

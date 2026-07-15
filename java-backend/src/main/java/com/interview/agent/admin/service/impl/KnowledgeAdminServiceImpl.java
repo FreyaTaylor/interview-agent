@@ -104,7 +104,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         short level;
         KnowledgeNode parent = null;
         if (req.parentId() != null) {
-            parent = repo.findById(req.parentId())
+            parent = repo.findById(req.parentId(), CurrentUser.id())
                     .orElseThrow(() -> new BizException(40400, "父节点不存在"));
             level = (short) (parent.level() + 1);
         } else {
@@ -159,7 +159,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         // Step 0: id 从 body 读（不再走 PathVariable）
         long id = req.id();
         // Step 1: 存在性检查（后面还要用 node.name() 做返回默认值）
-        KnowledgeNode node = repo.findById(id)
+        KnowledgeNode node = repo.findById(id, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
 
         // Step 2: 部分更新基础字段（Mapper 里用 COALESCE，null 保持原值）
@@ -175,14 +175,14 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
                 if (req.parentId() == id) {
                     throw new BizException(40001, "不能把节点挂到自己下面");
                 }
-                KnowledgeNode newParent = repo.findById(req.parentId())
+                KnowledgeNode newParent = repo.findById(req.parentId(), CurrentUser.id())
                         .orElseThrow(() -> new BizException(40400, "新父节点不存在"));
                 newLevel = (short) (newParent.level() + 1);
             } else {
                 newLevel = 1;
             }
             // Step 3.2: nodeType 按 "是否有子节点" 重评，与 level 解耦
-            String newNodeType = repo.hasChildren(id) ? "category" : "knowledge_point";
+            String newNodeType = repo.hasChildren(id, CurrentUser.id()) ? "category" : "knowledge_point";
             // Step 3.3: 一句 SQL 同时改 parent / level / nodeType
             repo.moveParent(id, userId, req.parentId(), newLevel, newNodeType);
             // Step 3.4: 把整棵子树的 level 跟着平移 delta —— 否则前端按 level 算缩进会"打扁"
@@ -261,7 +261,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         // Step 0: id 从 body 读
         long id = req.id();
         // Step 1: 存在性检查，同时拿到 parentId 供最后“父降级”使用
-        KnowledgeNode node = repo.findById(id)
+        KnowledgeNode node = repo.findById(id, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40400, "节点不存在"));
 
         // Step 2: BFS 收集自身 + 子孙 id（避免递归 SQL，逻辑集中在 Java）
@@ -278,7 +278,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
 
         // Step 5: 父节点降级——现在没娃了 → 变 knowledge_point（与 create 中“knowledge_point 加孩 → category”对称）
         Long parentId = node.parentId();
-        if (parentId != null && !repo.hasChildren(parentId)) {
+        if (parentId != null && !repo.hasChildren(parentId, CurrentUser.id())) {
             repo.updateNodeType(parentId, userId, "knowledge_point");
         }
 
@@ -306,7 +306,7 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         while (!frontier.isEmpty()) {
             List<Long> next = new ArrayList<>();
             for (Long pid : frontier) {
-                for (Long cid : repo.findChildIds(pid)) {
+                for (Long cid : repo.findChildIds(pid, CurrentUser.id())) {
                     if (all.add(cid)) {   // add() 返 false 表示已存在 → 跳过（防环）
                         next.add(cid);
                     }

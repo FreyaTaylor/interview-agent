@@ -21,8 +21,8 @@ public interface InterviewRecordMapper {
             summary_report, draft_turns, draft_groups, created_at
             """;
 
-    @Select("SELECT " + COLS + " FROM interview_record WHERE id = #{id}")
-    Optional<InterviewRecord> findById(@Param("id") long id);
+    @Select("SELECT " + COLS + " FROM interview_record WHERE id = #{id} AND user_id = #{userId}")
+    Optional<InterviewRecord> findById(@Param("id") long id, @Param("userId") long userId);
 
     @Select("SELECT " + COLS + " FROM interview_record WHERE user_id = #{userId} ORDER BY created_at DESC, id DESC LIMIT #{limit}")
     List<InterviewRecord> findRecent(@Param("userId") long userId, @Param("limit") int limit);
@@ -43,9 +43,9 @@ public interface InterviewRecordMapper {
             """)
     Optional<InterviewDuplicateMatch> findNearestByEmbedding(@Param("userId") long userId, @Param("vec") String vec);
 
-    /** finalize 落库后回写整段面试文本的 embedding（语义查重用）。 */
-    @Update("UPDATE interview_record SET embedding = #{embeddingLiteral}::vector WHERE id = #{id}")
-    int updateEmbedding(@Param("id") long id, @Param("embeddingLiteral") String embeddingLiteral);
+    /** finalize 落库后回写整段面试文本的 embedding（语义查重用）；仅限当前用户。 */
+    @Update("UPDATE interview_record SET embedding = #{embeddingLiteral}::vector WHERE id = #{id} AND user_id = #{userId}")
+    int updateEmbedding(@Param("id") long id, @Param("userId") long userId, @Param("embeddingLiteral") String embeddingLiteral);
 
     /**
      * 语义查重懒回填：取当前用户尚未生成 embedding 的历史记录（仅 id + raw_text）。
@@ -89,9 +89,10 @@ public interface InterviewRecordMapper {
                 summary_report = #{summaryReport},
                 draft_turns = NULL,
                 draft_groups = NULL
-            WHERE id = #{id}
+            WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateFinalize(@Param("id") long id,
+                       @Param("userId") long userId,
                        @Param("avgScore") int avgScore,
                        @Param("passEstimate") String passEstimate,
                        @Param("parsedQuestions") Object parsedQuestions,
@@ -122,9 +123,10 @@ public interface InterviewRecordMapper {
                 draft_groups = #{draftGroups,typeHandler=com.interview.agent.infra.db.JsonbTypeHandler,jdbcType=OTHER},
                 company = COALESCE(#{company}, company),
                 position = COALESCE(#{position}, position)
-            WHERE id = #{id}
+            WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateDraft(@Param("id") long id,
+                    @Param("userId") long userId,
                     @Param("draftTurns") Object draftTurns,
                     @Param("draftGroups") Object draftGroups,
                     @Param("company") String company,
@@ -134,12 +136,13 @@ public interface InterviewRecordMapper {
             UPDATE interview_record
             SET company = #{company},
                 position = #{position}
-            WHERE id = #{id}
+            WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateMeta(@Param("id") long id,
+                   @Param("userId") long userId,
                    @Param("company") String company,
                    @Param("position") String position);
 
-    @Delete("DELETE FROM interview_record WHERE id = #{id}")
-    int deleteById(@Param("id") long id);
+    @Delete("DELETE FROM interview_record WHERE id = #{id} AND user_id = #{userId}")
+    int deleteById(@Param("id") long id, @Param("userId") long userId);
 }

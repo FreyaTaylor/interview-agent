@@ -144,7 +144,7 @@ public class InterviewNodeMatcher {
                 g.put("matched_node_name", null);
                 if (nodeId != null) {
                     g.put("matched_node_name",
-                            knowledgeMapper.findById(nodeId).map(KnowledgeNode::name).orElse(null));
+                            knowledgeMapper.findById(nodeId, CurrentUser.id()).map(KnowledgeNode::name).orElse(null));
                 }
             } else if ("project".equals(type)) {
                 // 3 级匹配：项目根 → 话题 → 问题叶子
@@ -161,7 +161,7 @@ public class InterviewNodeMatcher {
                     long leafId = matchOrCreateQuestion(topicId, mainQuestion);
                     g.put("matched_project_id", leafId);   // 指向叶子（问题节点）
                     g.put("matched_project_name",
-                            projectMapper.findById(leafId).map(ProjectNode::name).orElse(null));
+                            projectMapper.findById(leafId, CurrentUser.id()).map(ProjectNode::name).orElse(null));
                 } catch (Exception e) {
                     log.warn("项目题匹配失败 name={} topic={}: {}", projectName, topic, e.getMessage());
                     g.put("matched_project_id", null);
@@ -299,9 +299,7 @@ public class InterviewNodeMatcher {
         }
         // 所有项目根（当前用户, level=1）
         long userId = CurrentUser.id();
-        List<ProjectNode> roots = projectMapper.findRoots().stream()
-                .filter(r -> r.userId() != null && r.userId() == userId)
-                .toList();
+        List<ProjectNode> roots = projectMapper.findRoots(userId);
 
         // 1) 精确匹配
         String norm = normalize(name);
@@ -333,7 +331,7 @@ public class InterviewNodeMatcher {
 
     /** 复用全局唯一的「未命名项目」根节点。 */
     private long getOrCreateUnnamedProjectRoot() {
-        return projectMapper.findIdByLevelAndName((short) 1, UNNAMED_PROJECT)
+        return projectMapper.findIdByLevelAndName((short) 1, UNNAMED_PROJECT, CurrentUser.id())
                 .orElseGet(() -> projectMapper.insertWithoutEmbedding(
                         CurrentUser.id(), null, UNNAMED_PROJECT, (short) 1, "project", ORPHAN_SORT_ORDER));
     }
@@ -344,7 +342,7 @@ public class InterviewNodeMatcher {
         if (topic.isEmpty()) {
             topic = "通用";
         }
-        List<ProjectNode> siblings = projectMapper.findChildrenByLevel(rootId, (short) 2);
+        List<ProjectNode> siblings = projectMapper.findChildrenByLevel(rootId, (short) 2, CurrentUser.id());
 
         // 1) 精确匹配
         String norm = normalize(topic);
@@ -385,13 +383,13 @@ public class InterviewNodeMatcher {
             return fallbackExactMatch(topicId, text);
         }
 
-        Optional<NodeMatch> row = projectMapper.findNearestLeafUnderTopic(topicId, vec);
+        Optional<NodeMatch> row = projectMapper.findNearestLeafUnderTopic(topicId, vec, CurrentUser.id());
         if (row.isPresent() && row.get().distance() <= QUESTION_DISTANCE_MAX) {
             // 命中：累积表述（用 " \ " 分隔，避免重复添加同一文本）
             NodeMatch hit = row.get();
             String existingName = hit.name() == null ? "" : hit.name();
             if (!existingName.contains(text)) {
-                projectMapper.updateName(hit.id(), existingName + " \\ " + text);
+                projectMapper.updateName(hit.id(), CurrentUser.id(), existingName + " \\ " + text);
             }
             return hit.id();
         }
@@ -401,7 +399,7 @@ public class InterviewNodeMatcher {
 
     /** embedding 不可用时的兜底：精确名匹配，否则新建（无 embedding）。 */
     private long fallbackExactMatch(long topicId, String text) {
-        List<ProjectNode> siblings = projectMapper.findChildrenByLevel(topicId, (short) 3);
+        List<ProjectNode> siblings = projectMapper.findChildrenByLevel(topicId, (short) 3, CurrentUser.id());
         for (ProjectNode s : siblings) {
             if (str(s.name()).strip().equals(text)) {
                 return s.id();

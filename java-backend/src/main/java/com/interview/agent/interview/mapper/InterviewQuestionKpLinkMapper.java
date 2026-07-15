@@ -42,13 +42,13 @@ public interface InterviewQuestionKpLinkMapper {
                @Param("source") String source,
                @Param("similarity") Float similarity);
 
-    /** 「知识点查相关真题」：按相似度降序（NULL 垫底）。 */
-    @Select("SELECT " + COLS + " FROM interview_question_kp_link WHERE knowledge_point_id = #{kpId} ORDER BY similarity DESC NULLS LAST, id")
-    List<InterviewQuestionKpLink> findByKnowledgePoint(@Param("kpId") long kpId);
+    /** 「知识点查相关真题」：按相似度降序（NULL 垫底）；仅当前用户。 */
+    @Select("SELECT " + COLS + " FROM interview_question_kp_link WHERE knowledge_point_id = #{kpId} AND user_id = #{userId} ORDER BY similarity DESC NULLS LAST, id")
+    List<InterviewQuestionKpLink> findByKnowledgePoint(@Param("kpId") long kpId, @Param("userId") long userId);
 
-    /** 「真题查关联知识点」：按相似度降序（NULL 垫底）。 */
-    @Select("SELECT " + COLS + " FROM interview_question_kp_link WHERE interview_knowledge_question_id = #{ikqId} ORDER BY similarity DESC NULLS LAST, id")
-    List<InterviewQuestionKpLink> findByInterviewQuestion(@Param("ikqId") long ikqId);
+    /** 「真题查关联知识点」：按相似度降序（NULL 垫底）；仅当前用户。 */
+    @Select("SELECT " + COLS + " FROM interview_question_kp_link WHERE interview_knowledge_question_id = #{ikqId} AND user_id = #{userId} ORDER BY similarity DESC NULLS LAST, id")
+    List<InterviewQuestionKpLink> findByInterviewQuestion(@Param("ikqId") long ikqId, @Param("userId") long userId);
 
     /** 命中过真题的知识点 id 集合（distinct），供知识树打「关联真题」徽标。 */
     @Select("SELECT DISTINCT knowledge_point_id FROM interview_question_kp_link WHERE user_id = #{userId} AND knowledge_point_id IS NOT NULL")

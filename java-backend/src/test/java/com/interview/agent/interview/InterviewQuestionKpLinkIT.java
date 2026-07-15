@@ -50,13 +50,13 @@ class InterviewQuestionKpLinkIT {
         linkMapper.upsert(1L, ikqId, kpId, "测试知识点", "recall", 0.95f);
 
         // 只应留一条（幂等），且相似度被更新为最后一次
-        List<InterviewQuestionKpLink> byKp = linkMapper.findByKnowledgePoint(kpId);
+        List<InterviewQuestionKpLink> byKp = linkMapper.findByKnowledgePoint(kpId, 1L);
         assertEquals(1, byKp.size(), "同一对只应有一条关联");
         assertEquals(0.95f, byKp.get(0).similarity(), 0.0001, "相似度应更新为最后一次");
         assertEquals("测试知识点", byKp.get(0).knowledgePointName());
 
         // 反向查询也应命中
-        List<InterviewQuestionKpLink> byQ = linkMapper.findByInterviewQuestion(ikqId);
+        List<InterviewQuestionKpLink> byQ = linkMapper.findByInterviewQuestion(ikqId, 1L);
         assertEquals(1, byQ.size(), "反向查询应命中");
         assertEquals(kpId, byQ.get(0).knowledgePointId());
     }
@@ -71,6 +71,6 @@ class InterviewQuestionKpLinkIT {
         linkMapper.upsert(1L, ikqId, kp2, "知识点乙", "recall", 0.7f);
 
         // N:N：一道真题关联多个知识点
-        assertEquals(2, linkMapper.findByInterviewQuestion(ikqId).size(), "一道真题应能关联多个知识点");
+        assertEquals(2, linkMapper.findByInterviewQuestion(ikqId, 1L).size(), "一道真题应能关联多个知识点");
     }
 }
