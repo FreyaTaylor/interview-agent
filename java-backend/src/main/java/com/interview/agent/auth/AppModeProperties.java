@@ -10,13 +10,11 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties(prefix = "iagent")
 public record AppModeProperties(
         String deployMode,
-        String authMode,
-        Boolean inviteRequired
+        String authMode
 ) {
     public AppModeProperties {
         if (deployMode == null || deployMode.isBlank()) deployMode = "self_hosted";
         if (authMode == null || authMode.isBlank()) authMode = "single_user";
-        if (inviteRequired == null) inviteRequired = false;
     }
 
     /** 是否为开源自托管模式。 */
@@ -27,10 +25,5 @@ public record AppModeProperties(
     /** 是否固定使用本地单用户。 */
     public boolean singleUser() {
         return "single_user".equalsIgnoreCase(authMode);
-    }
-
-    /** Hosted + GitHub 模式下是否要求新用户邀请码。 */
-    public boolean inviteRequiredForSignup() {
-        return !selfHosted() && "github".equalsIgnoreCase(authMode) && inviteRequired;
     }
 }

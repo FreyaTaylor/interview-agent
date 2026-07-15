@@ -59,7 +59,7 @@ class InterviewControllerIT {
     static class AuthTestBeans {
         @Bean
         AppModeProperties appModeProperties() {
-            return new AppModeProperties("self_hosted", "single_user", false);
+            return new AppModeProperties("self_hosted", "single_user");
         }
 
         @Bean

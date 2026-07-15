@@ -53,7 +53,7 @@ export function AuthProvider({ children }) {
       const urlToken = params.get('token')
       const urlError = params.get('error')
       if (urlError) {
-        setAuthError(urlError === 'invalid_invite' ? '邀请码无效或已被使用' : '登录失败，请重试')
+        setAuthError('登录失败，请重试')
       }
       if (urlToken) {
         localStorage.setItem('token', urlToken)

@@ -64,7 +64,6 @@ DASHSCOPE_API_KEY=sk-xxx       # https://dashscope.console.aliyun.com
 # 部署模式（默认开源自用：单用户、免登录）
 IAGENT_DEPLOY_MODE=self_hosted
 IAGENT_AUTH_MODE=single_user
-IAGENT_INVITE_REQUIRED=false
 ```
 
 ### 3. 启动后端（:8080）
@@ -92,7 +91,6 @@ npm run dev
 |---|---|---|
 | `IAGENT_DEPLOY_MODE` | `self_hosted` | `hosted` |
 | `IAGENT_AUTH_MODE` | `single_user` | `github` |
-| `IAGENT_INVITE_REQUIRED` | `false` | `true`（可选） |
 
 对外部署（`hosted`）时还需配置 GitHub OAuth 与 JWT：
 

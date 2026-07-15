@@ -87,7 +87,6 @@ VITE_API_BASE = https://api.interview-agent.online/api
 | `IAGENT_CORS_ORIGINS` | `https://agreeable-water-0b27a1900.7.azurestaticapps.net,http://localhost:*,http://127.0.0.1:*,https://interview-agent.online,https://www.interview-agent.online` | CORS 白名单（含 www 与非 www） |
 | `IAGENT_DEPLOY_MODE` | `hosted` | 部署模式 |
 | `IAGENT_AUTH_MODE` | `github` | 认证模式：GitHub OAuth |
-| `IAGENT_INVITE_REQUIRED` | `false` | 是否需要邀请码 |
 | `GITHUB_CLIENT_ID` | （已配置） | GitHub OAuth App client id |
 | `GITHUB_CLIENT_SECRET` | （已配置，敏感） | GitHub OAuth App client secret |
 
