@@ -98,7 +98,7 @@ class InterviewControllerIT {
 
     @Test
     void previewParse_shouldReturnWrappedResponse() throws Exception {
-        when(interviewParseService.previewParse(anyString()))
+        when(interviewParseService.previewParse(anyString(), any()))
                 .thenReturn(new PreviewParseResponse(List.of(), List.of(), "ok"));
 
         mockMvc.perform(post("/api/interview/preview-parse")

@@ -97,7 +97,7 @@ public class InterviewController {
 
     @PostMapping("/preview-parse")
     public ApiResponse<PreviewParseResponse> previewParse(@Valid @RequestBody UploadTextRequest req) {
-        return ApiResponse.success(parseService.previewParse(req.text()));
+        return ApiResponse.success(parseService.previewParse(req.text(), req.chunkStrategy()));
     }
 
     @PostMapping("/finalize")

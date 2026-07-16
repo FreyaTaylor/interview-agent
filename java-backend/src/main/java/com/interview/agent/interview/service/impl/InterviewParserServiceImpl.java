@@ -7,10 +7,14 @@ import com.interview.agent.infra.llm.EmbeddingService;
 import com.interview.agent.interview.dto.PreviewParseResponse;
 import com.interview.agent.interview.service.InterviewParserService;
 import com.interview.agent.interview.support.InterviewAsrCorrector;
+import com.interview.agent.interview.support.FixedSizeTurnChunker;
+import com.interview.agent.interview.support.SemanticTurnChunker;
+import com.interview.agent.interview.support.TurnChunker;
 import com.interview.agent.interview.support.InterviewTurns;
 import com.interview.agent.prompts.PromptKeys;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -52,7 +56,6 @@ public class InterviewParserServiceImpl implements InterviewParserService {
     private static final TypeReference<Map<String, Object>> JSON_OBJ = new TypeReference<>() {
     };
 
-    private static final int CHUNK_SIZE = InterviewTurns.DEFAULT_CHUNK_SIZE;   // 1200
     private static final double BOUNDARY_SIM_THRESHOLD = 0.82;                 // embedding 余弦阈值
     private static final int PARSE_PARALLEL = 5;                               // Semaphore(5)
     /** 行首「说话人X：」标签（兼容字母 A/B 与数字 0/1，中英文冒号）。 */
@@ -61,17 +64,39 @@ public class InterviewParserServiceImpl implements InterviewParserService {
     private final LlmInvoker llmInvoker;
     private final EmbeddingService embeddingService;
     private final InterviewAsrCorrector asrCorrector;
+    /** 预分块策略：定长（现网默认）与语义切分（对照支）。 */
+    private final FixedSizeTurnChunker fixedChunker;
+    private final SemanticTurnChunker semanticChunker;
+    /** 默认策略（配置 {@code iagent.interview.chunk-strategy}，默认 fixed）。 */
+    private final String defaultChunkStrategy;
 
     public InterviewParserServiceImpl(LlmInvoker llmInvoker,
                                       EmbeddingService embeddingService,
-                                      InterviewAsrCorrector asrCorrector) {
+                                      InterviewAsrCorrector asrCorrector,
+                                      FixedSizeTurnChunker fixedChunker,
+                                      SemanticTurnChunker semanticChunker,
+                                      @Value("${iagent.interview.chunk-strategy:fixed}") String defaultChunkStrategy) {
         this.llmInvoker = llmInvoker;
         this.embeddingService = embeddingService;
         this.asrCorrector = asrCorrector;
+        this.fixedChunker = fixedChunker;
+        this.semanticChunker = semanticChunker;
+        this.defaultChunkStrategy = defaultChunkStrategy;
+    }
+
+    /** 按名选预分块策略；null/空 → 配置默认；未知名安全回退 fixed。 */
+    private TurnChunker selectChunker(String requested) {
+        String s = (requested == null || requested.isBlank()) ? defaultChunkStrategy : requested.trim();
+        return "semantic".equalsIgnoreCase(s) ? semanticChunker : fixedChunker;
     }
 
     @Override
     public PreviewParseResponse parse(String text) {
+        return parse(text, null);
+    }
+
+    @Override
+    public PreviewParseResponse parse(String text, String chunkStrategy) {
         String rawText = text == null ? "" : text;
 
         // 0.0）说话人角色归一化：把「说话人A/B」「说话人0/1」统一替换为「面试官/我」。
@@ -91,13 +116,17 @@ public class InterviewParserServiceImpl implements InterviewParserService {
             return new PreviewParseResponse(List.of(), List.of(), "纠错后内容为空");
         }
 
-        // 1）按 turns 分段并发解析
-        List<List<Map<String, Object>>> chunks = InterviewTurns.chunkTurns(turns, CHUNK_SIZE);
-        log.info("面试文本 {} 字 → {} 个 turns，分 {} 段并发解析", rawText.length(), turns.size(), chunks.size());
+        // 1）按策略预分块 → 并发解析（定长 fixed / 语义 semantic）
+        TurnChunker chunker = selectChunker(chunkStrategy);
+        List<List<Map<String, Object>>> chunks = chunker.chunk(turns);
+        int avgChars = chunks.isEmpty() ? 0 : rawText.length() / chunks.size();
+        log.info("面试文本 {} 字 → {} 个 turns，[{}] 分 {} 段并发解析", rawText.length(), turns.size(), chunker.strategy(), chunks.size());
         List<List<Map<String, Object>>> chunkResults = parseChunksParallel(chunks);
+        int rawGroups = chunkResults.stream().mapToInt(g -> g == null ? 0 : g.size()).sum();
 
         // 2）跨段边界合并
         List<Map<String, Object>> all = mergeByEmbeddingBoundary(chunkResults);
+        int boundaryMerges = rawGroups - all.size();
         if (all.isEmpty()) {
             return new PreviewParseResponse(turns, List.of(), "解析失败，请重试");
         }
@@ -121,6 +150,10 @@ public class InterviewParserServiceImpl implements InterviewParserService {
         //    原限「仅单段」——长面试(>1200字)分多段时被完全跳过，是漏题的主因；
         //    missed-check prompt 吃整段 raw_text + 已解析问题清单，与分段数无关，故对多段同样执行。
         appendMissedQuestions(all, rawText);
+
+        // 对比指标：同一文本跑两策略可并排看 chunk 数/平均长度/边界合并次数/最终 group 数
+        log.info("[分块对比] strategy={} chunks={} avgChars={} rawGroups={} boundaryMerges={} finalGroups={}",
+                chunker.strategy(), chunks.size(), avgChars, rawGroups, boundaryMerges, all.size());
 
         return new PreviewParseResponse(turns, all, "");
     }

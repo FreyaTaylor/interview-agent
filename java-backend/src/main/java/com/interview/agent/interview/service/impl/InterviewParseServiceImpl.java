@@ -93,10 +93,15 @@ public class InterviewParseServiceImpl implements InterviewParseService {
      */
     @Override
     public PreviewParseResponse previewParse(String text) {
+        return previewParse(text, null);
+    }
+
+    @Override
+    public PreviewParseResponse previewParse(String text, String chunkStrategy) {
         if (text == null || text.isBlank()) {
             throw new BizException(40001, "面试文本不能为空");
         }
-        return parserService.parse(text);
+        return parserService.parse(text, chunkStrategy);
     }
 
     // ============================================================
