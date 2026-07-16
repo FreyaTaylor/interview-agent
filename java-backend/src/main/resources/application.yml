@@ -70,6 +70,13 @@ mybatis:
 iagent:
   deploy-mode: ${IAGENT_DEPLOY_MODE:self_hosted}
   auth-mode: ${IAGENT_AUTH_MODE:single_user}
+  interview:
+    # 预分块策略：fixed（定长）| semantic（语义切分）。可用 IAGENT_CHUNK_STRATEGY 覆盖。
+    chunk-strategy: ${IAGENT_CHUNK_STRATEGY:semantic}
+    semantic:
+      max-chars: ${IAGENT_SEMANTIC_MAX_CHARS:1600}    # 单段字符硬上限（防超 LLM 上下文）
+      min-chars: ${IAGENT_SEMANTIC_MIN_CHARS:400}     # 单段字符下限（防碎片，未达不因语义切）
+      threshold: ${IAGENT_SEMANTIC_THRESHOLD:0.6}     # 相邻两提问 embedding 余弦阈值（<则判话题切换）
   llm:
     chat-temperature-score: 0.0
     chat-temperature-generate: 0.6

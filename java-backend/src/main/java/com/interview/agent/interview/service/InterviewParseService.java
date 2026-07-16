@@ -31,6 +31,9 @@ public interface InterviewParseService {
      */
     PreviewParseResponse previewParse(String text);
 
+    /** 前解析（显式指定预分块策略 {@code fixed|semantic}；null/空走配置默认）。供 A/B 对比。 */
+    PreviewParseResponse previewParse(String text, String chunkStrategy);
+
     /**
      * 后解析（finalize）—— 接收用户<b>校对后</b>的 {@code turns + groups}，完成匹配 / 评分 / 落库 / 副作用。
      *
