@@ -267,16 +267,11 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
         // Step 2: BFS 收集自身 + 子孙 id（避免递归 SQL，逻辑集中在 Java）
         List<Long> allIds = collectDescendants(id);
 
-        // Step 3: 清理非 CASCADE 的 FK 引用（空 List 会让 <foreach> 拼出非法 SQL，护守一下）
-        if (!allIds.isEmpty()) {
-            repo.nullOutInterviewKnowledgeRefs(allIds);
-        }
-
-        // Step 4: 批量 DELETE knowledge_node（CASCADE 表会自动跟走）
+        // Step 3: 批量 DELETE knowledge_node（引用 tree_node 的外键均为 CASCADE/SET NULL，无需手工兜底）
         long userId = CurrentUser.id();
         int deleted = allIds.isEmpty() ? 0 : repo.deleteByIds(userId, allIds);
 
-        // Step 5: 父节点降级——现在没娃了 → 变 knowledge_point（与 create 中“knowledge_point 加孩 → category”对称）
+        // Step 4: 父节点降级——现在没娃了 → 变 knowledge_point（与 create 中“knowledge_point 加孩 → category”对称）
         Long parentId = node.parentId();
         if (parentId != null && !repo.hasChildren(parentId, CurrentUser.id())) {
             repo.updateNodeType(parentId, userId, "knowledge_point");

@@ -229,13 +229,4 @@ public interface KnowledgeNodeMapper {
             </script>
             """)
     int deleteByIds(@Param("userId") long userId, @Param("ids") List<Long> ids);
-
-    @Update("""
-            <script>
-            UPDATE interview_knowledge_question SET knowledge_node_id = NULL
-            WHERE knowledge_node_id IN
-            <foreach collection='ids' item='i' open='(' separator=',' close=')'>#{i}</foreach>
-            </script>
-            """)
-    int nullOutInterviewKnowledgeRefs(@Param("ids") List<Long> ids);
 }
