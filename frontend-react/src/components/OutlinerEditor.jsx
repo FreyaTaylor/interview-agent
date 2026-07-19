@@ -644,6 +644,20 @@ export default function OutlinerEditor({
                 </select>
               )}
 
+              {/* 清空子项：删掉所有子孙、保留本节点（碎点收敛用） */}
+              {hasKids && (
+                <button className="outliner-clear-children" title="删除本节点下的所有子项，仅保留本节点"
+                  onClick={async () => {
+                    await fetch(`${apiUrl}/delete-children`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ id: node.id }),
+                    })
+                    await fetchData()
+                  }}
+                >清空子项</button>
+              )}
+
               {/* 删除 */}
               <button className="outliner-delete" title="删除节点"
                 onClick={async () => {

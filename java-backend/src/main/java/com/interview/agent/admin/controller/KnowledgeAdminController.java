@@ -64,4 +64,9 @@ public class KnowledgeAdminController {
     public ApiResponse<Map<String, Object>> delete(@RequestBody DeleteNodeReq req) {
         return ApiResponse.success(service.delete(req));
     }
+
+    @PostMapping("/delete-children")
+    public ApiResponse<Map<String, Object>> deleteChildren(@RequestBody DeleteNodeReq req) {
+        return ApiResponse.success(service.deleteChildren(req));
+    }
 }

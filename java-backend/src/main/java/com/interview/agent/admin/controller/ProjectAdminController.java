@@ -60,6 +60,11 @@ public class ProjectAdminController {
         return ApiResponse.success(service.delete(req));
     }
 
+    @PostMapping("/delete-children")
+    public ApiResponse<Map<String, Object>> deleteChildren(@RequestBody DeleteNodeReq req) {
+        return ApiResponse.success(service.deleteChildren(req));
+    }
+
     @PostMapping("/from-text")
     public ApiResponse<ProjectFromTextResp> fromText(@RequestBody ProjectFromTextReq req) {
         return ApiResponse.success(service.createFromText(req));

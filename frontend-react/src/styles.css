@@ -716,6 +716,7 @@ body {
 }
 .outliner-item:hover { background: #fafafa; }
 .outliner-item:hover .outliner-delete { opacity: 1; }
+.outliner-item:hover .outliner-clear-children { opacity: 1; }
 /* 拖拽中：行被"拾起"——淡蓝底，原地高亮。
    若被拖的是父节点，整棵子树（root + 所有子孙）共享淡蓝底连成一片。 */
 .outliner-item.dragging {
@@ -823,6 +824,18 @@ body {
   transition: opacity 0.15s, background 0.15s;
 }
 .outliner-delete:hover { background: #fff1f0; }
+
+/* 清空子项按钮（保留本节点） */
+.outliner-clear-children {
+  opacity: 0; cursor: pointer;
+  color: #fa8c16; font-size: 12px; font-family: inherit;
+  background: #fff7e6; border: 1px solid #ffd591;
+  padding: 1px 8px; height: 22px; line-height: 20px;
+  border-radius: 11px; white-space: nowrap;
+  flex-shrink: 0; margin-left: 4px;
+  transition: opacity 0.15s, background 0.15s, border-color 0.15s;
+}
+.outliner-clear-children:hover { background: #ffe7ba; border-color: #fa8c16; }
 
 
 /* ---- 新建知识树对话框 ---- */

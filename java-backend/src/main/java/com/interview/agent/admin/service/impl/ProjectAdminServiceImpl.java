@@ -262,6 +262,36 @@ public class ProjectAdminServiceImpl implements ProjectAdminService {
         return Map.of("deleted", id);
     }
 
+    /**
+     * 只删该节点的全部子孙、保留节点自身。
+     *
+     * <p>动机：节点拆得太碎时，一次清掉某节点下的一堆碎子项，让它自己收敛为一个叶子。
+     * <p>项目树 node_type 由 level 决定，不因子节点增删而变，故无需改自身 node_type。
+     *
+     * @return {id: 保留的节点 id, deleted: 被删的子孙数量}
+     * @throws BizException 40400 节点不存在
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> deleteChildren(DeleteNodeReq req) {
+        long id = req.id();
+        repo.findById(id, CurrentUser.id())
+                .orElseThrow(() -> new BizException(40400, "节点不存在"));
+
+        // 收集整棵子树后移除根自身 → 仅剩子孙
+        List<Long> childIds = collectDescendants(id);
+        childIds.remove(Long.valueOf(id));
+
+        // 清 FK 引用（interview_project_question.project_node_id）后批量删
+        if (!childIds.isEmpty()) {
+            interviewProjectQuestionMapper.nullOutByNodeIds(childIds);
+        }
+        int deleted = childIds.isEmpty() ? 0 : repo.deleteByIds(childIds, CurrentUser.id());
+
+        log.info("[ProjectAdmin] deleteChildren id={} (removed {} descendants)", id, deleted);
+        return Map.of("id", id, "deleted", deleted);
+    }
+
     // ============================================================
     // from-text
     // ============================================================

@@ -35,6 +35,9 @@ public interface ProjectAdminService {
     /** 递归删除节点 + 子孙；删前清 interview_project_question 引用；返回 {deleted: req.id()}。 */
     Map<String, Object> delete(DeleteNodeReq req);
 
+    /** 只删该节点的全部子孙、保留节点自身（项目树 node_type 由 level 决定，不变）；返回 {id, deleted:子孙数}。 */
+    Map<String, Object> deleteChildren(DeleteNodeReq req);
+
     /**
      * S6 from-text：把项目描述拆为 项目→话题→问题 三层树并落库；同步建 project 元数据行。
      * @return rootId / projectId / name / leafCount

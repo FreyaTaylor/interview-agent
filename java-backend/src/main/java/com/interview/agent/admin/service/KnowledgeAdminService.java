@@ -33,4 +33,7 @@ public interface KnowledgeAdminService {
 
     /** 递归删除节点及全部子孙；返回 {deleted: req.id()}。 */
     Map<String, Object> delete(DeleteNodeReq req);
+
+    /** 只删该节点的全部子孙、保留节点自身（清空后降级为叶子 knowledge_point）；返回 {id, deleted:子孙数}。 */
+    Map<String, Object> deleteChildren(DeleteNodeReq req);
 }

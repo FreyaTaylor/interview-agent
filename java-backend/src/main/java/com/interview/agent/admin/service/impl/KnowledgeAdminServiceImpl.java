@@ -282,6 +282,37 @@ public class KnowledgeAdminServiceImpl implements KnowledgeAdminService {
     }
 
     /**
+     * 只删该节点的全部子孙、保留节点自身。
+     *
+     * <p>动机：知识点拆得太碎时，把某父节点下的一堆碎点一次清掉、让父节点自己收敛为一个叶子知识点。
+     * <p>删完后父节点必然没娃 → 降级为 knowledge_point（与 {@link #delete} 的父降级同一规则）。
+     *
+     * @return {id: 保留的节点 id, deleted: 被删的子孙数量}
+     * @throws BizException 40400 节点不存在
+     */
+    @Override
+    @Transactional
+    public Map<String, Object> deleteChildren(DeleteNodeReq req) {
+        long id = req.id();
+        long userId = CurrentUser.id();
+        // 存在性检查（顺带保证是当前用户的节点）
+        repo.findById(id, userId)
+                .orElseThrow(() -> new BizException(40400, "节点不存在"));
+
+        // 收集整棵子树后移除根自身 → 仅剩子孙
+        List<Long> childIds = collectDescendants(id);
+        childIds.remove(Long.valueOf(id));
+
+        int deleted = childIds.isEmpty() ? 0 : repo.deleteByIds(userId, childIds);
+
+        // 保留的节点已无子节点 → 降级为叶子知识点
+        repo.updateNodeType(id, userId, "knowledge_point");
+
+        log.info("[KnowledgeAdmin] deleteChildren id={} (removed {} descendants)", id, deleted);
+        return Map.of("id", id, "deleted", deleted);
+    }
+
+    /**
      * BFS 收集以 rootId 为根的整棵子树（含根）的所有 id。
      *
      * <p>为什么不用 PG 递归 CTE：可读性与可测试性，Java 控制环、可拓展（如后续需要过滤某类型）。
