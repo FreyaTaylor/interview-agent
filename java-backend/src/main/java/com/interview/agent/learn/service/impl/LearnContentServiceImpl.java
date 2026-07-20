@@ -140,6 +140,52 @@ public class LearnContentServiceImpl implements LearnContentService {
                 .orElseThrow(() -> new BizException(50000, "正文写入后回读失败")));
     }
 
+    /**
+     * Step B 流式版：与 {@link #resolveSubtopicContent} 同样的懒生成/串行化语义，
+     * 区别是正文用 {@link LlmInvoker#stream} 逐 token 回吐给 {@code sink}，全文拼完再落库。
+     *
+     * <p>已 ready（FETCH）时不调 LLM，直接把缓存正文整段回吐一次。
+     * <p>流式不重试：中途失败 → 事务回滚（不落库）→ 抛 50000。
+     */
+    @Override
+    @Transactional
+    public SubtopicView streamSubtopicContent(SubtopicContentRequest req, java.util.function.Consumer<String> sink) {
+        LearnAssetRequest.Action action = req.resolvedAction();
+        KnowledgeSubtopic s = subtopicMapper.findById(req.subtopicId(), CurrentUser.id())
+                .orElseThrow(() -> new BizException(40400, "子话题不存在"));
+
+        // FETCH 且已 ready → 整段回吐缓存正文，不调 LLM
+        if (action == LearnAssetRequest.Action.FETCH && isReady(s)) {
+            sink.accept(s.bodyMd());
+            return toViewWithQuestions(s);
+        }
+
+        // 取子话题级锁串行化；拿锁后重查（FETCH 下若已被并发生成则直接返）
+        subtopicMapper.acquireSubtopicContentLock(Math.toIntExact(s.id()));
+        s = subtopicMapper.findById(req.subtopicId(), CurrentUser.id())
+                .orElseThrow(() -> new BizException(40400, "子话题不存在"));
+        if (action == LearnAssetRequest.Action.FETCH && isReady(s)) {
+            sink.accept(s.bodyMd());
+            return toViewWithQuestions(s);
+        }
+
+        // 流式生成：逐 token 回吐 + 累积全文
+        StringBuilder sb = new StringBuilder();
+        llmInvoker.stream(buildSubtopicSpec(s))
+                .doOnNext(tok -> {
+                    if (tok != null && !tok.isEmpty()) {
+                        sb.append(tok);
+                        sink.accept(tok);
+                    }
+                })
+                .blockLast();
+
+        String body = parseBody(sb.toString());
+        subtopicMapper.updateBody(s.id(), s.kpId(), CurrentUser.id(), body);
+        return toViewWithQuestions(subtopicMapper.findById(s.id(), CurrentUser.id())
+                .orElseThrow(() -> new BizException(50000, "正文写入后回读失败")));
+    }
+
     private static boolean isReady(KnowledgeSubtopic s) {
         return "ready".equals(s.contentStatus()) && s.bodyMd() != null && !s.bodyMd().isBlank();
     }
@@ -152,6 +198,14 @@ public class LearnContentServiceImpl implements LearnContentService {
      * </ol>
      */
     private String generateSubtopicBody(KnowledgeSubtopic s) {
+        return llmInvoker.invoke(buildSubtopicSpec(s), LearnContentServiceImpl::parseBody)
+                .orElseThrow(() -> new BizException(50000, "子话题正文生成失败，请重试"));
+    }
+
+    /**
+     * 组装子话题正文生成的 LLM Spec（B1 采分点先 + B2 讲解契约变量）；被阻塞版与流式版共用。
+     */
+    private LlmInvoker.Spec buildSubtopicSpec(KnowledgeSubtopic s) {
         // B1 答案先：逐题补齐 rubric + 范例答案（已有则跳过，幂等）
         List<StudyQuestion> qs = questionMapper.findBySubtopic(s.id(), CurrentUser.id());
         for (StudyQuestion q : qs) {
@@ -169,10 +223,8 @@ public class LearnContentServiceImpl implements LearnContentService {
                 "target_questions", targets,
                 "answer_points", buildAnswerPoints(qs)
         );
-        LlmInvoker.Spec spec = new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPIC_CONTENT, vars,
+        return new LlmInvoker.Spec(PromptKeys.LEARN_SUBTOPIC_CONTENT, vars,
                 GEN_TEMPERATURE, GEN_MAX_TOKENS, GEN_MAX_RETRY);
-        return llmInvoker.invoke(spec, LearnContentServiceImpl::parseBody)
-                .orElseThrow(() -> new BizException(50000, "子话题正文生成失败，请重试"));
     }
 
     /** 把各目标题的 rubric 采分点拼成“讲解必须讲清”的契约文本。 */

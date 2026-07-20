@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.Map;
 import java.util.Optional;
+import reactor.core.publisher.Flux;
 
 /**
  * 通用 LLM 调用工具：拼 prompt + 重试 + 解析，统一收口"调一次 LLM"这件事。
@@ -84,6 +85,24 @@ public class LlmInvoker {
             }
         }
         return Optional.empty();
+    }
+
+    /**
+     * 流式调 LLM，逐段返回文本增量（token）。
+     *
+     * <p>与 {@link #invoke} 的差异：<b>不重试、不解析、不校验</b>——流式天然无法中途重来。
+     * caller 负责累积全文、结束后自行落库/校验（如太短视为失败）。
+     *
+     * @param spec prompt key + 变量 + 模型参数（maxRetry 在流式下被忽略）
+     * @return 文本增量流；订阅方 append 拼全文
+     */
+    public Flux<String> stream(Spec spec) {
+        String prompt = promptService.render(spec.promptKey(), spec.vars());
+        OpenAiChatOptions opts = OpenAiChatOptions.builder()
+                .temperature(spec.temperature())
+                .maxTokens(spec.maxTokens())
+                .build();
+        return chatClient.prompt().options(opts).user(prompt).stream().content();
     }
 
     /**

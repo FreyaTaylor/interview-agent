@@ -30,6 +30,26 @@ public final class CurrentUser {
     }
 
     /**
+     * 在指定 user 上下文中执行任务——把请求线程的登录身份透传到异步/工作线程。
+     *
+     * <p>用于 SSE 流式等"controller 取 userId → 交给 worker 线程跑业务"的场景：
+     * worker 线程读不到请求线程的 ThreadLocal，需在此显式设入、执行完还原。
+     */
+    public static void runWith(long userId, Runnable task) {
+        Long prev = HOLDER.get();
+        HOLDER.set(userId);
+        try {
+            task.run();
+        } finally {
+            if (prev == null) {
+                HOLDER.remove();
+            } else {
+                HOLDER.set(prev);
+            }
+        }
+    }
+
+    /**
      * 取当前登录用户 id。
      *
      * @return 已登录用户的 user_id

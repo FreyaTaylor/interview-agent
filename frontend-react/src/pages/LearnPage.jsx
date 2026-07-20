@@ -22,6 +22,43 @@ async function postLearn(path, body) {
   return resp.json()
 }
 
+// SSE 流式讲解：逐 token 回调 onToken，结束 onDone(完整视图)，出错 onError(msg)。
+// 用 fetch + ReadableStream 而非 EventSource —— 后者无法带 Authorization 头。
+async function streamLearnSubtopic(body, { onToken, onDone, onError }) {
+  const resp = await fetch(`${API_LEARN}/subtopic-content-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify(body || {}),
+  })
+  if (!resp.ok || !resp.body) { onError?.('网络错误 ' + resp.status); return }
+  const reader = resp.body.getReader()
+  const decoder = new TextDecoder()
+  let buf = ''
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    buf += decoder.decode(value, { stream: true })
+    let sep
+    // 逐个完整 SSE 帧（以空行分隔）解析
+    while ((sep = buf.indexOf('\n\n')) >= 0) {
+      const frame = buf.slice(0, sep)
+      buf = buf.slice(sep + 2)
+      let ev = 'message'
+      let data = ''
+      for (const line of frame.split('\n')) {
+        if (line.startsWith('event:')) ev = line.slice(6).trim()
+        else if (line.startsWith('data:')) data += line.slice(5).replace(/^ /, '')
+      }
+      if (!data) continue
+      let payload
+      try { payload = JSON.parse(data) } catch { continue }
+      if (ev === 'token') onToken?.(payload.t || '')
+      else if (ev === 'done') onDone?.(payload)
+      else if (ev === 'error') onError?.(payload.message || '生成失败')
+    }
+  }
+}
+
 // Markdown 渲染：在中文句号 / 问号 / 感叹号后插入硬换行（"  \n"），跳过代码块/标题/表格/引用
 // 两种情况都要处理：
 //   (1) 句号后同行非空字符 → 强行插换行   "AssertionError。 Exception" → "AssertionError。\nException"
@@ -300,19 +337,33 @@ export default function LearnPage() {
     loadContent(id)
   }
 
-  // Step B：点击 pending 子话题的"生成讲解" → 调 /subtopic-content 生成正文 → 就地替换该卡片 + 同步缓存
+  // Step B：点击 pending 子话题的"生成讲解" → 流式生成正文，边到边渲染 → 结束用完整视图覆盖
   async function handleGenerateSubtopic(subtopicId) {
-    try {
-      const resp = await postLearn('/subtopic-content', { subtopic_id: subtopicId, action: 'fetch' })
-      if (resp.code !== 0) {
-        alert('生成讲解失败: ' + (resp.message || '未知错误'))
-        return
+    // 就地更新该子话题的正文（token 累积时反复调用，实时渲染 markdown）
+    const applyBody = (bodyMd) => setContent(prev => {
+      if (!prev || !Array.isArray(prev.subtopics)) return prev
+      const next = {
+        ...prev,
+        subtopics: prev.subtopics.map(s =>
+          s.id === subtopicId ? { ...s, content_status: 'ready', body_md: bodyMd } : s),
       }
-      setContent(prev => {
-        if (!prev || !Array.isArray(prev.subtopics)) return prev
-        const next = { ...prev, subtopics: prev.subtopics.map(s => (s.id === subtopicId ? resp.data : s)) }
-        if (activeKpId) contentCacheRef.current[activeKpId] = next
-        return next
+      if (activeKpId) contentCacheRef.current[activeKpId] = next
+      return next
+    })
+    let acc = ''
+    try {
+      await streamLearnSubtopic({ subtopic_id: subtopicId, action: 'fetch' }, {
+        onToken: (t) => { acc += t; applyBody(acc) },
+        onDone: (view) => {
+          // 用后端落库后的完整视图整体覆盖（含目标题最新态）
+          setContent(prev => {
+            if (!prev || !Array.isArray(prev.subtopics)) return prev
+            const next = { ...prev, subtopics: prev.subtopics.map(s => (s.id === subtopicId ? view : s)) }
+            if (activeKpId) contentCacheRef.current[activeKpId] = next
+            return next
+          })
+        },
+        onError: (msg) => { alert('生成讲解失败: ' + msg) },
       })
     } catch (e) {
       alert('生成讲解失败: ' + e.message)

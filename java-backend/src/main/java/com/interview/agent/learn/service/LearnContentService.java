@@ -19,6 +19,14 @@ public interface LearnContentService {
     /** Step B：单子话题正文懒生成 / 重生（fetch 时 pending 才生，regenerate 强制重生）。 */
     SubtopicView resolveSubtopicContent(SubtopicContentRequest req);
 
+    /**
+     * Step B 流式版：逐 token 回吐正文，结束后落库并返回完整视图。
+     *
+     * @param sink 每个文本增量的回调（controller 里推给 SSE）
+     * @return 落库后的完整子话题视图（含目标题等）
+     */
+    SubtopicView streamSubtopicContent(SubtopicContentRequest req, java.util.function.Consumer<String> sink);
+
     /** 幂等保证：若讲解不存在则生成并落库（供 S3 串联调用）。 */
     void ensureContent(long kpId);
 
