@@ -237,7 +237,7 @@ export default function InterviewPage() {
     e?.stopPropagation()
     setMenuOpenId(null)
     const h = history.find(x => x.id === id)
-    const label = h ? `${h.company || '未命名'}${h.position ? ' · ' + h.position : ''}` : `#${id}`
+    const label = h ? `${h.company || '未命名'}` : `#${id}`
     if (!window.confirm(`确定删除「${label}」？该面试的所有题目记录也会一起删除。`)) return
     try {
       const resp = await fetch(`${API_INTERVIEW}/history/${id}`, { method: 'DELETE' }).then(r => r.json())
@@ -254,7 +254,7 @@ export default function InterviewPage() {
   function openEdit(h, e) {
     e?.stopPropagation()
     setMenuOpenId(null)
-    setEditing({ id: h.id, company: h.company || '', position: h.position || '' })
+    setEditing({ id: h.id, company: h.company || '', reviewStatus: h.review_status || 'pending' })
   }
 
   // 继续校准：拉取已存的 turns + groups，复用校对弹框；提交时走 recalibrate 端点（覆盖旧记录）
@@ -300,14 +300,14 @@ export default function InterviewPage() {
       const resp = await fetch(`${API_INTERVIEW}/history/${editing.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ company: editing.company.trim(), position: editing.position.trim() }),
+        body: JSON.stringify({ company: editing.company.trim(), review_status: editing.reviewStatus }),
       }).then(r => r.json())
       if (resp.code !== 0) throw new Error(resp.message || '保存失败')
       setHistory(prev => prev.map(x => x.id === editing.id
-        ? { ...x, company: resp.data.company, position: resp.data.position }
+        ? { ...x, company: resp.data.company, review_status: resp.data.review_status }
         : x))
       if (editing.id === activeRecordId && result) {
-        setResult({ ...result, company: resp.data.company, position: resp.data.position })
+        setResult({ ...result, company: resp.data.company, review_status: resp.data.review_status })
       }
       setEditing(null)
     } catch (err) {
@@ -506,8 +506,19 @@ export default function InterviewPage() {
                       </span>
                     )}
                     <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {h.company || '未命名面试'}{h.position ? ` · ${h.position}` : ''}
+                      {h.company || '未命名面试'}
                     </span>
+                    {(() => {
+                      const reviewed = h.review_status === 'reviewed'
+                      return (
+                        <span title={reviewed ? '已复盘' : '待复盘'}
+                          style={{ fontSize: 10, padding: '1px 5px', borderRadius: 3, flexShrink: 0, fontWeight: 600,
+                            background: reviewed ? '#e6f4ea' : '#f3f4f6',
+                            color: reviewed ? '#1a7f37' : '#6b7280' }}>
+                          {reviewed ? '✓ 已复盘' : '待复盘'}
+                        </span>
+                      )
+                    })()}
                   </div>
                   <div style={{ fontSize: 11, color: '#999', marginTop: 2 }}>
                     {formatBeijingDate(h.created_at)} · {h.avg_score != null ? `${h.avg_score}分` : (h.has_parsed ? '—' : '未解析')}
@@ -577,12 +588,10 @@ export default function InterviewPage() {
                 ))}
               </div>
               <div className="outliner-dialog-body">
-                {/* 公司 + 职位 */}
+                {/* 公司 */}
                 <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
                   <input className="outliner-dialog-input" placeholder="公司名称（选填）" value={company}
                     onChange={e => setCompany(e.target.value)} style={{ flex: 1 }} />
-                  <input className="outliner-dialog-input" placeholder="应聘职位（选填）" value={position}
-                    onChange={e => setPosition(e.target.value)} style={{ flex: 1 }} />
                 </div>
 
                 {uploadTab === 'text' && (
@@ -715,7 +724,7 @@ export default function InterviewPage() {
               <div className="outliner-dialog-body" style={{ fontSize: 14, lineHeight: 1.8 }}>
                 <p>该面试文本已于 <b>{formatBeijingDate(duplicateInfo.created_at)}</b> 上传过：</p>
                 <p style={{ color: '#555' }}>
-                  {duplicateInfo.company || '未命名'}{duplicateInfo.position ? ` · ${duplicateInfo.position}` : ''}
+                  {duplicateInfo.company || '未命名'}
                   {duplicateInfo.avg_score != null && <span style={{ marginLeft: 8, color: sc(duplicateInfo.avg_score) }}>{duplicateInfo.avg_score}分</span>}
                 </p>
               </div>
@@ -808,7 +817,7 @@ export default function InterviewPage() {
       {/* 面试信息栏 */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12, fontSize: 13, color: '#888' }}>
         {(result.company || result.position) && (
-          <span>🏢 {result.company || '未命名'}{result.position ? ` · ${result.position}` : ''}</span>
+          <span>🏢 {result.company || '未命名'}</span>
         )}
         <span style={{ flex: 1 }} />
       </div>
@@ -1145,11 +1154,24 @@ export default function InterviewPage() {
                 style={{ width: '100%', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
             </div>
             <div style={{ marginBottom: 18 }}>
-              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 4 }}>岗位</label>
-              <input value={editing.position}
-                onChange={(e) => setEditing({ ...editing, position: e.target.value })}
-                onKeyDown={(e) => e.key === 'Enter' && saveEdit()}
-                style={{ width: '100%', padding: '8px 10px', border: '1px solid #d9d9d9', borderRadius: 6, fontSize: 13, boxSizing: 'border-box' }} />
+              <label style={{ fontSize: 12, color: '#666', display: 'block', marginBottom: 4 }}>复盘状态</label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                {[{ v: 'pending', t: '待复盘' }, { v: 'reviewed', t: '已复盘' }].map(opt => {
+                  const active = editing.reviewStatus === opt.v
+                  return (
+                    <button key={opt.v} type="button"
+                      onClick={() => setEditing({ ...editing, reviewStatus: opt.v })}
+                      style={{
+                        flex: 1, padding: '8px 10px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+                        border: active ? '1px solid #1677ff' : '1px solid #d9d9d9',
+                        background: active ? '#e6f0ff' : '#fff',
+                        color: active ? '#1677ff' : '#666', fontWeight: active ? 600 : 400,
+                      }}>
+                      {opt.t}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
               <button onClick={() => setEditing(null)}

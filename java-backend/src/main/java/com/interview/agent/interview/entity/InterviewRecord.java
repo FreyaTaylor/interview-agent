@@ -21,6 +21,7 @@ public record InterviewRecord(
         String summaryReport,
         Object draftTurns,
         Object draftGroups,
-        Instant createdAt
+        Instant createdAt,
+        String reviewStatus
 ) {
 }

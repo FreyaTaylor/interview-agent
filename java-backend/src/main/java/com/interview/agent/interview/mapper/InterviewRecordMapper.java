@@ -18,7 +18,8 @@ public interface InterviewRecordMapper {
     String COLS = """
             id, raw_text, company, position, text_hash,
             avg_score, pass_estimate, parsed_questions, cluster_result,
-            summary_report, draft_turns, draft_groups, created_at
+            summary_report, draft_turns, draft_groups, created_at,
+            review_status
             """;
 
     @Select("SELECT " + COLS + " FROM interview_record WHERE id = #{id} AND user_id = #{userId}")
@@ -135,13 +136,13 @@ public interface InterviewRecordMapper {
     @Update("""
             UPDATE interview_record
             SET company = #{company},
-                position = #{position}
+                review_status = COALESCE(#{reviewStatus}, review_status)
             WHERE id = #{id} AND user_id = #{userId}
             """)
     int updateMeta(@Param("id") long id,
                    @Param("userId") long userId,
                    @Param("company") String company,
-                   @Param("position") String position);
+                   @Param("reviewStatus") String reviewStatus);
 
     @Delete("DELETE FROM interview_record WHERE id = #{id} AND user_id = #{userId}")
     int deleteById(@Param("id") long id, @Param("userId") long userId);

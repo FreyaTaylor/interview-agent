@@ -165,7 +165,7 @@ public class InterviewController {
     @PatchMapping("/history/{recordId}")
     public ApiResponse<UpdateMetaResponse> historyUpdateMeta(@PathVariable long recordId,
                                                              @RequestBody UpdateMetaBody req) {
-        return ApiResponse.success(basicService.updateMeta(recordId, req.company(), req.position()));
+        return ApiResponse.success(basicService.updateMeta(recordId, req.company(), req.reviewStatus()));
     }
 
     @PostMapping("/upload-audio")

@@ -79,7 +79,8 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
                     r.passEstimate(),
                     r.createdAt() == null ? null : r.createdAt().toString(),
                     !groups.isEmpty(),
-                    r.draftTurns() != null && r.draftGroups() != null
+                    r.draftTurns() != null && r.draftGroups() != null,
+                    r.reviewStatus()
             ));
         }
         return out;
@@ -239,21 +240,29 @@ public class InterviewBasicServiceImpl implements InterviewBasicService {
 
     @Override
     @Transactional
-    public UpdateMetaResponse updateMeta(long recordId, String company, String position) {
+    public UpdateMetaResponse updateMeta(long recordId, String company, String reviewStatus) {
         InterviewRecord record = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
         int affected = recordMapper.updateMeta(
                 record.id(),
                 CurrentUser.id(),
                 blankToNull(company),
-                blankToNull(position)
+                normalizeReviewStatus(reviewStatus)
         );
         if (affected == 0) {
             throw new BizException(50000, "更新失败");
         }
         InterviewRecord latest = recordMapper.findById(recordId, CurrentUser.id())
                 .orElseThrow(() -> new BizException(40004, "记录不存在"));
-        return new UpdateMetaResponse(latest.id(), latest.company(), latest.position());
+        return new UpdateMetaResponse(latest.id(), latest.company(), latest.reviewStatus());
+    }
+
+    /** 只接受 pending / reviewed；其余（空/非法）返 null → mapper COALESCE 保留原值。 */
+    private static String normalizeReviewStatus(String s) {
+        if ("reviewed".equals(s) || "pending".equals(s)) {
+            return s;
+        }
+        return null;
     }
 
     /** 删除记录前置校验：不存在抛 40004，删除影响行数为 0 抛 50000。 */

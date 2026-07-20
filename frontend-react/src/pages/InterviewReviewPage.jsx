@@ -379,10 +379,10 @@ export function InterviewReviewModal({
               面试解析校对
             </h2>
             <div style={{ fontSize: 12, color: '#6e7781', marginTop: 5 }}>
-              {(company || position) && (
+              {company && (
                 <>
                   <span style={{ color: '#1f2328', fontWeight: 500 }}>
-                    {company || '未填公司'} · {position || '未填岗位'}
+                    {company}
                   </span>
                   <span style={{ margin: '0 8px', color: '#d0d7de' }}>|</span>
                 </>

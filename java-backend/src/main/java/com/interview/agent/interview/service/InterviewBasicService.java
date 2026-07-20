@@ -47,5 +47,5 @@ public interface InterviewBasicService {
     DeleteResponse historyDelete(long recordId);
 
     /** 仅更新 company/position 元数据，不动解析结果。 */
-    UpdateMetaResponse updateMeta(long recordId, String company, String position);
+    UpdateMetaResponse updateMeta(long recordId, String company, String reviewStatus);
 }

@@ -9,6 +9,7 @@ public record InterviewHistoryItem(
         String passEstimate,
         String createdAt,
         boolean hasParsed,
-        boolean hasDraft
+        boolean hasDraft,
+        String reviewStatus
 ) {
 }
