@@ -174,7 +174,7 @@ class InterviewControllerIT {
 
     @Test
     void historyEndpoints_shouldReturnWrappedResponse() throws Exception {
-        when(interviewBasicService.historyList()).thenReturn(List.of(new InterviewHistoryItem(1L, "A", "B", 60, "一般", "2026", true, false)));
+        when(interviewBasicService.historyList()).thenReturn(List.of(new InterviewHistoryItem(1L, "A", "B", 60, "一般", "2026", true, false, "pending")));
         when(interviewBasicService.historyDetail(anyLong())).thenReturn(new InterviewHistoryDetailResponse(
                 1L, "A", "B", "raw", List.of(), List.of(), "", Map.of(), 60, "一般", Map.of(), false, "2026", false, true, null, null
         ));
@@ -209,7 +209,7 @@ class InterviewControllerIT {
 
         mockMvc.perform(patch("/api/interview/history/1")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("{" + "\"company\":\"C\",\"position\":\"D\"" + "}"))
+                        .content("{" + "\"company\":\"C\",\"review_status\":\"reviewed\"" + "}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(0));
     }
