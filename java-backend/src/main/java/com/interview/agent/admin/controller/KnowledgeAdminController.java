@@ -6,7 +6,6 @@ import com.interview.agent.admin.dto.DeleteNodeReq;
 import com.interview.agent.admin.dto.KnowledgeNodeView;
 import com.interview.agent.admin.dto.UpdateKnowledgeNodeReq;
 import com.interview.agent.admin.service.KnowledgeAdminService;
-import com.interview.agent.common.ApiResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -41,32 +40,32 @@ public class KnowledgeAdminController {
     }
 
     @PostMapping("/list")
-    public ApiResponse<List<KnowledgeNodeView>> list() {
-        return ApiResponse.success(service.listAll());
+    public List<KnowledgeNodeView> list() {
+        return service.listAll();
     }
 
     @PostMapping("/create")
-    public ApiResponse<Map<String, Object>> create(@RequestBody CreateKnowledgeNodeReq req) {
-        return ApiResponse.success(service.create(req));
+    public Map<String, Object> create(@RequestBody CreateKnowledgeNodeReq req) {
+        return service.create(req);
     }
 
     @PostMapping("/batch-sort")
-    public ApiResponse<Map<String, Object>> batchSort(@RequestBody BatchSortReq req) {
-        return ApiResponse.success(service.batchSort(req));
+    public Map<String, Object> batchSort(@RequestBody BatchSortReq req) {
+        return service.batchSort(req);
     }
 
     @PostMapping("/update")
-    public ApiResponse<Map<String, Object>> update(@RequestBody UpdateKnowledgeNodeReq req) {
-        return ApiResponse.success(service.update(req));
+    public Map<String, Object> update(@RequestBody UpdateKnowledgeNodeReq req) {
+        return service.update(req);
     }
 
     @PostMapping("/delete")
-    public ApiResponse<Map<String, Object>> delete(@RequestBody DeleteNodeReq req) {
-        return ApiResponse.success(service.delete(req));
+    public Map<String, Object> delete(@RequestBody DeleteNodeReq req) {
+        return service.delete(req);
     }
 
     @PostMapping("/delete-children")
-    public ApiResponse<Map<String, Object>> deleteChildren(@RequestBody DeleteNodeReq req) {
-        return ApiResponse.success(service.deleteChildren(req));
+    public Map<String, Object> deleteChildren(@RequestBody DeleteNodeReq req) {
+        return service.deleteChildren(req);
     }
 }

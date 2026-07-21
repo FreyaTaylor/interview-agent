@@ -1,6 +1,5 @@
 package com.interview.agent.user.controller;
 
-import com.interview.agent.common.ApiResponse;
 import com.interview.agent.user.dto.ProfileUpdateRequest;
 import com.interview.agent.user.service.UserProfileService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -31,13 +30,13 @@ public class UserProfileController {
     }
 
     @GetMapping("/profile")
-    public ApiResponse<Map<String, Object>> getProfile() {
-        return ApiResponse.success(Map.of("profile_text", service.getProfile()));
+    public Map<String, Object> getProfile() {
+        return Map.of("profile_text", service.getProfile());
     }
 
     @PutMapping("/profile")
-    public ApiResponse<Map<String, Object>> updateProfile(@RequestBody ProfileUpdateRequest req) {
+    public Map<String, Object> updateProfile(@RequestBody ProfileUpdateRequest req) {
         String saved = service.updateProfile(req.profileText());
-        return ApiResponse.success(Map.of("profile_text", saved));
+        return Map.of("profile_text", saved);
     }
 }

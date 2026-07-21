@@ -69,8 +69,8 @@ public class InterviewController {
 
     /** 管理页「面试真题」三层视图：当前用户全部面试问题（面试→主题→问题）。 */
     @GetMapping("/admin/all-questions")
-    public ApiResponse<List<com.interview.agent.interview.dto.InterviewAdminRecordGroup>> adminAllQuestions() {
-        return ApiResponse.success(adminQuestionService.listAllQuestions());
+    public List<com.interview.agent.interview.dto.InterviewAdminRecordGroup> adminAllQuestions() {
+        return adminQuestionService.listAllQuestions();
     }
 
     /** 管理页「面试真题」编辑：传 text 改文本（需 idx）或 topic 改主题。 */
@@ -96,81 +96,81 @@ public class InterviewController {
     }
 
     @PostMapping("/preview-parse")
-    public ApiResponse<PreviewParseResponse> previewParse(@Valid @RequestBody UploadTextRequest req) {
-        return ApiResponse.success(parseService.previewParse(req.text(), req.chunkStrategy()));
+    public PreviewParseResponse previewParse(@Valid @RequestBody UploadTextRequest req) {
+        return parseService.previewParse(req.text(), req.chunkStrategy());
     }
 
     @PostMapping("/finalize")
-    public ApiResponse<FinalizeResponse> finalizeRoute(@Valid @RequestBody FinalizeRequest req) {
-        return ApiResponse.success(parseService.finalizeInterview(
-                req.turns(), req.groups(), req.company(), req.position()));
+    public FinalizeResponse finalizeRoute(@Valid @RequestBody FinalizeRequest req) {
+        return parseService.finalizeInterview(
+                req.turns(), req.groups(), req.company(), req.position());
     }
 
     @PostMapping("/parse")
-    public ApiResponse<FinalizeResponse> parseRoute(@Valid @RequestBody UploadTextRequest req) {
-        return ApiResponse.success(parseService.parseInterview(req.text(), req.company(), req.position()));
+    public FinalizeResponse parseRoute(@Valid @RequestBody UploadTextRequest req) {
+        return parseService.parseInterview(req.text(), req.company(), req.position());
     }
 
     @GetMapping("/history")
-    public ApiResponse<List<InterviewHistoryItem>> historyList() {
-        return ApiResponse.success(basicService.historyList());
+    public List<InterviewHistoryItem> historyList() {
+        return basicService.historyList();
     }
 
     @GetMapping("/history/{recordId}")
-    public ApiResponse<InterviewHistoryDetailResponse> historyDetail(@PathVariable long recordId) {
-        return ApiResponse.success(basicService.historyDetail(recordId));
+    public InterviewHistoryDetailResponse historyDetail(@PathVariable long recordId) {
+        return basicService.historyDetail(recordId);
     }
 
     @PostMapping("/check-duplicate")
-    public ApiResponse<CheckDuplicateResponse> checkDuplicate(@Valid @RequestBody CheckDuplicateRequest req) {
-        return ApiResponse.success(basicService.checkDuplicate(req.text()));
+    public CheckDuplicateResponse checkDuplicate(@Valid @RequestBody CheckDuplicateRequest req) {
+        return basicService.checkDuplicate(req.text());
     }
 
     /** 知识点 → 相关面试真题（只读；三模块解耦 P3）。 */
     @GetMapping("/related-questions")
-    public ApiResponse<List<com.interview.agent.interview.dto.RelatedInterviewQuestion>> relatedQuestions(
+    public List<com.interview.agent.interview.dto.RelatedInterviewQuestion> relatedQuestions(
             @org.springframework.web.bind.annotation.RequestParam("kp_id") long kpId) {
-        return ApiResponse.success(relatedQuestionService.byKnowledgePoint(kpId));
+        return relatedQuestionService.byKnowledgePoint(kpId);
     }
 
     /** 项目 → 相关面试真题（只读；三模块解耦 P5）。 */
     @GetMapping("/related-project-questions")
-    public ApiResponse<List<com.interview.agent.project.dto.RelatedProjectQuestion>> relatedProjectQuestions(
+    public List<com.interview.agent.project.dto.RelatedProjectQuestion> relatedProjectQuestions(
             @org.springframework.web.bind.annotation.RequestParam("project_id") long projectId) {
-        return ApiResponse.success(relatedQuestionService.byProject(projectId));
+        return relatedQuestionService.byProject(projectId);
     }
 
     @PostMapping("/overwrite")
-    public ApiResponse<DeleteResponse> overwrite(@Valid @RequestBody RecordIdRequest req) {
-        return ApiResponse.success(basicService.overwrite(req.recordId()));
+    public DeleteResponse overwrite(@Valid @RequestBody RecordIdRequest req) {
+        return basicService.overwrite(req.recordId());
     }
 
     @PostMapping("/draft")
-    public ApiResponse<SaveDraftResponse> draft(@Valid @RequestBody SaveDraftRequest req) {
-        return ApiResponse.success(basicService.saveDraft(
-                req.recordId(), req.turns(), req.groups(), req.company(), req.position()));
+    public SaveDraftResponse draft(@Valid @RequestBody SaveDraftRequest req) {
+        return basicService.saveDraft(
+                req.recordId(), req.turns(), req.groups(), req.company(), req.position());
     }
 
     @PostMapping("/history/{recordId}/recalibrate")
-    public ApiResponse<FinalizeResponse> historyRecalibrate(@PathVariable long recordId,
-                                                            @Valid @RequestBody RecalibrateBody req) {
-        return ApiResponse.success(basicService.historyRecalibrate(recordId, req.turns(), req.groups()));
+    public FinalizeResponse historyRecalibrate(@PathVariable long recordId,
+                                               @Valid @RequestBody RecalibrateBody req) {
+        return basicService.historyRecalibrate(recordId, req.turns(), req.groups());
     }
 
     @DeleteMapping("/history/{recordId}")
-    public ApiResponse<DeleteResponse> historyDelete(@PathVariable long recordId) {
-        return ApiResponse.success(basicService.historyDelete(recordId));
+    public DeleteResponse historyDelete(@PathVariable long recordId) {
+        return basicService.historyDelete(recordId);
     }
 
     @PatchMapping("/history/{recordId}")
-    public ApiResponse<UpdateMetaResponse> historyUpdateMeta(@PathVariable long recordId,
-                                                             @RequestBody UpdateMetaBody req) {
-        return ApiResponse.success(basicService.updateMeta(recordId, req.company(), req.reviewStatus()));
+    public UpdateMetaResponse historyUpdateMeta(@PathVariable long recordId,
+                                                @RequestBody UpdateMetaBody req) {
+        return basicService.updateMeta(recordId, req.company(), req.reviewStatus());
     }
 
     @PostMapping("/upload-audio")
-    public ApiResponse<UploadAudioResponse> uploadAudio(@RequestParam("file") MultipartFile file) {
+    public UploadAudioResponse uploadAudio(@RequestParam("file") MultipartFile file) {
         String text = asrService.transcribe(file);
-        return ApiResponse.success(new UploadAudioResponse(text));
+        return new UploadAudioResponse(text);
     }
 }

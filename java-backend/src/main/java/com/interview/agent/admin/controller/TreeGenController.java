@@ -4,7 +4,6 @@ import com.interview.agent.admin.dto.CreateTreeFromGenerateReq;
 import com.interview.agent.admin.dto.CreateTreeFromTextReq;
 import com.interview.agent.admin.dto.TreeGenResp;
 import com.interview.agent.admin.service.TreeGenService;
-import com.interview.agent.common.ApiResponse;
 import com.interview.agent.common.BizException;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -27,7 +26,7 @@ import java.util.Base64;
  *   <li>POST /merge     合并两棵树</li>
  * </ul>
  *
- * <p>所有响应都包成统一 {@link ApiResponse}；业务异常由 GlobalExceptionHandler 兜底。
+ * <p>方法直接返回业务数据，由 {@code ApiResponseBodyAdvice} 统一包成 {@code {code,data,message}}；业务异常由 GlobalExceptionHandler 兜底。
  */
 @RestController
 @RequestMapping("/api/admin/trees")
@@ -44,14 +43,14 @@ public class TreeGenController {
 
     /** 文本/Markdown 导入 → LLM 解析为树。前端"文本导入"Tab 调用。 */
     @PostMapping("/from-text")
-    public ApiResponse<TreeGenResp> createFromText(@RequestBody CreateTreeFromTextReq req) {
-        return ApiResponse.success(treeGenService.createFromText(req));
+    public TreeGenResp createFromText(@RequestBody CreateTreeFromTextReq req) {
+        return treeGenService.createFromText(req);
     }
 
     /** 给定根名 + 需求描述，LLM 一次生成完整知识树。前端"LLM 生成"Tab 调用。 */
     @PostMapping("/from-generate")
-    public ApiResponse<TreeGenResp> createFromGenerate(@RequestBody CreateTreeFromGenerateReq req) {
-        return ApiResponse.success(treeGenService.createFromGenerate(req));
+    public TreeGenResp createFromGenerate(@RequestBody CreateTreeFromGenerateReq req) {
+        return treeGenService.createFromGenerate(req);
     }
 
     /**
@@ -60,7 +59,7 @@ public class TreeGenController {
      * <p>限制：必须是图片、≤10MB。文件转 base64 后交给 service。
      */
     @PostMapping("/from-image")
-    public ApiResponse<TreeGenResp> createFromImage(@RequestParam("file") MultipartFile file) {
+    public TreeGenResp createFromImage(@RequestParam("file") MultipartFile file) {
         String contentType = file.getContentType();
         if (contentType == null || !contentType.startsWith("image/")) {
             throw new BizException(40001, "请上传图片文件");
@@ -70,7 +69,7 @@ public class TreeGenController {
         }
         byte[] bytes = readBytes(file);
         String imageBase64 = Base64.getEncoder().encodeToString(bytes);
-        return ApiResponse.success(treeGenService.createFromImage(imageBase64, contentType));
+        return treeGenService.createFromImage(imageBase64, contentType);
     }
 
     /**
@@ -79,7 +78,7 @@ public class TreeGenController {
      * <p>限制：文件名以 .mm 结尾、≤10MB。
      */
     @PostMapping("/from-mm")
-    public ApiResponse<TreeGenResp> createFromMm(@RequestParam("file") MultipartFile file) {
+    public TreeGenResp createFromMm(@RequestParam("file") MultipartFile file) {
         String filename = file.getOriginalFilename();
         if (filename == null || !filename.toLowerCase().endsWith(".mm")) {
             throw new BizException(40001, "请上传 .mm 文件");
@@ -87,7 +86,7 @@ public class TreeGenController {
         if (file.getSize() > MAX_UPLOAD_SIZE) {
             throw new BizException(40001, "文件不能超过10MB");
         }
-        return ApiResponse.success(treeGenService.createFromMm(readBytes(file)));
+        return treeGenService.createFromMm(readBytes(file));
     }
 
     /** 读取上传文件字节，IO 异常转 50000。 */

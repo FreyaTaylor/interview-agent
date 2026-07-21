@@ -44,8 +44,8 @@ public class AuthController {
 
     /** 前端启动时读取认证模式。 */
     @GetMapping("/config")
-    public ApiResponse<Map<String, Object>> config() {
-        return ApiResponse.success(authService.publicConfig());
+    public Map<String, Object> config() {
+        return authService.publicConfig();
     }
 
     /** 重定向到 GitHub 授权页。 */

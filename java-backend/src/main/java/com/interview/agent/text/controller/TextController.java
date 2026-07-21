@@ -1,6 +1,5 @@
 package com.interview.agent.text.controller;
 
-import com.interview.agent.common.ApiResponse;
 import com.interview.agent.text.dto.TextCorrectRequest;
 import com.interview.agent.text.dto.TextCorrectResponse;
 import com.interview.agent.text.service.TextCorrectService;
@@ -28,8 +27,8 @@ public class TextController {
     }
 
     @PostMapping("/correct")
-    public ApiResponse<TextCorrectResponse> correct(@Valid @RequestBody TextCorrectRequest req) {
+    public TextCorrectResponse correct(@Valid @RequestBody TextCorrectRequest req) {
         String corrected = correctService.correct(req.text(), req.context());
-        return ApiResponse.success(new TextCorrectResponse(corrected));
+        return new TextCorrectResponse(corrected);
     }
 }

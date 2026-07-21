@@ -1,6 +1,5 @@
 package com.interview.agent.project.controller;
 
-import com.interview.agent.common.ApiResponse;
 import com.interview.agent.project.dto.AttemptDetailResponse;
 import com.interview.agent.project.dto.AttemptFinishResponse;
 import com.interview.agent.project.dto.AttemptIdRequest;
@@ -61,49 +60,49 @@ public class ProjectGrillingController {
     // ===== S7.1 读端点 =====
 
     @PostMapping("/projects-list")
-    public ApiResponse<List<ProjectListItem>> projectsList() {
-        return ApiResponse.success(service.listProjects());
+    public List<ProjectListItem> projectsList() {
+        return service.listProjects();
     }
 
     @PostMapping("/profile-detail")
-    public ApiResponse<ProfileResponse> profileDetail(@Valid @RequestBody ProjectIdRequest req) {
-        return ApiResponse.success(service.profileDetail(req.projectId()));
+    public ProfileResponse profileDetail(@Valid @RequestBody ProjectIdRequest req) {
+        return service.profileDetail(req.projectId());
     }
 
     @PostMapping("/dimensions-list")
-    public ApiResponse<List<DimensionItem>> dimensionsList(@Valid @RequestBody ProjectIdRequest req) {
-        return ApiResponse.success(service.dimensionsList(req.projectId()));
+    public List<DimensionItem> dimensionsList(@Valid @RequestBody ProjectIdRequest req) {
+        return service.dimensionsList(req.projectId());
     }
 
     @PostMapping("/topic-questions")
-    public ApiResponse<TopicQuestionsResponse> topicQuestions(@Valid @RequestBody TopicIdRequest req) {
-        return ApiResponse.success(service.topicQuestions(req.topicId()));
+    public TopicQuestionsResponse topicQuestions(@Valid @RequestBody TopicIdRequest req) {
+        return service.topicQuestions(req.topicId());
     }
 
     // ===== S7.2 attempt 端点 =====
 
     @PostMapping("/attempt-start")
-    public ApiResponse<AttemptStartResponse> attemptStart(@Valid @RequestBody QuestionIdRequest req) {
-        return ApiResponse.success(attemptService.start(req.questionId()));
+    public AttemptStartResponse attemptStart(@Valid @RequestBody QuestionIdRequest req) {
+        return attemptService.start(req.questionId());
     }
 
     @PostMapping("/attempt-turn")
-    public ApiResponse<AttemptTurnResponse> attemptTurn(@Valid @RequestBody AttemptTurnRequest req) {
-        return ApiResponse.success(attemptService.turn(req.attemptId(), req.userAnswer()));
+    public AttemptTurnResponse attemptTurn(@Valid @RequestBody AttemptTurnRequest req) {
+        return attemptService.turn(req.attemptId(), req.userAnswer());
     }
 
     @PostMapping("/attempt-finish")
-    public ApiResponse<AttemptFinishResponse> attemptFinish(@Valid @RequestBody AttemptIdRequest req) {
-        return ApiResponse.success(attemptService.finish(req.attemptId()));
+    public AttemptFinishResponse attemptFinish(@Valid @RequestBody AttemptIdRequest req) {
+        return attemptService.finish(req.attemptId());
     }
 
     @PostMapping("/attempt-detail")
-    public ApiResponse<AttemptDetailResponse> attemptDetail(@Valid @RequestBody AttemptIdRequest req) {
-        return ApiResponse.success(attemptService.detail(req.attemptId()));
+    public AttemptDetailResponse attemptDetail(@Valid @RequestBody AttemptIdRequest req) {
+        return attemptService.detail(req.attemptId());
     }
 
     @PostMapping("/attempts-history")
-    public ApiResponse<AttemptsHistoryResponse> attemptsHistory(@Valid @RequestBody QuestionIdRequest req) {
-        return ApiResponse.success(attemptService.history(req.questionId(), 0));
+    public AttemptsHistoryResponse attemptsHistory(@Valid @RequestBody QuestionIdRequest req) {
+        return attemptService.history(req.questionId(), 0);
     }
 }

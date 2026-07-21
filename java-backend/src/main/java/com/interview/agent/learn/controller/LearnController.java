@@ -59,13 +59,13 @@ public class LearnController {
     }
 
     @PostMapping("/content")
-    public ApiResponse<ContentView> content(@Valid @RequestBody LearnAssetRequest req) {
-        return ApiResponse.success(contentService.resolveContent(req));
+    public ContentView content(@Valid @RequestBody LearnAssetRequest req) {
+        return contentService.resolveContent(req);
     }
 
     @PostMapping("/subtopic-content")
-    public ApiResponse<SubtopicView> subtopicContent(@Valid @RequestBody SubtopicContentRequest req) {
-        return ApiResponse.success(contentService.resolveSubtopicContent(req));
+    public SubtopicView subtopicContent(@Valid @RequestBody SubtopicContentRequest req) {
+        return contentService.resolveSubtopicContent(req);
     }
 
     /**
@@ -112,8 +112,8 @@ public class LearnController {
     }
 
     @PostMapping("/questions")
-    public ApiResponse<QuestionsView> questions(@Valid @RequestBody LearnAssetRequest req) {
-        return ApiResponse.success(questionService.resolveQuestions(req));
+    public QuestionsView questions(@Valid @RequestBody LearnAssetRequest req) {
+        return questionService.resolveQuestions(req);
     }
 
     @PostMapping("/question-delete")
@@ -135,7 +135,7 @@ public class LearnController {
     }
 
     @PostMapping("/self-mastery")
-    public ApiResponse<Integer> selfMastery(@Valid @RequestBody SelfMasteryRequest req) {
-        return ApiResponse.success(contentService.setSelfMastery(req.kpId(), req.selfMastery()));
+    public Integer selfMastery(@Valid @RequestBody SelfMasteryRequest req) {
+        return contentService.setSelfMastery(req.kpId(), req.selfMastery());
     }
 }

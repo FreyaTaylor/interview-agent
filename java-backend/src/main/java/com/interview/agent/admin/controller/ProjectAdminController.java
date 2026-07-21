@@ -8,7 +8,6 @@ import com.interview.agent.admin.dto.ProjectFromTextResp;
 import com.interview.agent.admin.dto.ProjectNodeView;
 import com.interview.agent.admin.dto.UpdateProjectNodeReq;
 import com.interview.agent.admin.service.ProjectAdminService;
-import com.interview.agent.common.ApiResponse;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -36,37 +35,37 @@ public class ProjectAdminController {
     }
 
     @PostMapping("/list")
-    public ApiResponse<List<ProjectNodeView>> list() {
-        return ApiResponse.success(service.listAll());
+    public List<ProjectNodeView> list() {
+        return service.listAll();
     }
 
     @PostMapping("/create")
-    public ApiResponse<Map<String, Object>> create(@RequestBody CreateProjectNodeReq req) {
-        return ApiResponse.success(service.create(req));
+    public Map<String, Object> create(@RequestBody CreateProjectNodeReq req) {
+        return service.create(req);
     }
 
     @PostMapping("/batch-sort")
-    public ApiResponse<Map<String, Object>> batchSort(@RequestBody BatchSortReq req) {
-        return ApiResponse.success(service.batchSort(req));
+    public Map<String, Object> batchSort(@RequestBody BatchSortReq req) {
+        return service.batchSort(req);
     }
 
     @PostMapping("/update")
-    public ApiResponse<Map<String, Object>> update(@RequestBody UpdateProjectNodeReq req) {
-        return ApiResponse.success(service.update(req));
+    public Map<String, Object> update(@RequestBody UpdateProjectNodeReq req) {
+        return service.update(req);
     }
 
     @PostMapping("/delete")
-    public ApiResponse<Map<String, Object>> delete(@RequestBody DeleteNodeReq req) {
-        return ApiResponse.success(service.delete(req));
+    public Map<String, Object> delete(@RequestBody DeleteNodeReq req) {
+        return service.delete(req);
     }
 
     @PostMapping("/delete-children")
-    public ApiResponse<Map<String, Object>> deleteChildren(@RequestBody DeleteNodeReq req) {
-        return ApiResponse.success(service.deleteChildren(req));
+    public Map<String, Object> deleteChildren(@RequestBody DeleteNodeReq req) {
+        return service.deleteChildren(req);
     }
 
     @PostMapping("/from-text")
-    public ApiResponse<ProjectFromTextResp> fromText(@RequestBody ProjectFromTextReq req) {
-        return ApiResponse.success(service.createFromText(req));
+    public ProjectFromTextResp fromText(@RequestBody ProjectFromTextReq req) {
+        return service.createFromText(req);
     }
 }

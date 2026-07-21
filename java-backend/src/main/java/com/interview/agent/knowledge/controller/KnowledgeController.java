@@ -1,6 +1,5 @@
 package com.interview.agent.knowledge.controller;
 
-import com.interview.agent.common.ApiResponse;
 import com.interview.agent.knowledge.dto.KnowledgeTreeNodeView;
 import com.interview.agent.knowledge.service.KnowledgeService;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -28,13 +27,13 @@ public class KnowledgeController {
     }
 
     @GetMapping("/tree")
-    public ApiResponse<List<KnowledgeTreeNodeView>> getTree() {
-        return ApiResponse.success(service.buildTree());
+    public List<KnowledgeTreeNodeView> getTree() {
+        return service.buildTree();
     }
 
     /** 全量树（管理视图）：展开到子话题/问题，问题带 tier/source，供知识树页折叠与操作。 */
     @GetMapping("/tree-full")
-    public ApiResponse<List<KnowledgeTreeNodeView>> getFullTree() {
-        return ApiResponse.success(service.buildFullTree());
+    public List<KnowledgeTreeNodeView> getFullTree() {
+        return service.buildFullTree();
     }
 }
