@@ -26,6 +26,8 @@ public record InterviewAdminQuestionRow(
         String topic,
         String questionsJson,
         String content,
-        boolean topicEditable
+        boolean topicEditable,
+        String leetcodeUrl,
+        String leetcodeTitle
 ) {
 }

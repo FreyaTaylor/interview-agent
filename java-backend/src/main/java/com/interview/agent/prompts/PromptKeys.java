@@ -91,6 +91,10 @@ public final class PromptKeys {
     public static final String INTERVIEW_MATCH_PROJECT_ROOT = "interview/match-project-root";
     /** 面试复盘：项目话题 LLM 语义匹配（复刻 match_or_create_topic 内联，占位符 {catalog}{topic}）。V25 seed。 */
     public static final String INTERVIEW_MATCH_PROJECT_TOPIC = "interview/match-project-topic";
+    /** 面试复盘：算法题 LeetCode 富化 agent（口语描述 → 调 search 工具核对 → 题号/题名/链接）。V67 seed。 */
+    public static final String INTERVIEW_LEETCODE_ENRICH = "interview/leetcode-enrich";
+    /** 面试复盘：组精炼（校对编辑后以最终对话为准重提干净 tag + 书面化 questions）。V68 seed。 */
+    public static final String INTERVIEW_GROUP_REFINE = "interview/group-refine";
 
     // ===== text 域（通用工具）=====
     /** ASR / 输入文本纠错。V14 seed。 */

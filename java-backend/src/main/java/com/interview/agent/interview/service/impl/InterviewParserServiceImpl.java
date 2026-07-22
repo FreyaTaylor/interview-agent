@@ -135,9 +135,7 @@ public class InterviewParserServiceImpl implements InterviewParserService {
         all = mergeProjectTopics(all);
         // 4）other 去重
         all = dedupOtherGroups(all);
-        // 5）LeetCode 补全（结构占位）
-        all = enrichLeetcodeGroups(all);
-        // 6）legacy 字段
+        // 5）legacy 字段（算法题 LeetCode 富化已挑到 finalize，见 InterviewParseServiceImpl）
         all = normalizeToLegacySchema(all);
         // 6.5）以"我"为锚重排 turn_ids
         all = regroupByAnswerAnchors(all, turns);
@@ -512,18 +510,6 @@ public class InterviewParserServiceImpl implements InterviewParserService {
         }
         result.addAll(otherSeen.values());
         return result;
-    }
-
-    // ============================================================
-    // 5）LeetCode 补全（结构占位）
-    // ============================================================
-
-    /**
-     * 对 other+tag=leetcode 分组补题目信息。Java 侧暂无 LeetCode skill，
-     * 故此处为结构占位（已登记于 spec 差异表）；不影响分类/分组主流程。
-     */
-    private List<Map<String, Object>> enrichLeetcodeGroups(List<Map<String, Object>> groups) {
-        return groups;
     }
 
     // ============================================================

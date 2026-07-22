@@ -26,7 +26,8 @@ public interface InterviewAdminQuestionMapper {
                    COALESCE(kp.name, NULLIF(ikq.tag, ''), '未分类') AS topic,
                    ikq.questions::text AS questions_json,
                    NULL AS content,
-                   (kp.name IS NULL) AS topic_editable
+                   (kp.name IS NULL) AS topic_editable,
+                   NULL AS leetcode_url, NULL AS leetcode_title
             FROM interview_knowledge_question ikq
             JOIN interview_record r ON r.id = ikq.interview_record_id
             LEFT JOIN LATERAL (
@@ -48,7 +49,8 @@ public interface InterviewAdminQuestionMapper {
                    COALESCE(NULLIF(ipq.project_name, ''), '未分类') AS topic,
                    ipq.questions::text AS questions_json,
                    NULL AS content,
-                   TRUE AS topic_editable
+                   TRUE AS topic_editable,
+                   NULL AS leetcode_url, NULL AS leetcode_title
             FROM interview_project_question ipq
             JOIN interview_record r ON r.id = ipq.interview_record_id
             WHERE r.user_id = #{userId}
@@ -62,7 +64,9 @@ public interface InterviewAdminQuestionMapper {
                    COALESCE(NULLIF(ioq.tag, ''), '未分类') AS topic,
                    NULL AS questions_json,
                    ioq.content AS content,
-                   TRUE AS topic_editable
+                   TRUE AS topic_editable,
+                   ioq.extra->>'leetcode_url' AS leetcode_url,
+                   ioq.extra->>'leetcode_title' AS leetcode_title
             FROM interview_other_question ioq
             JOIN interview_record r ON r.id = ioq.interview_record_id
             WHERE r.user_id = #{userId}

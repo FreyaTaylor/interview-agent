@@ -65,6 +65,18 @@ function QuestionRow({ q, onChanged }) {
           {q.text || <em className="iqe-empty-text">（空）</em>}
         </span>
       )}
+      {!editing && q.leetcode_url && (
+        <a
+          className="lc-tag"
+          href={q.leetcode_url}
+          target="_blank"
+          rel="noreferrer"
+          onClick={e => e.stopPropagation()}
+          title="在 LeetCode 打开"
+        >
+          🔗 {q.leetcode_title || 'LeetCode'}
+        </a>
+      )}
       {!editing && (
         <span className="iqe-q-actions">
           <button className="iqe-q-btn" disabled={busy} onClick={start} title="编辑">✎</button>

@@ -12,6 +12,8 @@ public record InterviewAdminQuestionItem(
         long refId,
         int idx,
         String text,
-        boolean topicEditable
+        boolean topicEditable,
+        String leetcodeUrl,
+        String leetcodeTitle
 ) {
 }

@@ -20,6 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 
 import static com.interview.agent.interview.service.impl.InterviewServiceSupport.asLongOrNull;
@@ -57,6 +58,10 @@ public class InterviewParseServiceImpl implements InterviewParseService {
     private final InterviewOtherQuestionMapper otherQuestionMapper;
     /** 整段面试文本向量化（语义查重）。 */
     private final EmbeddingService embeddingService;
+    /** 算法题 LeetCode 富化 agent（后解析阶段跑，以用户最终分组为准）。 */
+    private final com.interview.agent.interview.leetcode.LeetCodeEnrichService leetCodeEnrichService;
+    /** 组精炼（校对编辑后以最终对话为准重提 tag/questions）。 */
+    private final com.interview.agent.interview.service.GroupRefineService groupRefineService;
 
     public InterviewParseServiceImpl(InterviewParserService parserService,
                                      InterviewScorerService scorerService,
@@ -65,7 +70,9 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                                      InterviewKnowledgeQuestionMapper knowledgeQuestionMapper,
                                      InterviewProjectQuestionMapper projectQuestionMapper,
                                      InterviewOtherQuestionMapper otherQuestionMapper,
-                                     EmbeddingService embeddingService) {
+                                     EmbeddingService embeddingService,
+                                     com.interview.agent.interview.leetcode.LeetCodeEnrichService leetCodeEnrichService,
+                                     com.interview.agent.interview.service.GroupRefineService groupRefineService) {
         this.parserService = parserService;
         this.scorerService = scorerService;
         this.nodeMatcher = nodeMatcher;
@@ -74,6 +81,8 @@ public class InterviewParseServiceImpl implements InterviewParseService {
         this.projectQuestionMapper = projectQuestionMapper;
         this.otherQuestionMapper = otherQuestionMapper;
         this.embeddingService = embeddingService;
+        this.leetCodeEnrichService = leetCodeEnrichService;
+        this.groupRefineService = groupRefineService;
     }
 
     // ============================================================
@@ -147,6 +156,12 @@ public class InterviewParseServiceImpl implements InterviewParseService {
             throw new BizException(40001, "turns/groups 不能为空");
         }
         List<Map<String, Object>> normalizedGroups = normalizeGroups(turns, groups);
+
+        // Step 1.4: 组精炼——对【被编辑】的组（_edited）用 LLM 以最终对话为准重提干净 tag + questions
+        normalizedGroups = refineEditedGroups(normalizedGroups);
+
+        // Step 1.5: 算法题 LeetCode 富化（以用户最终分组为准，因此放在校对之后）+ 同次按题号去重
+        normalizedGroups = enrichAlgorithmGroups(normalizedGroups);
 
         // Step 2: 节点匹配（knowledge embedding 召回/占位叶子；project 三级匹配）→ 写回 matched_*
         List<Map<String, Object>> matchedGroups = nodeMatcher.matchNodes(normalizedGroups);
@@ -228,7 +243,7 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                         firstQuestion(g),
                         defaultTag(g),
                         asString(g.get("user_answer")),
-                        g.get("score_result")
+                        buildOtherExtra(g)
                 );
             }
         }
@@ -242,6 +257,142 @@ public class InterviewParseServiceImpl implements InterviewParseService {
                 scoreBundle.passEstimate(),
                 scoreBundle.overallAnalysis()
         );
+    }
+
+    // ============================================================
+    // 组精炼（后解析）—— 对被编辑的组用 LLM 重提 tag/questions
+    // ============================================================
+
+    /**
+     * 对带 {@code _edited=true} 标记（前端拆分/合并/改归属产生）的组，用 {@link GroupRefineService}
+     * 以该组最终对话为准重提干净的 {@code tag} + 书面化 {@code questions}；顺带回填 knowledge_point/topic。
+     * 精炼失败/为空则保留原值。用完清除内部标记 {@code _edited}，不落库。
+     */
+    private List<Map<String, Object>> refineEditedGroups(List<Map<String, Object>> groups) {
+        for (Map<String, Object> g : groups) {
+            if (!Boolean.TRUE.equals(g.get("_edited"))) {
+                continue;
+            }
+            g.remove("_edited");
+            String type = asString(g.get("type"));
+            groupRefineService.refine(asString(g.get("original_dialogue")), type).ifPresent(r -> {
+                if (r.tag() != null && !r.tag().isBlank()) {
+                    g.put("tag", r.tag());
+                    if ("knowledge".equals(type)) {
+                        g.put("knowledge_point", r.tag());
+                    } else if ("project".equals(type)) {
+                        g.put("topic", r.tag());
+                    }
+                }
+                if (r.questions() != null && !r.questions().isEmpty()) {
+                    g.put("questions", new ArrayList<Object>(r.questions()));
+                }
+            });
+        }
+        return groups;
+    }
+
+    // ============================================================
+    // 算法题 LeetCode 富化（后解析）
+    // ============================================================
+
+    /**
+     * 对 {@code type=algorithm} 的组跑 LeetCode 富化 agent：填 leetcode_id/url/title（title=规范题名），
+     * 并在本次面试内按 leetcode_id 去重（合并 turn_ids + questions）。
+     *
+     * <p>放在 finalize（而非 preview）：以用户最终分组为准，校对/拆分/合并后依然稳。
+     * agent 失败或不确定 → 字段留空、title 兜底首问；不抛、不阻断落库。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> enrichAlgorithmGroups(List<Map<String, Object>> groups) {
+        LinkedHashMap<String, Map<String, Object>> byLcId = new LinkedHashMap<>();
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (Map<String, Object> g : groups) {
+            if (!"algorithm".equals(asString(g.get("type")))) {
+                out.add(g);
+                continue;
+            }
+            leetCodeEnrichService.enrich(algorithmDescription(g)).ifPresent(en -> {
+                if (en.leetcodeId() != null) g.put("leetcode_id", en.leetcodeId());
+                if (en.url() != null) g.put("leetcode_url", en.url());
+                if (en.title() != null) {
+                    g.put("leetcode_title", en.title());
+                    g.put("title", en.title());
+                }
+            });
+            // title 兜底：没匹配到也给题名（取首问），避免卡片无标题
+            if (g.get("title") == null || g.get("title").toString().isBlank()) {
+                g.put("title", firstQuestionOr(g, "算法题"));
+            }
+            String id = g.get("leetcode_id") == null ? "" : g.get("leetcode_id").toString();
+            if (!id.isEmpty() && byLcId.containsKey(id)) {
+                Map<String, Object> ex = byLcId.get(id);
+                List<Object> eq = (List<Object>) ex.computeIfAbsent("questions", k -> new ArrayList<>());
+                for (Object q : asObjList(g.get("questions"))) {
+                    if (!eq.contains(q)) {
+                        eq.add(q);
+                    }
+                }
+                ex.put("turn_ids", unionSortedIds(ex.get("turn_ids"), g.get("turn_ids")));
+            } else {
+                if (!id.isEmpty()) {
+                    byLcId.put(id, g);
+                }
+                out.add(g);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * other 题（算法/HR/…）的 extra JSONB：合并 score_result + 算法题的 leetcode_url/title/id，
+     * 供管理页「面试真题」展示 LeetCode 超链接。
+     */
+    @SuppressWarnings("unchecked")
+    private static Object buildOtherExtra(Map<String, Object> g) {
+        LinkedHashMap<String, Object> extra = new LinkedHashMap<>();
+        Object sr = g.get("score_result");
+        if (sr instanceof Map<?, ?> m) {
+            extra.putAll((Map<String, Object>) m);
+        }
+        if (g.get("leetcode_url") != null) extra.put("leetcode_url", g.get("leetcode_url"));
+        if (g.get("leetcode_title") != null) extra.put("leetcode_title", g.get("leetcode_title"));
+        if (g.get("leetcode_id") != null) extra.put("leetcode_id", g.get("leetcode_id"));
+        return extra.isEmpty() ? sr : extra;
+    }
+
+    /** 富化输入：算法题口语描述（优先 questions 拼接，退回 original_dialogue）。 */
+    private static String algorithmDescription(Map<String, Object> g) {
+        Object qs = g.get("questions");
+        if (qs instanceof List<?> l && !l.isEmpty()) {
+            return l.stream().map(String::valueOf).collect(java.util.stream.Collectors.joining("; "));
+        }
+        Object od = g.get("original_dialogue");
+        return od == null ? "" : od.toString();
+    }
+
+    private static String firstQuestionOr(Map<String, Object> g, String def) {
+        Object qs = g.get("questions");
+        if (qs instanceof List<?> l && !l.isEmpty() && l.get(0) != null) {
+            return l.get(0).toString();
+        }
+        return def;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<Object> asObjList(Object o) {
+        return o instanceof List<?> l ? (List<Object>) l : new ArrayList<>();
+    }
+
+    private static List<Object> unionSortedIds(Object a, Object b) {
+        java.util.TreeSet<Integer> set = new java.util.TreeSet<>();
+        for (Object o : asObjList(a)) {
+            if (o instanceof Number n) set.add(n.intValue());
+        }
+        for (Object o : asObjList(b)) {
+            if (o instanceof Number n) set.add(n.intValue());
+        }
+        return new ArrayList<>(set);
     }
 
     // ============================================================

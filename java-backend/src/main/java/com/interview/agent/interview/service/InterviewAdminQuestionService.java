@@ -80,14 +80,16 @@ public class InterviewAdminQuestionService {
     private void expandRow(InterviewAdminQuestionRow r, List<InterviewAdminQuestionItem> sink) {
         if ("other".equals(r.refType())) {
             String text = r.content() == null ? "" : r.content();
-            sink.add(new InterviewAdminQuestionItem(r.refType(), r.refId(), 0, text, r.topicEditable()));
+            sink.add(new InterviewAdminQuestionItem(r.refType(), r.refId(), 0, text, r.topicEditable(),
+                    r.leetcodeUrl(), r.leetcodeTitle()));
             return;
         }
         // knowledge / project：questions jsonb 数组，逐元素展开
         List<String> qs = parseQuestions(r.questionsJson());
         for (int i = 0; i < qs.size(); i++) {
             String text = qs.get(i) == null ? "" : qs.get(i);
-            sink.add(new InterviewAdminQuestionItem(r.refType(), r.refId(), i, text, r.topicEditable()));
+            sink.add(new InterviewAdminQuestionItem(r.refType(), r.refId(), i, text, r.topicEditable(),
+                    null, null));
         }
     }
 
