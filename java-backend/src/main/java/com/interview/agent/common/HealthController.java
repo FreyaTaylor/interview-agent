@@ -16,10 +16,10 @@ import java.util.Map;
 public class HealthController {
 
     @GetMapping("/api/health")
-    public ApiResponse<Map<String, Object>> health() {
-        return ApiResponse.success(Map.of(
+    public Map<String, Object> health() {
+        return Map.of(
                 "status", "UP",
                 "time", Instant.now().toString()
-        ));
+        );
     }
 }

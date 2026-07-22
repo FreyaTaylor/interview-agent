@@ -116,6 +116,11 @@ export function InterviewReviewModal({
         type: g.type || 'other',
         questions: g.questions || [],
         project_name: g.project_name || null,
+        // 算法题富化字段（LeetCode 题名/题号/链接）——透传保留，供 finalize 落库
+        title: g.title || null,
+        leetcode_id: g.leetcode_id || null,
+        leetcode_url: g.leetcode_url || null,
+        leetcode_title: g.leetcode_title || null,
       }
       for (const tid of (g.turn_ids || [])) {
         if (!turnToGid.has(tid)) turnToGid.set(tid, gid)
@@ -218,11 +223,14 @@ export function InterviewReviewModal({
     const oldMeta = groupsMap[oldGid] || {}
     setGroupsMap(prev => ({
       ...prev,
+      // 拆出后：新组与原组都标记为已编辑，交 finalize 组精炼重提 tag/questions
+      [oldGid]: { ...(prev[oldGid] || {}), _edited: true },
       [newId]: {
-        tag: (oldMeta.tag || '未命名') + '（拆分）',
+        tag: (oldMeta.tag || '未命名').replace(/（拆分）+$/, '') + '（拆分）',
         type: oldMeta.type || 'other',
         questions: [],
         project_name: oldMeta.project_name || null,
+        _edited: true,
       },
     }))
     const moveSet = new Set(moveUids)
@@ -237,6 +245,8 @@ export function InterviewReviewModal({
     setGroupsMap(prev => {
       const next = { ...prev }
       delete next[srcGid]
+      // 合并目标组标记为已编辑，交 finalize 组精炼重提
+      if (next[dstGid]) next[dstGid] = { ...next[dstGid], _edited: true }
       return next
     })
   }
@@ -266,11 +276,19 @@ export function InterviewReviewModal({
       if (gid === ORPHAN_GID) continue
       tmpIds.forEach(t => validTmpIds.add(t))
       const meta = groupsMap[gid] || {}
-      groupsOut.push({
+      const outG = {
         type: meta.type, tag: meta.tag,
         questions: meta.questions, project_name: meta.project_name,
         _tmpIds: tmpIds,
-      })
+      }
+      // 算法题富化字段透传（仅在有值时带上，避免给其他组塞 null）
+      if (meta.title) outG.title = meta.title
+      if (meta.leetcode_id) outG.leetcode_id = meta.leetcode_id
+      if (meta.leetcode_url) outG.leetcode_url = meta.leetcode_url
+      if (meta.leetcode_title) outG.leetcode_title = meta.leetcode_title
+      // 被编辑标记：交 finalize 组精炼
+      if (meta._edited) outG._edited = true
+      groupsOut.push(outG)
     }
     if (groupsOut.length === 0) return { error: '所有 turn 都在"未归属"组中，请先删除或归类' }
     const finalTurns = []
@@ -514,12 +532,18 @@ export function InterviewReviewModal({
                     </span>
                   )}
                   {!isOrphan && (() => {
-                    // 上一个非 ORPHAN section 作为合并目标
+                    // 上一个非 ORPHAN section 作为「向上合并」目标
                     let prevGid = null
                     for (let i = secIdx - 1; i >= 0; i--) {
                       if (sections[i].gid !== ORPHAN_GID) { prevGid = sections[i].gid; break }
                     }
+                    // 下一个非 ORPHAN section 作为「向下合并」目标
+                    let nextGid = null
+                    for (let i = secIdx + 1; i < sections.length; i++) {
+                      if (sections[i].gid !== ORPHAN_GID) { nextGid = sections[i].gid; break }
+                    }
                     const prevTag = prevGid ? groupsMap[prevGid]?.tag : null
+                    const nextTag = nextGid ? groupsMap[nextGid]?.tag : null
                     return (
                       <span style={{ marginLeft: 'auto', display: 'inline-flex', gap: 2 }}>
                         <IconBtn
@@ -527,6 +551,12 @@ export function InterviewReviewModal({
                           title={prevGid ? `合并到上一模块「${prevTag}」` : '没有上一模块可合并'}
                           color={prevGid ? '#1677ff' : '#bbb'}>
                           <IconMerge />
+                        </IconBtn>
+                        <IconBtn
+                          onClick={() => nextGid && mergeInto(sec.gid, nextGid)}
+                          title={nextGid ? `合并到下一模块「${nextTag}」` : '没有下一模块可合并'}
+                          color={nextGid ? '#1677ff' : '#bbb'}>
+                          <IconMergeDown />
                         </IconBtn>
                         <IconBtn onClick={() => {
                           if (window.confirm(`删除整个模块「${g.tag}」？该模块下所有对话都会被移除。`)) {
@@ -697,6 +727,17 @@ function IconMerge() {
       strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
       <line x1="12" y1="20" x2="12" y2="5" />
       <polyline points="6 11 12 5 18 11" />
+    </svg>
+  )
+}
+
+function IconMergeDown() {
+  // 向下箭头：表示合并到下一模块
+  return (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+      strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="12" y1="4" x2="12" y2="19" />
+      <polyline points="6 13 12 19 18 13" />
     </svg>
   )
 }
