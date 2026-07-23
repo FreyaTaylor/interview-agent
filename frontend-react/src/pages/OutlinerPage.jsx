@@ -11,7 +11,7 @@ import { API_ADMIN } from '../config'
 export default function OutlinerPage() {
   const { tab } = useParams()
   const navigate = useNavigate()
-  const adminTab = (tab === 'project') ? 'project' : (tab === 'interview') ? 'interview' : 'tree'
+  const adminTab = (tab === 'project') ? 'project' : (tab === 'interview') ? 'interview' : (tab === 'interview-exp') ? 'interview-exp' : 'tree'
 
   // ---- 新建知识树对话框 ----
   const [showCreateDialog, setShowCreateDialog] = useState(false)
@@ -33,6 +33,16 @@ export default function OutlinerPage() {
   const [projectText, setProjectText] = useState('')
   const [projectLoading, setProjectLoading] = useState(false)
   const projectRefreshRef = useRef(null)
+
+  // ---- 新增面经对话框 ----
+  const [showExpDialog, setShowExpDialog] = useState(false)
+  const [expTab, setExpTab] = useState('text')       // 'text' | 'image'
+  const [expText, setExpText] = useState('')
+  const [expImageFile, setExpImageFile] = useState(null)
+  const [expLoading, setExpLoading] = useState(false)
+  const [expResult, setExpResult] = useState(null)   // 解析结果摘要
+  const expFileInputRef = useRef(null)
+  const expRefreshRef = useRef(null)
 
   async function handleCreate() {
     setCreateLoading(true)
@@ -109,11 +119,49 @@ export default function OutlinerPage() {
     }
   }
 
+  async function handleCreateExp() {
+    setExpResult(null)
+    setExpLoading(true)
+    try {
+      let resp
+      if (expTab === 'text') {
+        if (!expText.trim()) { setExpLoading(false); return }
+        resp = await fetch(`${API_ADMIN}/interview-exp/from-text`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: expText.trim() }),
+        }).then(r => r.json())
+      } else {
+        if (!expImageFile) { setExpLoading(false); return }
+        const formData = new FormData()
+        formData.append('file', expImageFile)
+        resp = await fetch(`${API_ADMIN}/interview-exp/from-image`, {
+          method: 'POST', body: formData,
+        }).then(r => r.json())
+      }
+      if (resp?.code === 0) {
+        const d = resp.data
+        setExpResult(d)
+        if (!d.duplicate_source) {
+          setExpText('')
+          setExpImageFile(null)
+          expRefreshRef.current?.()
+        }
+      } else {
+        alert(resp?.message || '解析失败')
+      }
+    } catch (e) {
+      alert('解析失败: ' + e.message)
+    } finally {
+      setExpLoading(false)
+    }
+  }
+
   return (
     <div className="outliner-container">
       {/* ---- Tab 栏 ---- */}
       <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid #eee', marginBottom: 16 }}>
-        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }, { key: 'interview', label: '📋 面试复盘' }].map(t => (
+        {[{ key: 'tree', label: '🌳 知识树' }, { key: 'project', label: '🔨 项目拷打' }, { key: 'interview', label: '📋 面试复盘' }, { key: 'interview-exp', label: '📝 面经' }].map(t => (
           <button key={t.key} onClick={() => navigate(`/admin/${t.key}`)}
             style={{
               padding: '10px 24px', fontSize: 14, fontWeight: adminTab === t.key ? 600 : 400,
@@ -267,6 +315,81 @@ export default function OutlinerPage() {
 
       {/* ---- 面试真题 Tab ---- */}
       {adminTab === 'interview' && <InterviewQuestionsEditor />}
+
+      {/* ---- 面经 Tab ---- */}
+      {adminTab === 'interview-exp' && (
+        <>
+          <OutlinerEditor
+            apiPrefix="interview-exp-nodes"
+            storageKey="interview_exp_outliner_collapsed"
+            showFrequency={true}
+            placeholders={['知识域', '问题']}
+            emptyText="暂无面经，点击上方按钮新增（粘贴文本或上传截图）"
+            headerSlot={({ fetchData }) => {
+              expRefreshRef.current = fetchData
+              return (
+                <button className="outliner-add-root" onClick={() => { setExpResult(null); setShowExpDialog(true) }}>+ 新增面经</button>
+              )
+            }}
+          />
+
+          {/* 新增面经对话框 */}
+          {showExpDialog && (
+            <div className="outliner-dialog-overlay" onClick={() => !expLoading && setShowExpDialog(false)}>
+              <div className="outliner-dialog" onClick={e => e.stopPropagation()}>
+                <div className="outliner-dialog-header">
+                  <h3>新增面经</h3>
+                  <button className="outliner-dialog-close" onClick={() => !expLoading && setShowExpDialog(false)}>×</button>
+                </div>
+                <div className="outliner-dialog-tabs">
+                  {[{ key: 'text', label: '📄 粘贴文本' }, { key: 'image', label: '📷 上传图片' }].map(t => (
+                    <button key={t.key} className={`outliner-dialog-tab ${expTab === t.key ? 'active' : ''}`}
+                      onClick={() => setExpTab(t.key)} disabled={expLoading}>{t.label}</button>
+                  ))}
+                </div>
+                <div className="outliner-dialog-body">
+                  {expTab === 'text' && (
+                    <>
+                      <p className="outliner-dialog-hint">粘贴别人分享的面经文本，LLM 自动抽成规整问题清单（按知识域分类、语义去重、统计出现频率）</p>
+                      <textarea className="outliner-dialog-textarea" rows={10}
+                        placeholder={"例如:\n今天面了字节后端\n1. MySQL 索引什么时候会失效？\n2. Redis 持久化方式有哪些\n3. HashMap 底层原理"}
+                        value={expText} onChange={e => setExpText(e.target.value)} disabled={expLoading} />
+                    </>
+                  )}
+                  {expTab === 'image' && (
+                    <>
+                      <p className="outliner-dialog-hint">上传面经截图，先 OCR 转文字再解析（识别质量差时可改用粘贴文本）</p>
+                      <div className="outliner-dialog-upload"
+                        onClick={() => expFileInputRef.current?.click()}
+                        onDragOver={e => e.preventDefault()}
+                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) setExpImageFile(f) }}
+                      >
+                        {expImageFile ? <span>✅ {expImageFile.name} ({(expImageFile.size / 1024).toFixed(0)} KB)</span>
+                          : <span>点击选择或拖拽图片到这里</span>}
+                      </div>
+                      <input ref={expFileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
+                        onChange={e => { if (e.target.files[0]) setExpImageFile(e.target.files[0]) }} />
+                    </>
+                  )}
+                  {expResult && (
+                    <p className="outliner-dialog-hint" style={{ color: expResult.duplicate_source ? '#d46b08' : '#389e0d' }}>
+                      {expResult.duplicate_source
+                        ? `⚠️ ${expResult.message}`
+                        : `✅ 解析完成：抽取 ${expResult.total_parsed} 题，新增 ${expResult.new_questions} 题、命中已有 ${expResult.matched_questions} 题、新增 ${expResult.new_domains} 个知识域。`}
+                    </p>
+                  )}
+                </div>
+                <div className="outliner-dialog-footer">
+                  <button className="outliner-dialog-cancel" onClick={() => setShowExpDialog(false)} disabled={expLoading}>关闭</button>
+                  <button className="outliner-dialog-submit" onClick={handleCreateExp} disabled={expLoading}>
+                    {expLoading ? '解析中...' : '解析'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </>
+      )}
     </div>
   )
 }

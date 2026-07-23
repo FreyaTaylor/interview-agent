@@ -96,6 +96,12 @@ public final class PromptKeys {
     /** 面试复盘：组精炼（校对编辑后以最终对话为准重提干净 tag + 书面化 questions）。V68 seed。 */
     public static final String INTERVIEW_GROUP_REFINE = "interview/group-refine";
 
+    // ===== interview-exp 域（面经解析）=====
+    /** 面经解析：整篇面经文本 → [{domain, question(已rewrite)}]（优先复用已有域、规范问法、不脑补不合并）。V71 seed。 */
+    public static final String INTERVIEW_EXP_PARSE = "interview-exp/parse";
+    /** 面经解析：图片 OCR —— 把面经截图里的文字原样转录为纯文本（qwen-vl-max）。V72 seed。 */
+    public static final String INTERVIEW_EXP_OCR = "interview-exp/ocr";
+
     // ===== text 域（通用工具）=====
     /** ASR / 输入文本纠错。V14 seed。 */
     public static final String TEXT_CORRECT = "text/correct";

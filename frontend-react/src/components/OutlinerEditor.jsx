@@ -23,6 +23,7 @@ export default function OutlinerEditor({
   apiPrefix = 'tree-nodes',
   storageKey = 'outliner_collapsed',
   showWeight = false,
+  showFrequency = false,
   placeholders = ['一级分类', '二级分类', '知识点'],
   emptyText = '暂无节点，点击上方按钮新增',
   headerSlot = null,
@@ -625,6 +626,11 @@ export default function OutlinerEditor({
                 onBlur={() => handleBlur(node.id)}
                 onKeyDown={e => handleKeyDown(e, node)}
               />
+
+              {/* 面经问题出现频率徐章 */}
+              {showFrequency && !hasKids && (node.frequency ?? 0) > 0 && (
+                <span className="outliner-freq-badge" title={`在 ${node.frequency} 篇面经中出现`}>×{node.frequency}</span>
+              )}
 
               {/* 面试权重（知识树叶子节点） */}
               {showWeight && !hasKids && node.level >= 3 && (

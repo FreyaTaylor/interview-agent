@@ -814,6 +814,15 @@ body {
 .outliner-weight-select:hover { border-color: #faad14; }
 .outliner-weight-select:focus { border-color: #faad14; }
 
+/* 面经问题「出现频率」徽章（×N，OutlinerEditor showFrequency） */
+.outliner-freq-badge {
+  flex-shrink: 0; margin-left: 6px;
+  font-size: 12px; font-weight: 600; color: #1677ff;
+  background: #e6f0ff; border-radius: 10px;
+  padding: 1px 8px; letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
 /* 删除按钮 */
 .outliner-delete {
   opacity: 0; border: none; background: none;
