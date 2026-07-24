@@ -179,6 +179,17 @@ public class ExpStudyServiceImpl implements ExpStudyService {
         return mapper.incrementViewCount(questionId);
     }
 
+    @Override
+    @Transactional
+    public boolean toggleSkip(long questionId) {
+        long userId = CurrentUser.id();
+        // 存在性 + 归属校验（IDOR）
+        mapper.findDetail(questionId, userId)
+                .orElseThrow(() -> new BizException(40400, "面经问题不存在"));
+        mapper.ensureDetailRow(questionId);
+        return mapper.toggleSkipped(questionId);
+    }
+
     // ============================================================
     // 内部
     // ============================================================
@@ -192,7 +203,7 @@ public class ExpStudyServiceImpl implements ExpStudyService {
                 row.questionId(), row.name(), row.domainName(),
                 row.bodyMd(), row.contentStatus() == null ? "pending" : row.contentStatus(),
                 parseList(row.rubricTemplate()), parseList(row.recommendedAnswer()),
-                row.viewCount(), row.frequency(), generated);
+                row.viewCount(), row.skipped(), row.frequency(), generated);
     }
 
     /** JSON 文本 → List；空/非法返空列表。 */

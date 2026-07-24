@@ -2,6 +2,7 @@ package com.interview.agent.interview.exp.study.controller;
 
 import com.interview.agent.interview.exp.study.dto.ExpContentRequest;
 import com.interview.agent.interview.exp.study.dto.ExpQuestionView;
+import com.interview.agent.interview.exp.study.dto.ExpSkipRequest;
 import com.interview.agent.interview.exp.study.dto.ExpStudyTreeNode;
 import com.interview.agent.interview.exp.study.dto.ExpViewRequest;
 import com.interview.agent.interview.exp.study.service.ExpStudyService;
@@ -21,6 +22,7 @@ import java.util.List;
  *   <li>POST /tree — 面经树（域→问题，含看过次数/频率/内容状态）</li>
  *   <li>POST /content — 问题内容懒生成/读取（讲解+rubric+推荐答案）</li>
  *   <li>POST /view — 看过次数 +1（木鱼敲一下）</li>
+ *   <li>POST /skip — 「不用看」二值反转（🚫）</li>
  * </ul>
  */
 @RestController
@@ -46,5 +48,10 @@ public class ExpStudyController {
     @PostMapping("/view")
     public int view(@RequestBody ExpViewRequest req) {
         return service.incrementView(req.questionId());
+    }
+
+    @PostMapping("/skip")
+    public boolean skip(@RequestBody ExpSkipRequest req) {
+        return service.toggleSkip(req.questionId());
     }
 }

@@ -845,7 +845,8 @@ body {
 }
 
 /* 木鱼：看过一遍敲一下，看过次数 +1（功德 +1 梗） */
-.exp-woodfish { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
+.learn-title-group { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.exp-woodfish { display: inline-flex; align-items: center; gap: 8px; margin-left: 0; flex-shrink: 0; }
 .exp-woodfish-btn {
   position: relative; border: none; background: transparent; cursor: pointer;
   font-size: 22px; line-height: 1; padding: 2px 4px; border-radius: 8px;
@@ -873,6 +874,24 @@ body {
   100% { opacity: 0; transform: translate(-50%, -34px) scale(1.1); }
 }
 .exp-woodfish-count { font-size: 12.5px; font-weight: 600; color: #ad6800; white-space: nowrap; }
+
+/* 「不用看」🚫 二值反转按钮 */
+.exp-skip-btn {
+  flex-shrink: 0; border: 1px solid #e0e0e0; background: #fafafa; cursor: pointer;
+  font-size: 12px; font-family: inherit; color: #999;
+  padding: 3px 10px; border-radius: 14px; white-space: nowrap;
+  transition: all 0.15s;
+}
+.exp-skip-btn:hover { border-color: #ff7875; color: #ff4d4f; background: #fff1f0; }
+.exp-skip-btn.active {
+  border-color: #ff4d4f; color: #ff4d4f; background: #fff1f0; font-weight: 600;
+}
+
+/* 侧栏「不用看」置灰 + 删除线 */
+.learn-sidebar-item.exp-skipped .learn-sidebar-name {
+  color: #bbb; text-decoration: line-through;
+}
+.exp-skip-mark { flex-shrink: 0; margin-right: 4px; font-size: 11px; opacity: 0.7; }
 
 /* 删除按钮 */
 .outliner-delete {

@@ -27,4 +27,10 @@ public interface ExpStudyService {
      * @return 累计看过次数
      */
     int incrementView(long questionId);
+
+    /**
+     * 「不用看」二值反转（🚫 点一下）。
+     * @return 反转后的值（true=不用看）
+     */
+    boolean toggleSkip(long questionId);
 }

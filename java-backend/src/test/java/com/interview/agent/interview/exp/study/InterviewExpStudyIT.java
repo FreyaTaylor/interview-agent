@@ -144,11 +144,23 @@ class InterviewExpStudyIT {
     }
 
     @Test
+    void toggle_skip_flips() {
+        // 默认未标记；🚫 点两下 true→false，落库到 interview_exp_question_detail
+        assertTrue(service.toggleSkip(questionId), "首次反转为 true");
+        assertTrue(jdbc.queryForObject(
+                "SELECT skipped FROM interview_exp_question_detail WHERE node_id = ?", Boolean.class, questionId));
+        assertFalse(service.toggleSkip(questionId), "再点反转回 false");
+        assertFalse(jdbc.queryForObject(
+                "SELECT skipped FROM interview_exp_question_detail WHERE node_id = ?", Boolean.class, questionId));
+    }
+
+    @Test
     void user_isolation() {
         // 另一用户看不到本人面经问题 → 40400
         CurrentUserTestSupport.set(OTHER_USER);
         assertThrows(BizException.class,
                 () -> service.resolveContent(new ExpContentRequest(questionId, "fetch")));
         assertThrows(BizException.class, () -> service.incrementView(questionId));
+        assertThrows(BizException.class, () -> service.toggleSkip(questionId));
     }
 }

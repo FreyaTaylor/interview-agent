@@ -8,6 +8,7 @@ public record ExpDetailRow(
         String name,
         String domainName,
         int viewCount,
+        boolean skipped,
         int frequency,
         String bodyMd,
         String contentStatus,

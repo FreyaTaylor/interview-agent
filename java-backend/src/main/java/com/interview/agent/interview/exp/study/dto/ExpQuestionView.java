@@ -10,6 +10,7 @@ import java.util.List;
  * @param rubric            采分点 [{key_point, hit_rule, score}]
  * @param recommendedAnswer 分点范例答案
  * @param viewCount         看过次数（木鱼敲击累计；未看过 0）
+ * @param skipped           「不用看」标记（🚫 二值）
  * @param frequency         该问题出现频率
  * @param generated         本次是否新生成（true=刚调 LLM 生成；false=读库）
  */
@@ -22,6 +23,7 @@ public record ExpQuestionView(
         List<Object> rubric,
         List<Object> recommendedAnswer,
         int viewCount,
+        boolean skipped,
         int frequency,
         boolean generated
 ) {

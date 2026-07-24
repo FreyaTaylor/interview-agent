@@ -20,13 +20,14 @@ import java.util.Optional;
 public interface ExpStudyMapper {
 
     /**
-     * 面经树（域 + 问题）平铺，供侧栏。问题带 view_count(看过次数)/frequency(出现频率)/content_status(内容状态)。
+     * 面经树（域 + 问题）平铺，供侧栏。问题带 view_count(看过次数)/skipped(不用看)/frequency(出现频率)/content_status(内容状态)。
      * 域节点 content_status 为 null、frequency 0。
      */
     @Select("""
             SELECT t.id AS id, t.parent_id AS parentId, t.name AS name, t.level AS level,
                    t.node_type AS nodeType, t.sort_order AS sortOrder,
                    COALESCE(d.view_count, 0) AS viewCount,
+                   COALESCE(d.skipped, false) AS skipped,
                    COALESCE(c.freq, 0) AS frequency,
                    d.content_status AS contentStatus
             FROM tree_node t
@@ -48,6 +49,7 @@ public interface ExpStudyMapper {
     @Select("""
             SELECT t.id AS questionId, t.name AS name, p.name AS domainName,
                    COALESCE(d.view_count, 0) AS viewCount,
+                   COALESCE(d.skipped, false) AS skipped,
                    COALESCE(c.freq, 0) AS frequency,
                    d.body_md AS bodyMd, d.content_status AS contentStatus,
                    d.rubric_template::text AS rubricTemplate,
@@ -102,4 +104,16 @@ public interface ExpStudyMapper {
             RETURNING view_count
             """)
     int incrementViewCount(@Param("nodeId") long nodeId);
+
+    /**
+     * 「不用看」二值反转（🚫 点一下），返回反转后的值。UPDATE ... RETURNING 走 @Select 取回。
+     * 前置需 {@link #ensureDetailRow}；归属校验在 Service 层用 {@link #findDetail} 兜。
+     */
+    @Select("""
+            UPDATE interview_exp_question_detail
+               SET skipped = NOT skipped, updated_at = NOW()
+             WHERE node_id = #{nodeId}
+            RETURNING skipped
+            """)
+    boolean toggleSkipped(@Param("nodeId") long nodeId);
 }

@@ -94,15 +94,21 @@ export function ExpSidebarNode({ node, activeId, expandedIds, onSelect, depth = 
     else if (expandedIds.size > 0) setCollapsed(true)
   }, [shouldExpand, expandedIds])
 
+  // 「不用看」：叶子看自身 skipped；域派生 —— 该域下所有问题都 skipped 则域也置灰
+  const isSkipped = isLeaf
+    ? !!node.skipped
+    : (hasKids && children.every(c => c.node_type === 'question' && c.skipped))
+
   return (
     <div>
       <div
-        className={`learn-sidebar-item ${isActive ? 'active' : ''} ${isLeaf ? 'leaf' : ''}`}
+        className={`learn-sidebar-item ${isActive ? 'active' : ''} ${isLeaf ? 'leaf' : ''} ${isSkipped ? 'exp-skipped' : ''}`}
         style={{ paddingLeft: 12 + depth * 16 }}
         onClick={() => { if (isLeaf) onSelect(node.id); else setCollapsed(c => !c) }}
       >
         {hasKids && <span className={`learn-sidebar-toggle ${collapsed ? '' : 'open'}`} />}
         {isLeaf && <span className="learn-sidebar-bullet" />}
+        {isSkipped && <span className="exp-skip-mark" title="不用看">🚫</span>}
         <span className="learn-sidebar-name">{node.name}</span>
         {isLeaf && node.frequency > 0 && (
           <span className="exp-freq-badge" title={`在 ${node.frequency} 篇面经中出现`}>×{node.frequency}</span>

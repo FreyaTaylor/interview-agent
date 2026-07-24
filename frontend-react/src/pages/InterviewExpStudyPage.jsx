@@ -54,6 +54,7 @@ export default function InterviewExpStudyPage() {
   const [content, setContent] = useState(null)
   const [loading, setLoading] = useState(false)
   const [viewCount, setViewCount] = useState(0)
+  const [skipped, setSkipped] = useState(false)   // 「不用看」标记
   const [knocking, setKnocking] = useState(false)   // 木鱼敲击动画
   const [merits, setMerits] = useState([])          // 飘字「功德+1」队列
   const [regenLoading, setRegenLoading] = useState(false)
@@ -70,6 +71,7 @@ export default function InterviewExpStudyPage() {
     if (action === 'fetch' && cacheRef.current[qid]) {
       setContent(cacheRef.current[qid])
       setViewCount(cacheRef.current[qid].view_count ?? 0)
+      setSkipped(!!cacheRef.current[qid].skipped)
       setLoading(false)
       return
     }
@@ -88,6 +90,7 @@ export default function InterviewExpStudyPage() {
         if (resp.code === 0) {
           setContent(resp.data)
           setViewCount(resp.data.view_count ?? 0)
+          setSkipped(!!resp.data.skipped)
         } else {
           setContent({ error: resp.message || '生成失败' })
         }
@@ -141,6 +144,27 @@ export default function InterviewExpStudyPage() {
     }
   }
 
+  async function handleToggleSkip() {
+    if (!activeId) return
+    const next = !skipped
+    setSkipped(next)   // 乐观反转
+    try {
+      const resp = await postExp('/skip', { question_id: activeId })
+      if (resp.code === 0 && typeof resp.data === 'boolean') {
+        setSkipped(resp.data)
+        setContent(prev => {
+          if (!prev) return prev
+          const updated = { ...prev, skipped: resp.data }
+          cacheRef.current[activeId] = updated
+          return updated
+        })
+        refreshExpTree()
+      }
+    } catch {
+      setSkipped(!next)   // 失败回滚
+    }
+  }
+
   const rubric = Array.isArray(content?.rubric) ? content.rubric : []
   const answer = Array.isArray(content?.recommended_answer) ? content.recommended_answer : []
   const hasAnswer = rubric.length > 0 || answer.length > 0
@@ -179,10 +203,8 @@ export default function InterviewExpStudyPage() {
         {content && !content.error && !loading && (
           <>
             <div className="learn-info-bar">
-              <h2 className="learn-title">{content.name}</h2>
-              <div className="learn-meta">
-                {content.domain_name && <span className="exp-domain-tag">{content.domain_name}</span>}
-                {content.frequency > 0 && <span className="exp-freq-inline" title="出现频率">🔥 {content.frequency} 篇面经问过</span>}
+              <div className="learn-title-group">
+                <h2 className="learn-title">{content.name}</h2>
                 <span className="exp-woodfish" title="看过一遍就敲一下木鱼">
                   <button
                     type="button"
@@ -195,6 +217,18 @@ export default function InterviewExpStudyPage() {
                   </button>
                   <span className="exp-woodfish-count">看过 {viewCount} 次</span>
                 </span>
+                <button
+                  type="button"
+                  className={`exp-skip-btn ${skipped ? 'active' : ''}`}
+                  onClick={handleToggleSkip}
+                  title={skipped ? '已标记「不用看」，点击取消' : '标记为「不用看」（这题没意义）'}
+                >
+                  🚫 {skipped ? '不用看' : '不用看？'}
+                </button>
+              </div>
+              <div className="learn-meta">
+                {content.domain_name && <span className="exp-domain-tag">{content.domain_name}</span>}
+                {content.frequency > 0 && <span className="exp-freq-inline" title="出现频率">🔥 {content.frequency} 篇面经问过</span>}
               </div>
             </div>
 
