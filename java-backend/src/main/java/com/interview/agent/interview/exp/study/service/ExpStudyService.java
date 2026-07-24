@@ -7,13 +7,13 @@ import com.interview.agent.interview.exp.study.dto.ExpStudyTreeNode;
 import java.util.List;
 
 /**
- * 「看看面经」学习页服务 —— 面经树查看 + 问题内容懒生成 + 自评掌握度。
+ * 「看看面经」学习页服务 —— 面经树查看 + 问题内容懒生成 + 看过次数。
  *
  * <p>本期只做「查看学习」，不接答题/评分。内容落独立表 {@code interview_exp_question_detail}。
  */
 public interface ExpStudyService {
 
-    /** 面经树（域→问题）供侧栏，问题带自评/频率/内容状态。 */
+    /** 面经树（域→问题）供侧栏，问题带看过次数/频率/内容状态。 */
     List<ExpStudyTreeNode> getTree();
 
     /**
@@ -23,9 +23,8 @@ public interface ExpStudyService {
     ExpQuestionView resolveContent(ExpContentRequest req);
 
     /**
-     * 设置问题自评掌握度（写 tree_node.self_mastery）。
-     * @param selfMastery 0-100（越界 clamp）；null 表示清除
-     * @return 落库后的值（清除返 null）
+     * 看过次数 +1（木鱼敲一下）。
+     * @return 累计看过次数
      */
-    Integer setSelfMastery(long questionId, Integer selfMastery);
+    int incrementView(long questionId);
 }

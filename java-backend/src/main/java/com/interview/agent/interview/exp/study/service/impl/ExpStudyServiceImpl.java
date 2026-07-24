@@ -21,7 +21,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * 「看看面经」学习页实现 —— 面经树 + 问题内容懒生成 + 自评掌握度。
+ * 「看看面经」学习页实现 —— 面经树 + 问题内容懒生成 + 看过次数。
  *
  * <h3>懒生成（复刻知识点子话题「答案先→讲解后」）</h3>
  * <ol>
@@ -165,18 +165,18 @@ public class ExpStudyServiceImpl implements ExpStudyService {
     }
 
     // ============================================================
-    // 自评掌握度
+    // 看过次数
     // ============================================================
 
     @Override
     @Transactional
-    public Integer setSelfMastery(long questionId, Integer selfMastery) {
-        Integer val = selfMastery == null ? null : Math.max(0, Math.min(100, selfMastery));
-        int updated = mapper.updateSelfMastery(questionId, CurrentUser.id(), val);
-        if (updated == 0) {
-            throw new BizException(40400, "面经问题不存在");
-        }
-        return val;
+    public int incrementView(long questionId) {
+        long userId = CurrentUser.id();
+        // 存在性 + 归属校验（IDOR）
+        mapper.findDetail(questionId, userId)
+                .orElseThrow(() -> new BizException(40400, "面经问题不存在"));
+        mapper.ensureDetailRow(questionId);
+        return mapper.incrementViewCount(questionId);
     }
 
     // ============================================================
@@ -192,7 +192,7 @@ public class ExpStudyServiceImpl implements ExpStudyService {
                 row.questionId(), row.name(), row.domainName(),
                 row.bodyMd(), row.contentStatus() == null ? "pending" : row.contentStatus(),
                 parseList(row.rubricTemplate()), parseList(row.recommendedAnswer()),
-                row.selfMastery(), row.frequency(), generated);
+                row.viewCount(), row.frequency(), generated);
     }
 
     /** JSON 文本 → List；空/非法返空列表。 */

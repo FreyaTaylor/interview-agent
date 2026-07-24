@@ -830,10 +830,11 @@ body {
   background: #e6f0ff; border-radius: 8px; padding: 0 6px;
   white-space: nowrap;
 }
-.exp-mastery-dot {
+.exp-view-badge {
   flex-shrink: 0; margin-left: 6px;
-  width: 8px; height: 8px; border-radius: 50%;
-  display: inline-block;
+  font-size: 11px; font-weight: 600; color: #ad6800;
+  background: #fff7e6; border: 1px solid #ffe7ba; border-radius: 8px; padding: 0 6px;
+  white-space: nowrap;
 }
 .exp-domain-tag {
   font-size: 12px; color: #1677ff;
@@ -842,6 +843,36 @@ body {
 .exp-freq-inline {
   font-size: 12px; color: #fa8c16; margin-left: 8px;
 }
+
+/* 木鱼：看过一遍敲一下，看过次数 +1（功德 +1 梗） */
+.exp-woodfish { display: inline-flex; align-items: center; gap: 8px; margin-left: 8px; }
+.exp-woodfish-btn {
+  position: relative; border: none; background: transparent; cursor: pointer;
+  font-size: 22px; line-height: 1; padding: 2px 4px; border-radius: 8px;
+  transition: transform 0.12s ease, background 0.15s;
+  user-select: none;
+}
+.exp-woodfish-btn:hover { background: #fff7e6; }
+.exp-woodfish-btn:active { transform: scale(0.88); }
+.exp-woodfish-btn.knock { animation: woodfish-knock 0.18s ease; }
+@keyframes woodfish-knock {
+  0% { transform: scale(1); }
+  45% { transform: scale(0.82) rotate(-4deg); }
+  100% { transform: scale(1); }
+}
+.exp-merit-float {
+  position: absolute; left: 50%; top: -4px;
+  transform: translateX(-50%);
+  font-size: 12px; font-weight: 700; color: #d46b08;
+  white-space: nowrap; pointer-events: none;
+  animation: merit-rise 0.9s ease-out forwards;
+}
+@keyframes merit-rise {
+  0% { opacity: 0; transform: translate(-50%, 0) scale(0.8); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, -34px) scale(1.1); }
+}
+.exp-woodfish-count { font-size: 12.5px; font-weight: 600; color: #ad6800; white-space: nowrap; }
 
 /* 删除按钮 */
 .outliner-delete {

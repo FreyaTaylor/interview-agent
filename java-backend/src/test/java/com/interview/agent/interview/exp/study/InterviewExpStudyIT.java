@@ -24,12 +24,11 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
- * 「看看面经」学习页集成测试（Spec 6b D1–D5）—— 懒生成落库 / 二次读库不调 LLM / regenerate / 自评 clamp / 用户隔离。
+ * 「看看面经」学习页集成测试（Spec 6b D1–D5）—— 懒生成落库 / 二次读库不调 LLM / regenerate / 看过次数 +1 / 用户隔离。
  *
  * <p>Java 25 下不用 Mockito，改 {@code @TestConfiguration + @Bean @Primary} 假 {@link LlmInvoker}：
  * 按 promptKey 返回预设 rubric/讲解，并计数调用次数（验证二次读库不触发 LLM）。隔离测试用户 + 回滚。
@@ -135,13 +134,13 @@ class InterviewExpStudyIT {
     }
 
     @Test
-    void self_mastery_clamp_and_clear() {
-        assertEquals(75, service.setSelfMastery(questionId, 75));
-        assertEquals(75, jdbc.queryForObject(
-                "SELECT self_mastery FROM tree_node WHERE id = ?", Integer.class, questionId));
-        assertEquals(100, service.setSelfMastery(questionId, 120), "越界 clamp 到 100");
-        assertNull(service.setSelfMastery(questionId, null), "null 清除");
-        assertNull(jdbc.queryForObject("SELECT self_mastery FROM tree_node WHERE id = ?", Integer.class, questionId));
+    void view_count_increments() {
+        // 首次未看过为 0；木鱼敲 3 下 → 累计 1/2/3，落库到 interview_exp_question_detail
+        assertEquals(1, service.incrementView(questionId));
+        assertEquals(2, service.incrementView(questionId));
+        assertEquals(3, service.incrementView(questionId));
+        assertEquals(3, jdbc.queryForObject(
+                "SELECT view_count FROM interview_exp_question_detail WHERE node_id = ?", Integer.class, questionId));
     }
 
     @Test
@@ -150,6 +149,6 @@ class InterviewExpStudyIT {
         CurrentUserTestSupport.set(OTHER_USER);
         assertThrows(BizException.class,
                 () -> service.resolveContent(new ExpContentRequest(questionId, "fetch")));
-        assertThrows(BizException.class, () -> service.setSelfMastery(questionId, 50));
+        assertThrows(BizException.class, () -> service.incrementView(questionId));
     }
 }

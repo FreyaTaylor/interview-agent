@@ -62,7 +62,7 @@ export function useExpTree() {
   return tree
 }
 
-/** 手动失效并重拉（如设完自评刷新圆环）。 */
+/** 手动失效并重拉（如敲木鱼后刷新看过次数徽章）。 */
 export function refreshExpTree() {
   _expCache = null
   return _fetchExpTree()
@@ -78,14 +78,6 @@ export function findExpAncestorIds(tree, targetId) {
   }
   for (const root of tree) if (dfs(root, [])) break
   return ancestors
-}
-
-// 掌握度配色（复用学习页语义：≥80 绿 / ≥40 黄 / >0 红 / 0 灰）
-function masteryColor(v) {
-  if (v >= 80) return '#52c41a'
-  if (v >= 40) return '#faad14'
-  if (v > 0) return '#ff4d4f'
-  return '#d9d9d9'
 }
 
 /** 面经侧栏树节点（递归；叶子=question）。 */
@@ -115,9 +107,8 @@ export function ExpSidebarNode({ node, activeId, expandedIds, onSelect, depth = 
         {isLeaf && node.frequency > 0 && (
           <span className="exp-freq-badge" title={`在 ${node.frequency} 篇面经中出现`}>×{node.frequency}</span>
         )}
-        {isLeaf && node.self_mastery > 0 && (
-          <span className="exp-mastery-dot" title={`自评掌握度 ${node.self_mastery}`}
-            style={{ background: masteryColor(node.self_mastery) }} />
+        {isLeaf && node.view_count > 0 && (
+          <span className="exp-view-badge" title={`看过 ${node.view_count} 次`}>🐟 {node.view_count}</span>
         )}
       </div>
       {hasKids && !collapsed && children.map(ch => (

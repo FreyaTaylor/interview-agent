@@ -255,6 +255,8 @@ export default function LearnPage() {
   // 记录正在请求中的 kp：防止 effect 依赖变化（如 tree.length 由 0→N）导致同一 kp 的 /content 被并发触发两次，
   // 首次生成尚未返回时缓存挡不住 → 会在后端重复生成两批子话题。
   const contentInflightRef = useRef({})
+  // 当前激活 kp：慢生成异步回来时用于判断是否还该渲染（避免把 A 的内容画到 B 上）。
+  const activeKpIdRef = useRef(null)
 
   useEffect(() => {
     if (kpId && tree.length > 0) {
@@ -271,6 +273,7 @@ export default function LearnPage() {
     if (kpId) {
       const id = parseInt(kpId)
       try { localStorage.setItem('lastKpId', String(id)) } catch (_) { /* ignore */ }
+      activeKpIdRef.current = id
       setActiveKpId(id)
       if (tree.length > 0) setExpandedIds(findAncestorIds(tree, id))
       loadContent(id)
@@ -298,14 +301,14 @@ export default function LearnPage() {
         const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
         if (resp.code === 0) {
           contentCacheRef.current[id] = resp.data
-          setContent(resp.data)
+          if (activeKpIdRef.current === id) setContent(resp.data)
         }
       } catch (_) { /* 静默 */ }
       return
     }
     setLoading(true)
     setContent(null)
-    // 同一 kp 已有请求在飞 → 直接跳过，避免并发触发后端重复生成
+    // 同一 kp 已有请求在飞 → 直接跳过，避免并发触发后端重复生成；原请求回来时会（对当前节点）渲染
     if (contentInflightRef.current[id]) return
     contentInflightRef.current[id] = true
     try {
@@ -313,24 +316,29 @@ export default function LearnPage() {
         try {
           const resp = await postLearn('/content', { kp_id: id, action: 'fetch' })
           if (resp.code === 0) {
+            // 无论是否已切走都缓存 → 下次点回即完整页面，不再是空的
             contentCacheRef.current[id] = resp.data
-            setContent(resp.data)
-            setLoading(false)
+            // 仅当结果仍对应当前激活节点才渲染
+            if (activeKpIdRef.current === id) {
+              setContent(resp.data)
+              setLoading(false)
+            }
             return
           }
-          if (attempt === 1) setContent({ error: resp.message || '加载失败' })
+          if (attempt === 1 && activeKpIdRef.current === id) setContent({ error: resp.message || '加载失败' })
         } catch (e) {
-          if (attempt === 1) setContent({ error: '加载失败: ' + e.message })
+          if (attempt === 1 && activeKpIdRef.current === id) setContent({ error: '加载失败: ' + e.message })
           else await new Promise(r => setTimeout(r, 1000))
         }
       }
-      setLoading(false)
+      if (activeKpIdRef.current === id) setLoading(false)
     } finally {
       delete contentInflightRef.current[id]
     }
   }, [])
 
   function handleSelectKp(id) {
+    activeKpIdRef.current = id
     setActiveKpId(id)
     setExpandedIds(findAncestorIds(tree, id))
     navigate(`/learn/${id}`, { replace: true })

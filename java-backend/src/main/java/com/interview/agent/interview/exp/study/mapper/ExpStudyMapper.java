@@ -20,13 +20,13 @@ import java.util.Optional;
 public interface ExpStudyMapper {
 
     /**
-     * 面经树（域 + 问题）平铺，供侧栏。问题带 self_mastery(自评)/frequency(出现频率)/content_status(内容状态)。
+     * 面经树（域 + 问题）平铺，供侧栏。问题带 view_count(看过次数)/frequency(出现频率)/content_status(内容状态)。
      * 域节点 content_status 为 null、frequency 0。
      */
     @Select("""
             SELECT t.id AS id, t.parent_id AS parentId, t.name AS name, t.level AS level,
                    t.node_type AS nodeType, t.sort_order AS sortOrder,
-                   COALESCE(t.self_mastery, 0) AS selfMastery,
+                   COALESCE(d.view_count, 0) AS viewCount,
                    COALESCE(c.freq, 0) AS frequency,
                    d.content_status AS contentStatus
             FROM tree_node t
@@ -47,7 +47,7 @@ public interface ExpStudyMapper {
      */
     @Select("""
             SELECT t.id AS questionId, t.name AS name, p.name AS domainName,
-                   COALESCE(t.self_mastery, 0) AS selfMastery,
+                   COALESCE(d.view_count, 0) AS viewCount,
                    COALESCE(c.freq, 0) AS frequency,
                    d.body_md AS bodyMd, d.content_status AS contentStatus,
                    d.rubric_template::text AS rubricTemplate,
@@ -91,12 +91,15 @@ public interface ExpStudyMapper {
     @Select("SELECT 1 FROM (SELECT pg_advisory_xact_lock(#{nodeId})) AS _lock")
     Integer acquireContentLock(@Param("nodeId") long nodeId);
 
-    /** 自评掌握度写入 tree_node.self_mastery（仅 interview_exp question 节点，IDOR 校验）；null=清除。 */
-    @Update("""
-            UPDATE tree_node SET self_mastery = #{selfMastery}, updated_at = NOW()
-            WHERE id = #{nodeId} AND user_id = #{userId}
-              AND tree_kind = 'interview_exp' AND node_type = 'question'
+    /**
+     * 看过次数 +1（木鱼敲一下），返回累计值。UPDATE ... RETURNING 走 @Select 取回自增后的值。
+     * 前置需 {@link #ensureDetailRow} 保证侧表行存在；归属校验在 Service 层用 {@link #findDetail} 兜。
+     */
+    @Select("""
+            UPDATE interview_exp_question_detail
+               SET view_count = view_count + 1, updated_at = NOW()
+             WHERE node_id = #{nodeId}
+            RETURNING view_count
             """)
-    int updateSelfMastery(@Param("nodeId") long nodeId, @Param("userId") long userId,
-                          @Param("selfMastery") Integer selfMastery);
+    int incrementViewCount(@Param("nodeId") long nodeId);
 }

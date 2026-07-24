@@ -7,7 +7,7 @@ public record ExpDetailRow(
         long questionId,
         String name,
         String domainName,
-        int selfMastery,
+        int viewCount,
         int frequency,
         String bodyMd,
         String contentStatus,

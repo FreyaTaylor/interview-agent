@@ -2,7 +2,7 @@
  * 管理页 — 知识树 + 项目拷打 两个 Tab
  * 都使用 OutlinerEditor 组件，传不同的 API 前缀和配置
  */
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import OutlinerEditor from '../components/OutlinerEditor'
 import InterviewQuestionsEditor from '../components/InterviewQuestionsEditor'
@@ -43,6 +43,19 @@ export default function OutlinerPage() {
   const [expResult, setExpResult] = useState(null)   // 解析结果摘要
   const expFileInputRef = useRef(null)
   const expRefreshRef = useRef(null)
+
+  // 面经「上传图片」Tab：支持 Ctrl/Cmd+V 直接粘贴剪贴板里的截图
+  useEffect(() => {
+    if (!showExpDialog || expTab !== 'image') return
+    function onPaste(e) {
+      const item = [...(e.clipboardData?.items || [])].find(it => it.type.startsWith('image/'))
+      if (!item) return
+      const file = item.getAsFile()
+      if (file) { e.preventDefault(); setExpImageFile(file); setExpResult(null) }
+    }
+    document.addEventListener('paste', onPaste)
+    return () => document.removeEventListener('paste', onPaste)
+  }, [showExpDialog, expTab])
 
   async function handleCreate() {
     setCreateLoading(true)
@@ -362,10 +375,10 @@ export default function OutlinerPage() {
                       <div className="outliner-dialog-upload"
                         onClick={() => expFileInputRef.current?.click()}
                         onDragOver={e => e.preventDefault()}
-                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) setExpImageFile(f) }}
+                        onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f?.type.startsWith('image/')) { setExpImageFile(f); setExpResult(null) } }}
                       >
-                        {expImageFile ? <span>✅ {expImageFile.name} ({(expImageFile.size / 1024).toFixed(0)} KB)</span>
-                          : <span>点击选择或拖拽图片到这里</span>}
+                        {expImageFile ? <span>✅ {expImageFile.name || '剪贴板图片'} ({(expImageFile.size / 1024).toFixed(0)} KB)</span>
+                          : <span>点击选择、拖拽，或 Ctrl/Cmd+V 粘贴图片到这里</span>}
                       </div>
                       <input ref={expFileInputRef} type="file" accept="image/*" style={{ display: 'none' }}
                         onChange={e => { if (e.target.files[0]) setExpImageFile(e.target.files[0]) }} />
