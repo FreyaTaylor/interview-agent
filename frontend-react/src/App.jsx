@@ -7,6 +7,7 @@ import LearnPage from './pages/LearnPage'
 import ExamPage from './pages/ExamPage'
 import InterviewPage from './pages/InterviewPage'
 import InterviewReviewPage from './pages/InterviewReviewPage'
+import InterviewExpStudyPage from './pages/InterviewExpStudyPage'
 import ProjectGrillingPage from './pages/ProjectGrillingPage'
 import OutlinerPage from './pages/OutlinerPage'
 import ProfilePage from './pages/ProfilePage'
@@ -53,6 +54,7 @@ function AppContent() {
           {navItem('/grilling', '项目拷打')}
           <span className="nav-divider">|</span>
           {navItem('/interview', '面试复盘')}
+          {navItem('/interview-exp', '📖 看看面经')}
           <span className="nav-divider">|</span>
           {navItem('/admin', '⚙️ 管理')}
         </div>
@@ -72,6 +74,8 @@ function AppContent() {
           <Route path="/interview" element={<InterviewPage />} />
           <Route path="/interview/new/review" element={<InterviewReviewPage />} />
           <Route path="/interview/:recordId" element={<InterviewPage />} />
+          <Route path="/interview-exp" element={<InterviewExpStudyPage />} />
+          <Route path="/interview-exp/:questionId" element={<InterviewExpStudyPage />} />
           <Route path="/grilling" element={<ProjectGrillingPage />} />
           <Route path="/grilling/:projectId" element={<ProjectGrillingPage />} />
           <Route path="/admin" element={<Navigate to="/admin/tree" replace />} />

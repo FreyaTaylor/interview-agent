@@ -101,6 +101,10 @@ public final class PromptKeys {
     public static final String INTERVIEW_EXP_PARSE = "interview-exp/parse";
     /** 面经解析：图片 OCR —— 把面经截图里的文字原样转录为纯文本（qwen-vl-max）。V72 seed。 */
     public static final String INTERVIEW_EXP_OCR = "interview-exp/ocr";
+    /** 看看面经：单问题 rubric + 推荐答案懒生成（形状对齐 study/rubric-gen，领域用知识域）。V74 seed。 */
+    public static final String INTERVIEW_EXP_RUBRIC_GEN = "interview-exp/rubric-gen";
+    /** 看看面经：单问题讲解正文懒生成（答案先·讲解服从采分点契约）。V75 seed。 */
+    public static final String INTERVIEW_EXP_QUESTION_CONTENT = "interview-exp/question-content";
 
     // ===== text 域（通用工具）=====
     /** ASR / 输入文本纠错。V14 seed。 */

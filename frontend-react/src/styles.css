@@ -823,6 +823,26 @@ body {
   white-space: nowrap;
 }
 
+/* ---- 看看面经页（ExpSidebar + InterviewExpStudyPage） ---- */
+.exp-freq-badge {
+  flex-shrink: 0; margin-left: 6px;
+  font-size: 11px; font-weight: 600; color: #1677ff;
+  background: #e6f0ff; border-radius: 8px; padding: 0 6px;
+  white-space: nowrap;
+}
+.exp-mastery-dot {
+  flex-shrink: 0; margin-left: 6px;
+  width: 8px; height: 8px; border-radius: 50%;
+  display: inline-block;
+}
+.exp-domain-tag {
+  font-size: 12px; color: #1677ff;
+  background: #e6f0ff; border-radius: 4px; padding: 2px 8px;
+}
+.exp-freq-inline {
+  font-size: 12px; color: #fa8c16; margin-left: 8px;
+}
+
 /* 删除按钮 */
 .outliner-delete {
   opacity: 0; border: none; background: none;
